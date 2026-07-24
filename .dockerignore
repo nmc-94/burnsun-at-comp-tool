@@ -1,0 +1,16 @@
+# Keep the build context small. The web/ source IS needed (the node build stage
+# compiles it), but its installed/built artifacts are not.
+.git
+.github
+.venv
+venv
+.env
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+web/node_modules
+web/dist
+tests
+docs

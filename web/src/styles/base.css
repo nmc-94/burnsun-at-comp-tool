@@ -1,0 +1,119 @@
+@import "./tokens.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-brand);
+  font-weight: 500;
+}
+
+.app-shell {
+  max-width: 520px;
+  margin: 12vh auto;
+  padding: 24px;
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.wordmark {
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: 0.01em;
+}
+.wordmark-suffix {
+  color: var(--text-2);
+  font-weight: 300;
+}
+.product-label {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.card {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-1);
+  border-radius: 11px;
+}
+.card-title {
+  font-family: var(--font-brand);
+  font-weight: 500;
+}
+.card-body {
+  margin-top: 8px;
+  color: var(--text-2);
+}
+.card-body .ok {
+  color: var(--success);
+}
+.card-body .err {
+  color: var(--danger);
+}
+
+.theme-toggle {
+  margin-top: 16px;
+  height: 30px;
+  padding: 0 12px;
+  background: var(--bg-panel-alt);
+  color: var(--text-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.theme-toggle:hover {
+  background: var(--bg-soft);
+}
+
+/* Archetype/Tags chip template (seeded now; the hue per chip is set via --h). */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 500;
+  border: 1px solid hsl(var(--h) var(--fit-tag-border-sat) var(--fit-tag-border-light));
+  background: hsl(var(--h) var(--fit-tag-bg-sat) var(--fit-tag-bg-light));
+  color: hsl(var(--h) var(--fit-tag-text-sat) var(--fit-tag-text-light));
+}
+.chip .cdot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: hsl(var(--h) var(--fit-tag-dot-sat) var(--fit-tag-dot-light));
+}
+.chip.arch {
+  border-style: dashed;
+}

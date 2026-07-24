@@ -1,0 +1,47 @@
+name: at-comp-tool
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: comptool
+      POSTGRES_USER: comptool
+      POSTGRES_PASSWORD: comptool
+    ports:
+      # Exposed so local tooling (pytest, alembic) can reach the same database.
+      - "5432:5432"
+    volumes:
+      - comptool_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U comptool -d comptool"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://comptool:comptool@db:5432/comptool
+      COMPTOOL_LOG_LEVEL: INFO
+      COMPTOOL_ENVIRONMENT: docker
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://localhost:8000/api/health").status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+volumes:
+  comptool_pg:

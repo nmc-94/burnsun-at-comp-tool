@@ -1,0 +1,281 @@
+,,,,,,,,,
+Ship Class,Points,Hull Size,,,Ship Name,Ship Class,Points,Hull Type,Inflation Value
+"Rattlesnake (Battleship, Pirate Faction)",53,Battleship,,,,,,,
+"Barghest (Battleship, Pirate Faction)",53,Battleship,,,Impairor,Rookie Ship (Corvette),1,Corvette,0
+"Bhaalgorn (Battleship, Pirate Faction)",53,Battleship,,,Ibis,Rookie Ship (Corvette),1,Corvette,0
+"Nightmare (Battleship, Pirate Faction)",52,Battleship,,,Velator,Rookie Ship (Corvette),1,Corvette,0
+Widow (Black Ops Battleship),51,Battleship,,,Reaper,Rookie Ship (Corvette),1,Corvette,0
+Babaroga (Marauder),51,Battleship,,,Executioner,Frigate,4,Frigate,0
+Leshak (Battleship),50,Battleship,,,Tormentor,Frigate,4,Frigate,0
+"Vindicator (Battleship, Pirate Faction)",50,Battleship,,,Punisher,Punisher (Frigate),5,Frigate,0
+"Battleship, Pirate Faction",50,Battleship,,,Magnate,Frigate,4,Frigate,0
+Paladin (Marauder),50,Battleship,,,Condor,Frigate,4,Frigate,0
+Vargur (Marauder),50,Battleship,,,Kestrel,Frigate,4,Frigate,0
+Marauder,49,Battleship,,,Merlin,Frigate,4,Frigate,0
+Kronos (Marauder),49,Battleship,,,Heron,Frigate,4,Frigate,0
+"Machariel (Battleship, Pirate Faction)",48,Battleship,,,Atron,Frigate,4,Frigate,0
+Golem (Marauder),48,Battleship,,,Tristan,Frigate,4,Frigate,0
+"Battleship, Navy Faction",47,Battleship,,,Incursus,Frigate,4,Frigate,0
+"Typhoon Fleet Issue (Battleship, Navy Faction)",47,Battleship,,,Imicus,Frigate,4,Frigate,0
+"Scorpion Navy Issue (Battleship, Navy Faction)",45,Battleship,,,Slasher,Frigate,4,Frigate,0
+"Armageddon Navy Issue (Battleship, Navy Faction)",45,Battleship,,,Breacher,Frigate,4,Frigate,0
+"Dominix Navy Issue (Battleship, Navy Faction)",43,Battleship,,,Rifter,Frigate,4,Frigate,0
+Black Ops Battleship,43,Battleship,,,Probe,Frigate,4,Frigate,0
+"Tempest Fleet Issue (Battleship, Navy Faction)",43,Battleship,,,Inquisitor,Tech 1 Support Frigate,3,Logistics Frigate,1
+"Apocalypse Navy Issue (Battleship, Navy Faction)",43,Battleship,,,Bantam,Tech 1 Support Frigate,3,Logistics Frigate,1
+"Megathron Navy Issue (Battleship, Navy Faction)",42,Battleship,,,Navitas,Tech 1 Support Frigate,3,Logistics Frigate,1
+"Raven Navy Issue (Battleship, Navy Faction)",42,Battleship,,,Burst,Tech 1 Support Frigate,3,Logistics Frigate,1
+Battleship,40,Battleship,,,Crucifier,Crucifier (Tech 1 Disruption Frigate),8,Frigate,0
+Megathron (Battleship),39,Battleship,,,Griffin,Griffin (Tech 1 Disruption Frigate),7,Frigate,0
+Rokh (Battleship),38,Battleship,,,Maulus,Maulus (Tech 1 Disruption Frigate),7,Frigate,0
+Raven (Battleship),38,Battleship,,,Vigil,Tech 1 Disruption Frigate,6,Frigate,0
+Praxis (Battleship),38,Battleship,,,Imperial Navy Slicer,"Imperial Navy Slicer (Frigate, Navy Faction)",5,Frigate,0
+Maelstrom (Battleship),37,Battleship,,,Crucifier Navy Issue,"Crucifier Navy Issue (Frigate, Navy Faction)",5,Frigate,0
+Thunderchild (Battleship),36,Battleship,,,Caldari Navy Hookbill,"Frigate, Navy Faction",6,Frigate,0
+Command Ship,33,Battlecruiser,,,Griffin Navy Issue,"Frigate, Navy Faction",6,Frigate,0
+"Battlecruiser, Pirate Faction",33,Battlecruiser,,,Federation Navy Comet,"Frigate, Navy Faction",6,Frigate,0
+"Anhinga (Battlecruiser, Unique)",32,Battlecruiser,,,Maulus Navy Issue,"Frigate, Navy Faction",6,Frigate,0
+Cybele (Heavy Assault Cruiser Unique),32,Cruiser,,,Republic Fleet Firetail,"Frigate, Navy Faction",6,Frigate,0
+Zarmazd (Logistics Cruiser),32,Logistics,,,Vigil Fleet Issue,"Frigate, Navy Faction",6,Frigate,0
+Logistics Cruiser,32,Logistics,,,Vengeance,Assault Frigate,9,Frigate,0
+Bestla (Heavy Assault Cruiser Unique),31,Cruiser,,,Retribution,Assault Frigate,9,Frigate,0
+"Khizriel (Battlecruiser, Pirate Faction)",31,Battlecruiser,,,Hawk,Assault Frigate,9,Frigate,0
+Loki (Strategic Cruiser),30,Cruiser,,,Harpy,Assault Frigate,9,Frigate,0
+"Alligator (Battlecruiser, Pirate Faction)",30,Battlecruiser,,,Ishkur,Assault Frigate,9,Frigate,0
+"Cyclone Fleet Issue (Battlecruiser, Navy Faction)",30,Battlecruiser,,,Enyo,Assault Frigate,9,Frigate,0
+Strategic Cruiser,30,Cruiser,,,Wolf,Assault Frigate,9,Frigate,0
+Drekavac (Combat Battlecruiser),30,Battlecruiser,,,Jaguar,Assault Frigate,9,Frigate,0
+"Drake Navy Issue (Battlecruiser, Navy Faction)",30,Battlecruiser,,,Anathema,Covert Ops Ship,4,Frigate,0
+"Ferox Navy Issue (Battlecruiser, Navy Faction)",30,Battlecruiser,,,Buzzard,Covert Ops Ship,4,Frigate,0
+Cobra (Recon Unique),29,Cruiser,,,Helios,Covert Ops Ship,4,Frigate,0
+"Battlecruiser, Navy Faction",29,Battlecruiser,,,Cheetah,Covert Ops Ship,4,Frigate,0
+"Harbinger Navy Issue (Battlecruiser, Navy Faction)",28,Battlecruiser,,,Purifier,Stealth Bomber,7,Frigate,0
+"Prophecy Navy Issue (Battlecruiser, Navy Faction)",28,Battlecruiser,,,Manticore,Stealth Bomber,7,Frigate,0
+Curse (Recon Ship),28,Cruiser,,,Nemesis,Stealth Bomber,7,Frigate,0
+Falcon (Recon Ship),27,Cruiser,,,Hound,Stealth Bomber,7,Frigate,0
+Rook (Recon Ship),27,Cruiser,,,Sentinel,Sentinel (Electronic Attack Frigate),11,Frigate,0
+Arazu (Recon Ship),27,Cruiser,,,Kitsune,Kitsune (Electronic Attack Frigate),9,Frigate,0
+Lachesis (Recon Ship),27,Cruiser,,,Keres,Keres (Electronic Attack Frigate),12,Frigate,0
+Combat Battlecruiser,26,Battlecruiser,,,Hyena,Electronic Attack Frigate,11,Frigate,0
+Ikitursa (Heavy Assault Cruiser),25,Cruiser,,,Crusader,Interceptor,6,Frigate,0
+Recon Ship,25,Cruiser,,,Malediction,Interceptor,6,Frigate,0
+"Gila (Cruiser, Pirate Faction)",24,Cruiser,,,Crow,Interceptor,6,Frigate,0
+Heavy Assault Cruiser,24,Cruiser,,,Raptor,Interceptor,6,Frigate,0
+Heavy Interdictor,24,Cruiser,,,Taranis,Interceptor,6,Frigate,0
+Vagabond (Heavy Assault Cruiser),23,Cruiser,,,Ares,Interceptor,6,Frigate,0
+Sacrilege (Heavy Assault Cruiser),22,Cruiser,,,Claw,Interceptor,6,Frigate,0
+Rodiva (Tech 1 Support Cruiser),22,Logistics,,,Stiletto,Interceptor,6,Frigate,0
+Zealot (Heavy Assault Cruiser),21,Cruiser,,,Deacon,Logistics Frigate,10,Logistics Frigate,1
+Ishtar (Heavy Assault Cruiser),21,Cruiser,,,Kirin,Logistics Frigate,10,Logistics Frigate,1
+Muninn (Heavy Assault Cruiser),21,Cruiser,,,Thalia,Logistics Frigate,10,Logistics Frigate,1
+Deimos (Heavy Assault Cruiser),21,Cruiser,,,Scalpel,Logistics Frigate,10,Logistics Frigate,1
+Cerberus (Heavy Assault Cruiser),21,Cruiser,,,Coercer,Destroyer,5,Destroyer,1
+Oracle (Attack Battlecruiser),20,Battlecruiser,,,Dragoon,Destroyer,5,Destroyer,1
+Talos (Attack Battlecruiser),20,Battlecruiser,,,Cormorant,Destroyer,5,Destroyer,1
+Tornado (Attack Battlecruiser),21,Battlecruiser,,,Corax,Destroyer,5,Destroyer,1
+Attack Battlecruiser,21,Battlecruiser,,,Catalyst,Destroyer,5,Destroyer,1
+Naga (Attack Battlecruiser),20,Battlecruiser,,,Algos,Destroyer,5,Destroyer,1
+Tech 1 Support Cruiser,19,Logistics,,,Thrasher,Destroyer,5,Destroyer,1
+Vedmak (Cruiser),19,Cruiser,,,Talwar,Destroyer,5,Destroyer,1
+"Orthrus (Cruiser, Pirate Faction)",19,Cruiser,,,Pontifex,Pontifex (Command Destroyer),12,Destroyer,1
+"Cruiser, Pirate Faction",18,Cruiser,,,Stork,Command Destroyer,12,Destroyer,1
+"Augoror Navy Issue (Cruiser, Navy Faction)",15,Cruiser,,,Magus,Command Destroyer,12,Destroyer,1
+"Stratios (Cruiser, Pirate Faction)",15,Cruiser,,,Bifrost,Command Destroyer,12,Destroyer,1
+Eagle (Heavy Assault Cruiser),16,Cruiser,,,Heretic,Interdictor,9,Destroyer,1
+"Exequror Navy Issue (Cruiser, Navy Faction)",16,Cruiser,,,Flycatcher,Interdictor,9,Destroyer,1
+"Cruiser, Navy Faction",16,Cruiser,,,Eris,Interdictor,9,Destroyer,1
+"Vexor Navy Issue (Cruiser, Navy Faction)",16,Cruiser,,,Sabre,Interdictor,9,Destroyer,1
+"Scythe Fleet Issue (Cruiser, Navy Faction)",16,Cruiser,,,Confessor,Tactical Destroyer,10,Destroyer,1
+"Stabber Fleet Issue (Cruiser, Navy Faction)",16,Cruiser,,,Jackdaw,Tactical Destroyer,10,Destroyer,1
+"Osprey Navy Issue (Cruiser, Navy Faction)",16,Cruiser,,,Hecate,Tactical Destroyer,10,Destroyer,1
+"Caracal Navy Issue (Cruiser, Navy Faction)",16,Cruiser,,,Svipul,Tactical Destroyer,10,Destroyer,1
+"Cynabal (Cruiser, Pirate Faction)",15,Cruiser,,,Arbitrator,Arbitrator (Tech 1 Disruption Cruiser),12,Cruiser,2
+"Omen Navy Issue (Cruiser, Navy Faction)",15,Cruiser,,,Blackbird,Blackbird (Tech 1 Disruption Cruiser),13,Cruiser,2
+"Destroyer, Pirate Faction",14,Destroyer,,,Celestis,Celestis (Tech 1 Disruption Cruiser),13,Cruiser,2
+"Skua (Destroyer, Unique)",14,Destroyer,,,Bellicose,Bellicose (Tech 1 Disruption Cruiser),10,Cruiser,2
+Draugur (Command Destroyer),13,Destroyer,,,Augoror,Tech 1 Support Cruiser,19,Logistics,2
+Stormbringer (Cruiser),13,Cruiser,,,Osprey,Tech 1 Support Cruiser,19,Logistics,2
+"Tholos (Destroyer, Pirate Faction)",13,Destroyer,,,Exequror,Tech 1 Support Cruiser,19,Logistics,2
+Blackbird (Tech 1 Disruption Cruiser),13,Cruiser,,,Scythe,Tech 1 Support Cruiser,19,Logistics,2
+Celestis (Tech 1 Disruption Cruiser),13,Cruiser,,,Maller,Maller (Cruiser),10,Cruiser,2
+Kikimora (Destroyer),12,Destroyer,,,Omen,Cruiser,9,Cruiser,2
+Keres (Electronic Attack Frigate),12,Frigate,,,Moa,Cruiser,9,Cruiser,2
+Arbitrator (Tech 1 Disruption Cruiser),12,Cruiser,,,Caracal,Caracal (Cruiser),8,Cruiser,2
+Pontifex (Command Destroyer),12,Destroyer,,,Vexor,Vexor (Cruiser),9,Cruiser,2
+Command Destroyer,12,Destroyer,,,Thorax,Cruiser,9,Cruiser,2
+Tech 1 Disruption Cruiser,12,Cruiser,,,Stabber,Cruiser,9,Cruiser,2
+Geri (Assault Frigate Unique),12,Frigate,,,Rupture,Cruiser,9,Cruiser,2
+Shapash (Assault Frigate Unique),12,Frigate,,,Augoror Navy Issue,"Augoror Navy Issue (Cruiser, Navy Faction)",15,Cruiser,2
+Sidewinder (Covert Ops Unique),11,Frigate,,,Omen Navy Issue,"Omen Navy Issue (Cruiser, Navy Faction)",15,Cruiser,2
+Sentinel (Electronic Attack Frigate),11,Frigate,,,Caracal Navy Issue,"Caracal Navy Issue (Cruiser, Navy Faction)",16,Cruiser,2
+Electronic Attack Frigate,11,Frigate,,,Osprey Navy Issue,"Osprey Navy Issue (Cruiser, Navy Faction)",16,Cruiser,2
+Nergal (Assault Frigate),10,Frigate,,,Exequror Navy Issue,"Exequror Navy Issue (Cruiser, Navy Faction)",16,Cruiser,2
+Logistics Frigate,10,Logistics Frigate,,,Vexor Navy Issue,"Vexor Navy Issue (Cruiser, Navy Faction)",16,Cruiser,2
+Bellicose (Tech 1 Disruption Cruiser),10,Cruiser,,,Scythe Fleet Issue,"Scythe Fleet Issue (Cruiser, Navy Faction)",16,Cruiser,2
+Maller (Cruiser),10,Cruiser,,,Stabber Fleet Issue,"Stabber Fleet Issue (Cruiser, Navy Faction)",16,Cruiser,2
+"Worm (Frigate, Pirate Faction)",10,Frigate,,,Zealot,Zealot (Heavy Assault Cruiser),21,Cruiser,2
+Tech 2 Industrial Ships,10,Industrial,,,Sacrilege,Sacrilege (Heavy Assault Cruiser),22,Cruiser,2
+Tactical Destroyer,10,Destroyer,,,Eagle,Eagle (Heavy Assault Cruiser),16,Cruiser,2
+Jackdaw (Tactical Destroyer),10,Destroyer,,,Cerberus,Cerberus (Heavy Assault Cruiser),21,Cruiser,2
+Kitsune (Electronic Attack Frigate),9,Frigate,,,Ishtar,Ishtar (Heavy Assault Cruiser),21,Cruiser,2
+"Mekubal (Destroyer, Pirate Faction)",9,Destroyer,,,Deimos,Deimos (Heavy Assault Cruiser),21,Cruiser,2
+Vexor (Cruiser),9,Cruiser,,,Vagabond,Vagabond (Heavy Assault Cruiser),23,Cruiser,2
+Assault Frigate,9,Frigate,,,Muninn,Muninn (Heavy Assault Cruiser),21,Cruiser,2
+Cruiser,9,Cruiser,,,Devoter,Heavy Interdictor,24,Cruiser,2
+Interdictor,9,Destroyer,,,Onyx,Heavy Interdictor,24,Cruiser,2
+"Cruor (Frigate, Pirate Faction)",8,Frigate,,,Phobos,Heavy Interdictor,24,Cruiser,2
+Damavik (Frigate),8,Frigate,,,Broadsword,Heavy Interdictor,24,Cruiser,2
+Caracal (Cruiser),8,Cruiser,,,Guardian,Logistics Cruiser,32,Logistics,2
+Crucifier (Tech 1 Disruption Frigate),8,Frigate,,,Basilisk,Logistics Cruiser,32,Logistics,2
+"Frigate, Pirate Faction",8,Frigate,,,Oneiros,Logistics Cruiser,32,Logistics,2
+"Corax Navy Issue (Destroyer, Navy Faction)",7,Destroyer,,,Scimitar,Logistics Cruiser,32,Logistics,2
+"Algos Navy Issue (Destroyer, Navy Faction)",7,Destroyer,,,Curse,Curse (Recon Ship),28,Cruiser,2
+"Mamba (Destroyer, Pirate Faction)",7,Destroyer,,,Pilgrim,Recon Ship,25,Cruiser,2
+"Destroyer, Navy Faction",7,Destroyer,,,Falcon,Falcon (Recon Ship),27,Cruiser,2
+"Talwar Fleet Issue (Destroyer, Navy Faction)",7,Destroyer,,,Rook,Rook (Recon Ship),27,Cruiser,2
+Griffin (Tech 1 Disruption Frigate),7,Frigate,,,Arazu,Arazu (Recon Ship),27,Cruiser,2
+Maulus (Tech 1 Disruption Frigate),7,Frigate,,,Lachesis,Lachesis (Recon Ship),27,Cruiser,2
+Stealth Bomber,7,Frigate,,,Huginn,Recon Ship,25,Cruiser,2
+Squall (Tech 1 Industrial Ships),7,Industrial,,,Rapier,Recon Ship,25,Cruiser,2
+Interceptor,6,Frigate,,,Legion,Strategic Cruiser,30,Cruiser,2
+Tech 1 Disruption Frigate,6,Frigate,,,Tengu,Strategic Cruiser,30,Cruiser,2
+"Dragoon Navy Issue (Destroyer, Navy Faction)",6,Destroyer,,,Proteus,Strategic Cruiser,30,Cruiser,2
+"Frigate, Navy Faction",6,Frigate,,,Loki,Loki (Strategic Cruiser),30,Cruiser,2
+"Coercer Navy Issue (Destroyer, Navy Faction)",6,Destroyer,,,Oracle,Oracle (Attack Battlecruiser),20,Battlecruiser,3
+Punisher (Frigate),5,Frigate,,,Naga,Naga (Attack Battlecruiser),20,Battlecruiser,3
+Destroyer,5,Destroyer,,,Talos,Talos (Attack Battlecruiser),20,Battlecruiser,3
+Metamorphosis (Frigate),5,Frigate,,,Tornado,Tornado (Attack Battlecruiser),21,Battlecruiser,3
+Skybreaker (Frigate),5,Frigate,,,Prophecy,Combat Battlecruiser,26,Battlecruiser,3
+"Imperial Navy Slicer (Frigate, Navy Faction)",5,Frigate,,,Harbinger,Combat Battlecruiser,26,Battlecruiser,3
+"Crucifier Navy Issue (Frigate, Navy Faction)",5,Frigate,,,Drake,Combat Battlecruiser,26,Battlecruiser,3
+"Exploration Frigate, Navy Faction",4,Frigate,,,Ferox,Combat Battlecruiser,26,Battlecruiser,3
+Covert Ops Ship,4,Frigate,,,Brutix,Combat Battlecruiser,26,Battlecruiser,3
+Frigate,4,Frigate,,,Myrmidon,Combat Battlecruiser,26,Battlecruiser,3
+"Magnate Navy Issue (Exploration Frigate, Navy Faction)",3,Frigate,,,Hurricane,Combat Battlecruiser,26,Battlecruiser,3
+Tech 1 Support Frigate,3,Logistics Frigate,,,Cyclone,Combat Battlecruiser,26,Battlecruiser,3
+Tech 1 Industrial Ships,3,Industrial,,,Harbinger Navy Issue,"Harbinger Navy Issue (Battlecruiser, Navy Faction)",28,Battlecruiser,3
+"Rookie Ship, Pirate Faction",2,Corvette,,,Drake Navy Issue,"Drake Navy Issue (Battlecruiser, Navy Faction)",30,Battlecruiser,3
+Rookie Ship (Corvette),1,Corvette,,,Brutix Navy Issue,"Battlecruiser, Navy Faction",29,Battlecruiser,3
+,,,,,Hurricane Fleet Issue,"Battlecruiser, Navy Faction",29,Battlecruiser,3
+,,,,,Damnation,Command Ship,33,Battlecruiser,3
+,,,,,Absolution,Command Ship,33,Battlecruiser,3
+,,,,,Vulture,Command Ship,33,Battlecruiser,3
+,,,,,Nighthawk,Command Ship,33,Battlecruiser,3
+,,,,,Astarte,Command Ship,33,Battlecruiser,3
+,,,,,Eos,Command Ship,33,Battlecruiser,3
+,,,,,Claymore,Command Ship,33,Battlecruiser,3
+,,,,,Sleipnir,Command Ship,33,Battlecruiser,3
+,,,,,Abaddon,Battleship,40,Battleship,4
+,,,,,Apocalypse,Battleship,40,Battleship,4
+,,,,,Armageddon,Battleship,40,Battleship,4
+,,,,,Scorpion,Battleship,40,Battleship,4
+,,,,,Raven,Raven (Battleship),38,Battleship,4
+,,,,,Rokh,Rokh (Battleship),38,Battleship,4
+,,,,,Hyperion,Battleship,40,Battleship,4
+,,,,,Megathron,Megathron (Battleship),39,Battleship,4
+,,,,,Dominix,Battleship,40,Battleship,4
+,,,,,Tempest,Battleship,40,Battleship,4
+,,,,,Typhoon,Battleship,40,Battleship,4
+,,,,,Maelstrom,Maelstrom (Battleship),37,Battleship,4
+,,,,,Praxis,Praxis (Battleship),38,Battleship,4
+,,,,,Apocalypse Navy Issue,"Apocalypse Navy Issue (Battleship, Navy Faction)",43,Battleship,4
+,,,,,Armageddon Navy Issue,"Armageddon Navy Issue (Battleship, Navy Faction)",45,Battleship,4
+,,,,,Scorpion Navy Issue,"Scorpion Navy Issue (Battleship, Navy Faction)",45,Battleship,4
+,,,,,Raven Navy Issue,"Raven Navy Issue (Battleship, Navy Faction)",42,Battleship,4
+,,,,,Megathron Navy Issue,"Megathron Navy Issue (Battleship, Navy Faction)",42,Battleship,4
+,,,,,Dominix Navy Issue,"Dominix Navy Issue (Battleship, Navy Faction)",43,Battleship,4
+,,,,,Tempest Fleet Issue,"Tempest Fleet Issue (Battleship, Navy Faction)",43,Battleship,4
+,,,,,Typhoon Fleet Issue,"Typhoon Fleet Issue (Battleship, Navy Faction)",47,Battleship,4
+,,,,,Redeemer,Black Ops Battleship,43,Battleship,4
+,,,,,Widow,Widow (Black Ops Battleship),51,Battleship,4
+,,,,,Sin,Black Ops Battleship,43,Battleship,4
+,,,,,Panther,Black Ops Battleship,43,Battleship,4
+,,,,,Paladin,Paladin (Marauder),50,Battleship,4
+,,,,,Golem,Golem (Marauder),48,Battleship,4
+,,,,,Kronos,Kronos (Marauder),49,Battleship,4
+,,,,,Vargur,Vargur (Marauder),50,Battleship,4
+,,,,,Babaroga,Babaroga (Marauder),51,Battleship,4
+,,,,,Bestower,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Sigil,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Badger,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Tayra,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Nereus,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Kryos,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Epithal,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Miasmos,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Iteron Mark V,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Hoarder,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Mammoth,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Wreathe,Tech 1 Industrial Ships,3,Industrial,2
+,,,,,Dramiel,"Frigate, Pirate Faction",8,Frigate,0
+,,,,,Cruor,"Cruor (Frigate, Pirate Faction)",8,Frigate,0
+,,,,,Worm,"Worm (Frigate, Pirate Faction)",10,Frigate,0
+,,,,,Garmur,"Frigate, Pirate Faction",8,Frigate,0
+,,,,,Succubus,"Frigate, Pirate Faction",8,Frigate,0
+,,,,,Astero,"Frigate, Pirate Faction",8,Frigate,0
+,,,,,Daredevil,"Frigate, Pirate Faction",8,Frigate,0
+,,,,,Cynabal,"Cynabal (Cruiser, Pirate Faction)",15,Cruiser,2
+,,,,,Ashimmu,"Cruiser, Pirate Faction",18,Cruiser,2
+,,,,,Gila,"Gila (Cruiser, Pirate Faction)",24,Cruiser,2
+,,,,,Orthrus,"Orthrus (Cruiser, Pirate Faction)",19,Cruiser,2
+,,,,,Phantasm,"Cruiser, Pirate Faction",18,Cruiser,2
+,,,,,Stratios,"Stratios (Cruiser, Pirate Faction)",15,Cruiser,2
+,,,,,Vigilant,"Cruiser, Pirate Faction",18,Cruiser,2
+,,,,,Machariel,"Machariel (Battleship, Pirate Faction)",48,Battleship,4
+,,,,,Bhaalgorn,"Bhaalgorn (Battleship, Pirate Faction)",53,Battleship,4
+,,,,,Rattlesnake,"Rattlesnake (Battleship, Pirate Faction)",53,Battleship,4
+,,,,,Barghest,"Barghest (Battleship, Pirate Faction)",53,Battleship,4
+,,,,,Nightmare,"Nightmare (Battleship, Pirate Faction)",52,Battleship,4
+,,,,,Vindicator,"Vindicator (Battleship, Pirate Faction)",50,Battleship,4
+,,,,,Gnosis,Combat Battlecruiser,26,Battlecruiser,3
+,,,,,Sunesis,Destroyer,5,Destroyer,1
+,,,,,Thunderchild,Thunderchild (Battleship),36,Battleship,4
+,,,,,Stormbringer,Stormbringer (Cruiser),13,Cruiser,2
+,,,,,Skybreaker,Skybreaker (Frigate),5,Frigate,0
+,,,,,Leshak,Leshak (Battleship),50,Battleship,4
+,,,,,Zarmazd,Zarmazd (Logistics Cruiser),32,Logistics,2
+,,,,,Drekavac,Drekavac (Combat Battlecruiser),30,Battlecruiser,3
+,,,,,Ikitursa,Ikitursa (Heavy Assault Cruiser),25,Cruiser,2
+,,,,,Rodiva,Rodiva (Tech 1 Support Cruiser),22,Logistics,2
+,,,,,Draugur,Draugur (Command Destroyer),13,Destroyer,1
+,,,,,Vedmak,Vedmak (Cruiser),19,Cruiser,2
+,,,,,Kikimora,Kikimora (Destroyer),12,Destroyer,1
+,,,,,Nergal,Nergal (Assault Frigate),10,Frigate,0
+,,,,,Damavik,Damavik (Frigate),8,Frigate,0
+,,,,,Echo,"Rookie Ship, Pirate Faction",2,Corvette,0
+,,,,,Hematos,"Rookie Ship, Pirate Faction",2,Corvette,0
+,,,,,Immolator,"Rookie Ship, Pirate Faction",2,Corvette,0
+,,,,,Taipan,"Rookie Ship, Pirate Faction",2,Corvette,0
+,,,,,Violator,"Rookie Ship, Pirate Faction",2,Corvette,0
+,,,,,Magnate Navy Issue,"Magnate Navy Issue (Exploration Frigate, Navy Faction)",3,Frigate,0
+,,,,,Heron Navy Issue,"Exploration Frigate, Navy Faction",4,Frigate,0
+,,,,,Imicus Navy Issue,"Exploration Frigate, Navy Faction",4,Frigate,0
+,,,,,Probe Fleet Issue,"Exploration Frigate, Navy Faction",4,Frigate,0
+,,,,,Thrasher Fleet Issue,"Destroyer, Navy Faction",7,Destroyer,1
+,,,,,Cormorant Navy Issue,"Destroyer, Navy Faction",7,Destroyer,1
+,,,,,Coercer Navy Issue,"Coercer Navy Issue (Destroyer, Navy Faction)",6,Destroyer,1
+,,,,,Catalyst Navy Issue,"Destroyer, Navy Faction",7,Destroyer,1
+,,,,,Cyclone Fleet Issue,"Cyclone Fleet Issue (Battlecruiser, Navy Faction)",30,Battlecruiser,3
+,,,,,Ferox Navy Issue,"Ferox Navy Issue (Battlecruiser, Navy Faction)",30,Battlecruiser,3
+,,,,,Prophecy Navy Issue,"Prophecy Navy Issue (Battlecruiser, Navy Faction)",28,Battlecruiser,3
+,,,,,Myrmidon Navy Issue,"Battlecruiser, Navy Faction",29,Battlecruiser,3
+,,,,,Metamorphosis,Metamorphosis (Frigate),5,Frigate,0
+,,,,,Khizriel,"Khizriel (Battlecruiser, Pirate Faction)",31,Battlecruiser,3
+,,,,,Alligator,"Alligator (Battlecruiser, Pirate Faction)",30,Battlecruiser,3
+,,,,,Mamba,"Mamba (Destroyer, Pirate Faction)",7,Destroyer,1
+,,,,,Mekubal,"Mekubal (Destroyer, Pirate Faction)",9,Destroyer,1
+,,,,,Squall,Squall (Tech 1 Industrial Ships),7,Industrial,2
+,,,,,Deluge,Tech 2 Industrial Ships,10,Industrial,2
+,,,,,Geri,Geri (Assault Frigate Unique),12,Frigate,3
+,,,,,Bestla,Bestla (Heavy Assault Cruiser Unique),31,Cruiser,2
+,,,,,Skua,"Skua (Destroyer, Unique)",14,Destroyer,1
+,,,,,Anhinga,"Anhinga (Battlecruiser, Unique)",32,Battlecruiser,3
+,,,,,Shapash ,Shapash (Assault Frigate Unique),12,Frigate,0
+,,,,,Cybele,Cybele (Heavy Assault Cruiser Unique),32,Cruiser,2
+,,,,,Corax Navy Issue ,"Corax Navy Issue (Destroyer, Navy Faction)",7,Destroyer,1
+,,,,,Algos Navy Issue,"Algos Navy Issue (Destroyer, Navy Faction)",7,Destroyer,1
+,,,,,Talwar Fleet Issue,"Talwar Fleet Issue (Destroyer, Navy Faction)",7,Destroyer,1
+,,,,,Dragoon Navy Issue,"Dragoon Navy Issue (Destroyer, Navy Faction)",6,Destroyer,1
+,,,,,Sidewinder,Sidewinder (Covert Ops Unique),11,Frigate,0
+,,,,,Cobra,Cobra (Recon Unique),29,Cruiser,2
+,,,,,Tholos,"Tholos (Destroyer, Pirate Faction)",13,Destroyer,1

@@ -1,0 +1,77 @@
+/* The design system (BurnSun). Light is the base; dark overrides only the tokens
+   that change. Semantic colors, radii, and fonts are declared once and inherited. */
+
+:root {
+  color-scheme: light;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-brand: "Azeret Mono", ui-monospace, monospace;
+
+  --bg-app: #f5f0e8;
+  --bg-panel: #ffffff;
+  --bg-panel-alt: #ede8df;
+  --bg-soft: #f2ece2;
+
+  --line-1: #c8bfb0;
+  --line-2: #d8d0c4;
+
+  --text-1: #0d1220;
+  --text-2: #8a7f6e;
+  --text-3: #9b8f7d;
+  --text-4: #b8aea0;
+  --text-5: #d9d1c7;
+
+  --accent: #c47a1e;
+  --accent-soft: rgba(196, 122, 30, 0.12);
+  --accent-strong: #9f6519;
+
+  --success: #4a9a6a;
+  --danger: #c05050;
+  --info: #aac4ff;
+  --warn: #c47a1e;
+  --warning: #c47a1e;
+
+  --radius-sm: 4px;
+  --radius-md: 5px;
+  --radius-lg: 6px;
+
+  --fit-tag-bg-sat: 60%;
+  --fit-tag-bg-light: 92%;
+  --fit-tag-border-sat: 50%;
+  --fit-tag-border-light: 70%;
+  --fit-tag-text-sat: 55%;
+  --fit-tag-text-light: 28%;
+  --fit-tag-dot-sat: 55%;
+  --fit-tag-dot-light: 45%;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-app: #080b12;
+  --bg-panel: #0d1220;
+  --bg-panel-alt: #141c2e;
+  --bg-soft: #11182a;
+
+  --line-1: #2a3550;
+  --line-2: #3a4866;
+
+  --text-1: #f5f0e8;
+  --text-2: #b8c4d8;
+  --text-3: #8897b2;
+  --text-4: #5f6d87;
+  --text-5: #39455f;
+
+  --accent: #e8a44a;
+  --accent-soft: rgba(232, 164, 74, 0.14);
+  --accent-strong: #f0c070;
+
+  --fit-tag-bg-sat: 50%;
+  --fit-tag-bg-light: 17%;
+  --fit-tag-border-sat: 55%;
+  --fit-tag-border-light: 30%;
+  --fit-tag-text-sat: 80%;
+  --fit-tag-text-light: 75%;
+  --fit-tag-dot-sat: 65%;
+  --fit-tag-dot-light: 52%;
+}

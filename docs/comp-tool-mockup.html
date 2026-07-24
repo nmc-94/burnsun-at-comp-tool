@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AT Comp Tool — implementation mockup · BurnSun</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Azeret+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===== BurnSun tokens ===== */
+:root{
+  color-scheme:light;
+  --font-sans:"Inter",system-ui,sans-serif; --font-brand:"Azeret Mono",ui-monospace,monospace;
+  --bg-app:#f5f0e8; --bg-panel:#ffffff; --bg-panel-alt:#ede8df; --bg-soft:#f2ece2;
+  --line-1:#c8bfb0; --line-2:#d8d0c4;
+  --text-1:#0d1220; --text-2:#8a7f6e; --text-3:#9b8f7d; --text-4:#b8aea0; --text-5:#d9d1c7;
+  --accent:#c47a1e; --accent-soft:rgba(196,122,30,0.12); --accent-strong:#9f6519;
+  --success:#4a9a6a; --danger:#c05050; --info:#aac4ff;
+  --radius-sm:4px; --radius-md:5px; --radius-lg:6px;
+  --fit-tag-bg-sat:60%; --fit-tag-bg-light:92%; --fit-tag-border-sat:50%; --fit-tag-border-light:70%;
+  --fit-tag-text-sat:55%; --fit-tag-text-light:28%; --fit-tag-dot-sat:55%; --fit-tag-dot-light:45%;
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg-app:#080b12; --bg-panel:#0d1220; --bg-panel-alt:#141c2e; --bg-soft:#11182a;
+  --line-1:#2a3550; --line-2:#3a4866;
+  --text-1:#f5f0e8; --text-2:#b8c4d8; --text-3:#8897b2; --text-4:#5f6d87; --text-5:#39455f;
+  --accent:#e8a44a; --accent-soft:rgba(232,164,74,0.14); --accent-strong:#f0c070;
+  --fit-tag-bg-sat:50%; --fit-tag-bg-light:17%; --fit-tag-border-sat:55%; --fit-tag-border-light:30%;
+  --fit-tag-text-sat:80%; --fit-tag-text-light:75%; --fit-tag-dot-sat:65%; --fit-tag-dot-light:52%;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg-app);color:var(--text-1);font-family:var(--font-sans);font-size:13px;line-height:1.4;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-family:var(--font-brand);font-weight:500}
+button{font-family:inherit;cursor:pointer;color:inherit;border:0;background:transparent}
+img{display:block}
+.brand{font-family:var(--font-brand)} .muted{color:var(--text-2)} .faint{color:var(--text-3)} .spacer{flex:1}
+.section-label{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--text-3);font-family:var(--font-brand);font-weight:500}
+
+/* ===== meta bar (viewport switcher — not part of the product) ===== */
+.meta{position:fixed;inset:0 0 auto 0;height:52px;z-index:100;display:flex;align-items:center;gap:14px;padding:0 16px;background:var(--bg-panel);border-bottom:1px solid var(--line-1)}
+.meta .word{font-family:var(--font-brand);font-weight:500;font-size:15px}
+.meta .word .s{font-family:var(--font-sans);font-weight:300;color:var(--text-2)}
+.meta .kind{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);border-left:1px solid var(--line-2);padding-left:10px}
+.seg{display:inline-flex;border:1px solid var(--line-1);border-radius:var(--radius-md);overflow:hidden}
+.seg button{padding:6px 14px;font-size:12px;color:var(--text-2);border-right:1px solid var(--line-1);display:flex;align-items:center;gap:6px}
+.seg button:last-child{border-right:0}
+.seg button.active{background:var(--accent);color:#0d1220;font-weight:500}
+.seg button svg{width:13px;height:13px}
+.wf-theme{height:30px;padding:0 12px;display:flex;align-items:center;gap:7px;background:var(--bg-panel-alt);border:1px solid var(--line-1);border-radius:var(--radius-md);font-size:11.5px;color:var(--text-2)}
+.wf-theme:hover{border-color:var(--accent)} .wf-theme svg{width:14px;height:14px}
+.stage{position:fixed;inset:52px 0 0 0;overflow:hidden}
+.view{position:absolute;inset:0;display:none;flex-direction:column}
+.view.active{display:flex}
+.view.mobile{overflow:auto}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--line-2) 78%,transparent);border-radius:6px}
+
+/* ===== product chrome ===== */
+.appbar{flex:0 0 auto;display:flex;align-items:center;gap:14px;height:46px;padding:0 16px;background:var(--bg-panel);border-bottom:1px solid var(--line-1)}
+.appbar .logo{display:flex;align-items:center;gap:8px}
+.appbar .logo .word{font-family:var(--font-brand);font-weight:500;font-size:14px}
+.appbar .logo .word .s{font-family:var(--font-sans);font-weight:300;color:var(--text-2);font-size:12px}
+.appbar .divider{width:1px;height:22px;background:var(--line-1)}
+.ruleset-chip{display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;background:var(--bg-soft);border:1px solid var(--line-1);border-radius:999px;font-size:11.5px}
+.ruleset-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--success)} .ruleset-chip .ver{color:var(--text-2)}
+.team-chip{display:flex;align-items:center;gap:7px;height:28px;padding:0 10px;border-radius:var(--radius-md);font-size:12px;color:var(--text-2)}
+.team-chip:hover{background:var(--bg-panel-alt)} .team-chip svg{width:12px;height:12px}
+.enf-toggle{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-2)}
+.switch{width:34px;height:19px;border-radius:999px;background:var(--line-2);position:relative;flex:0 0 auto}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:var(--bg-panel)}
+.avatar{width:28px;height:28px;border-radius:50%;border:1px solid var(--line-1);background:var(--bg-panel-alt);display:grid;place-items:center;font-family:var(--font-brand);font-size:10.5px;font-weight:500;color:var(--accent)}
+.iconbtn{width:28px;height:28px;border-radius:var(--radius-md);border:1px solid transparent;display:grid;place-items:center;color:var(--text-2)}
+.iconbtn:hover{background:var(--bg-panel-alt);border-color:var(--line-1)}
+.iconbtn svg{width:15px;height:15px}
+
+/* underline tabs (BurnSun) */
+.ftabs-shell{flex:0 0 auto;background:var(--bg-panel);border-bottom:1px solid var(--line-1)}
+.ftabs{display:flex;flex-wrap:nowrap;overflow-x:auto;padding:0 10px;align-items:center;min-height:38px}
+.ftab{position:relative;color:var(--text-3);min-height:37px;border-bottom:2px solid transparent;padding:0 26px 0 10px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:0 0 auto}
+.ftab:hover{color:var(--text-1)} .ftab.active{border-bottom-color:var(--accent);color:var(--accent)}
+.ftab .g{width:12px;height:12px;color:var(--text-3)} .ftab.active .g{color:var(--accent)}
+.ftab.shared,.ftab.shared .g{color:var(--info)} .ftab.shared.active{border-bottom-color:var(--info)}
+.ftab-close{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:14px;height:14px;display:grid;place-items:center;color:var(--text-4);border-radius:3px}
+.ftab-close:hover{color:var(--text-1)} .ftab-close svg{width:9px;height:9px}
+.ftab-new{min-height:37px;border-bottom:2px solid transparent;padding:0 10px;font-size:13px;font-weight:600;color:var(--text-3)}
+.ftab-new:hover{color:var(--text-1);border-bottom-color:color-mix(in srgb,var(--accent) 46%,transparent)}
+
+/* library sidebar */
+.ws{flex:1 1 auto;display:flex;min-height:0}
+.lib{flex:0 0 auto;width:236px;background:color-mix(in srgb,var(--bg-panel-alt) 94%,transparent);border-right:1px solid var(--line-1);overflow:auto;display:flex;flex-direction:column}
+.lib-head{display:flex;align-items:center;gap:8px;min-height:31px;padding:0 12px;border-bottom:1px solid var(--line-1)}
+.lib-search{margin:8px;display:flex;align-items:center;gap:7px;height:28px;padding:0 9px;background:var(--bg-panel);border:1px solid var(--line-1);border-radius:var(--radius-md)}
+.lib-search svg{width:13px;height:13px;color:var(--text-3)} .lib-search input{border:0;background:transparent;outline:none;color:var(--text-1);font-family:inherit;font-size:12px;flex:1}
+.acc{padding:2px 8px 12px}
+.acc-head{display:flex;align-items:center;gap:6px;min-height:24px;padding:0 6px;font-size:12px;font-weight:500;color:var(--text-2);border-radius:var(--radius-sm)}
+.acc-head:hover{background:var(--bg-soft)}
+.chev{width:10px;height:10px;color:var(--text-3);flex:0 0 auto;transition:transform .12s}.chev.open{transform:rotate(90deg)}
+.tree-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:14px;font-size:10px;color:var(--text-3);border:1px solid color-mix(in srgb,var(--line-1) 85%,transparent);border-radius:999px;padding:0 6px;font-family:var(--font-brand);margin-left:auto}
+.acc-body{margin-left:13px;padding-left:7px;border-left:1px solid color-mix(in srgb,var(--line-1) 85%,transparent)}
+.leaf{display:flex;align-items:center;gap:7px;min-height:26px;padding:0 6px;border-radius:var(--radius-sm);font-size:11px;color:var(--text-2)}
+.leaf:hover{background:var(--bg-soft)}
+.leaf.active{background:var(--bg-soft);color:var(--text-1);box-shadow:inset 2px 0 0 var(--accent)}
+.leaf .ldot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.leaf .lnm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.leaf .lpts{font-family:var(--font-brand);font-size:10.5px;color:var(--text-3)}
+
+.ws-main{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}
+.wsgrid{flex:1 1 auto;overflow:auto;display:grid;gap:14px;padding:16px;align-items:start;align-content:start;grid-auto-rows:max-content;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.ghost-tile{border:1px dashed var(--line-1);border-radius:11px;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text-3);min-height:130px}
+.ghost-tile:hover{border-color:var(--accent);color:var(--accent)} .ghost-tile svg{width:20px;height:20px}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:999px;font-size:10.5px;font-weight:500;white-space:nowrap;
+  border:1px solid hsl(var(--h) var(--fit-tag-border-sat) var(--fit-tag-border-light));
+  background:hsl(var(--h) var(--fit-tag-bg-sat) var(--fit-tag-bg-light));
+  color:hsl(var(--h) var(--fit-tag-text-sat) var(--fit-tag-text-light))}
+.chip .cdot{width:5px;height:5px;border-radius:50%;background:hsl(var(--h) var(--fit-tag-dot-sat) var(--fit-tag-dot-light))}
+.chip.arch{border-style:dashed}
+.chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.hicon{border-radius:4px;background:var(--bg-panel-alt);flex:0 0 auto;object-fit:cover}
+
+/* ===== the comp tile (final) ===== */
+.tile{position:relative;background:var(--bg-panel);border:1px solid var(--line-1);border-radius:11px;width:100%}
+.thead{display:flex;align-items:center;gap:8px;padding:9px 11px}
+.thead .nm{flex:1;min-width:0;font-family:var(--font-brand);font-weight:500;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbody{padding:0 11px 10px}
+.tfoot{border-top:.5px solid var(--line-1);padding:6px 11px;display:flex;align-items:center;gap:10px;color:var(--text-3);font-size:10.5px}
+.tfoot .fa{display:flex;align-items:center;gap:4px}.tfoot .fa svg{width:11px;height:11px}
+.chipsrow{margin:8px 0 3px}
+
+/* delta pill */
+.dpill{display:inline-flex;align-items:center;height:20px;padding:0 9px;border-radius:999px;font-family:var(--font-brand);font-weight:500;font-size:11.5px;flex:0 0 auto}
+.dpill.exact{background:color-mix(in srgb,var(--success) 16%,transparent);color:var(--success)}
+.dpill.under{background:var(--accent-soft);color:var(--accent)}
+.dpill.over{background:color-mix(in srgb,var(--danger) 16%,transparent);color:var(--danger)}
+
+/* issue flag (warning glyph + N× count when multiple) */
+.vtrig{display:inline-flex;align-items:center;gap:3px;height:20px;padding:0 7px;border-radius:6px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);font-family:var(--font-brand);font-weight:500;font-size:10.5px}
+.vtrig:hover{background:color-mix(in srgb,var(--danger) 24%,transparent)}
+.vtrig svg{width:13px;height:13px}
+
+/* rows / scaffold */
+.rows{display:flex;flex-direction:column}
+.trow{display:grid;grid-template-columns:18px minmax(0,1fr) 20px 26px;align-items:center;gap:8px;height:24px;padding:0 4px;border-radius:3px}
+.trow:hover{background:var(--bg-soft)}
+.trow .ic{width:18px;height:18px} .trow .ic .hicon{width:18px;height:18px}
+.trow .nm{display:flex;align-items:center;gap:6px;min-width:0}
+.trow .nm .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.trow .dup{font-family:var(--font-brand);font-size:9.5px;color:var(--accent);text-align:right}
+.trow .cost{font-family:var(--font-brand);font-size:12px;text-align:right}
+.trow.empty .nm .t,.trow.empty .cost{color:var(--text-5)}
+.trow.empty .ph{width:18px;height:18px;border:1px dashed var(--line-2);border-radius:4px}
+.trow.empty:hover{background:var(--accent-soft)}
+.trow.empty:hover .nm .t,.trow.empty:hover .cost{color:var(--accent)}
+.trow.empty:hover .ph{border-color:var(--accent)}
+/* flagship: oval pill only (no bar, no row tint) */
+.flagpill{flex:0 0 auto;font-family:var(--font-brand);font-size:8.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 42%,transparent);border-radius:999px;padding:1px 7px;line-height:1.3}
+
+/* violations popover */
+.vpop{display:none;position:absolute;top:38px;right:10px;z-index:30;width:256px;background:var(--bg-panel);border:1px solid var(--line-1);border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,0.30);padding:11px}
+.vpop.open{display:block}
+:root:not([data-theme="dark"]) .vpop{box-shadow:0 8px 22px rgba(13,18,32,0.12)}
+.vpop::before{content:"";position:absolute;top:-6px;right:24px;width:10px;height:10px;background:var(--bg-panel);border-left:1px solid var(--line-1);border-top:1px solid var(--line-1);transform:rotate(45deg)}
+.vpop .vh{display:flex;align-items:center;gap:7px;font-family:var(--font-brand);font-weight:500;font-size:11.5px;color:var(--danger);margin-bottom:9px}
+.vpop .vh svg{width:13px;height:13px}
+.vitem{display:flex;gap:8px;padding:7px 0;border-top:.5px solid var(--line-1)}
+.vitem .vd{width:6px;height:6px;border-radius:50%;background:var(--danger);margin-top:4px;flex:0 0 auto}
+.vitem .vt{font-size:11.5px}.vitem .vt b{font-weight:500}
+.vitem .vt .fix{display:block;color:var(--text-3);font-size:10.5px;margin-top:1px}
+
+/* ===== mobile ===== */
+.mobwrap{flex:1 1 auto;display:flex;justify-content:center;align-items:flex-start;gap:30px;flex-wrap:wrap;padding:26px;background-image:radial-gradient(circle,color-mix(in srgb,var(--line-1) 40%,transparent) 1px,transparent 1px);background-size:26px 26px}
+.device{width:380px;max-width:100%;height:788px;background:var(--bg-app);border:9px solid #05070c;border-radius:36px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;flex:0 0 auto}
+:root[data-theme="light"] .device{border-color:#3a3128}
+.mob-status{height:24px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:10px;color:var(--text-2);font-family:var(--font-brand)}
+.mob-top{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:8px 14px;border-bottom:1px solid var(--line-1);background:var(--bg-panel)}
+.mob-ftabs{flex:0 0 auto;display:flex;padding:0 8px;overflow-x:auto;border-bottom:1px solid var(--line-1);background:var(--bg-panel)}
+.mob-ftab{flex:0 0 auto;min-height:36px;border-bottom:2px solid transparent;padding:0 12px;font-size:11px;font-weight:500;color:var(--text-3);display:flex;align-items:center;gap:5px}
+.mob-ftab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.mob-ftab.shared,.mob-ftab.shared svg{color:var(--info)} .mob-ftab svg{width:11px;height:11px}
+.mob-body{flex:1 1 auto;overflow:auto;padding:11px;display:flex;flex-direction:column;gap:11px}
+.mob-bar{flex:0 0 auto;border-top:1px solid var(--line-1);background:var(--bg-panel);padding:8px 14px;display:flex;align-items:center;gap:12px}
+.mob-fab{width:42px;height:42px;border-radius:50%;background:var(--accent);color:#0d1220;display:grid;place-items:center;flex:0 0 auto}
+.mob-fab svg{width:20px;height:20px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:var(--radius-md);border:1px solid var(--line-1);background:var(--bg-panel-alt);font-size:12px;color:var(--text-1)}
+.btn.ghost{background:transparent}.btn.sm{height:24px;padding:0 8px;font-size:11px}.btn svg{width:13px;height:13px}
+.mlabel{font-size:9.5px;color:var(--text-4)}
+.legal-badge{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 8px;border-radius:999px;font-size:10px;font-weight:500}
+.legal-badge.ok{background:color-mix(in srgb,var(--success) 14%,transparent);color:var(--success)}
+.legal-badge .d{width:6px;height:6px;border-radius:50%;background:var(--success)}
+.handoff-note{flex:0 0 auto;align-self:center;max-width:280px;color:var(--text-2);font-size:12px}
+.handoff-note h3{font-size:12px;margin-bottom:8px;color:var(--text-1)}
+.handoff-note li{margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="meta">
+  <svg width="26" height="26" viewBox="0 0 44 44"><g stroke="var(--accent)" stroke-width="2" stroke-linecap="round"><line x1="22" y1="2" x2="22" y2="8"/><line x1="22" y1="36" x2="22" y2="42"/><line x1="2" y1="22" x2="8" y2="22"/><line x1="36" y1="22" x2="42" y2="22"/><line x1="12.101" y1="12.101" x2="7.858" y2="7.858"/><line x1="31.899" y1="31.899" x2="36.142" y2="36.142"/><line x1="31.899" y1="12.101" x2="36.142" y2="7.858"/><line x1="12.101" y1="31.899" x2="7.858" y2="36.142"/></g><circle cx="22" cy="22" r="7" fill="none" stroke="var(--accent)" stroke-width="2"/></svg>
+  <div class="word">burnsun<span class="s">.space</span></div>
+  <div class="kind">Comp tool · implementation mockup</div>
+  <div class="spacer"></div>
+  <div class="seg" id="viewSeg">
+    <button class="active" data-view="desktop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Desktop</button>
+    <button data-view="mobile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Mobile</button>
+  </div>
+  <button class="wf-theme" id="themeBtn"><svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span id="themeLabel">Dark</span></button>
+</div>
+<div class="stage">
+  <div class="view active" id="desktopView"></div>
+  <div class="view mobile" id="mobileView"></div>
+</div>
+
+<script>
+window.MOCK_COMPS={"cap":{"rows":[{"n":"Vindicator","id":17740,"p":50,"sur":0,"c":50,"h":"Battleship","sz":"Battleship","flag":false},{"n":"Typhoon","id":644,"p":40,"sur":0,"c":40,"h":"Battleship","sz":"Battleship","flag":false},{"n":"Scimitar","id":11978,"p":32,"sur":0,"c":32,"h":"Logistics","sz":"Cruiser","flag":false},{"n":"Vedmak","id":47270,"p":19,"sur":0,"c":19,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Cynabal","id":17720,"p":15,"sur":0,"c":15,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Svipul","id":34562,"p":10,"sur":0,"c":10,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Confessor","id":34317,"p":10,"sur":0,"c":10,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Kikimora","id":49710,"p":12,"sur":0,"c":12,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Rifter","id":587,"p":4,"sur":0,"c":4,"h":"Frigate","sz":"Frigate","flag":false},{"n":"Dramiel","id":17932,"p":8,"sur":0,"c":8,"h":"Frigate","sz":"Frigate","flag":false}],"total":200},"flaglegal":{"rows":[{"n":"Vindicator","id":17740,"p":50,"sur":0,"c":50,"h":"Battleship","sz":"Battleship","flag":true},{"n":"Scimitar","id":11978,"p":32,"sur":0,"c":32,"h":"Logistics","sz":"Cruiser","flag":false},{"n":"Ikitursa","id":52252,"p":25,"sur":0,"c":25,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Cerberus","id":11993,"p":21,"sur":0,"c":21,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Sacrilege","id":12019,"p":22,"sur":0,"c":22,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Jackdaw","id":34828,"p":10,"sur":0,"c":10,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Svipul","id":34562,"p":10,"sur":0,"c":10,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Kikimora","id":49710,"p":12,"sur":0,"c":12,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Garmur","id":33816,"p":8,"sur":0,"c":8,"h":"Frigate","sz":"Frigate","flag":false},{"n":"Dramiel","id":17932,"p":8,"sur":0,"c":8,"h":"Frigate","sz":"Frigate","flag":false}],"total":198},"dup":{"rows":[{"n":"Machariel","id":17738,"p":48,"sur":0,"c":48,"h":"Battleship","sz":"Battleship","flag":false},{"n":"Megathron","id":641,"p":39,"sur":0,"c":39,"h":"Battleship","sz":"Battleship","flag":false},{"n":"Scimitar","id":11978,"p":32,"sur":0,"c":32,"h":"Logistics","sz":"Cruiser","flag":false},{"n":"Orthrus","id":33818,"p":19,"sur":0,"c":19,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Orthrus","id":33818,"p":19,"sur":2,"c":21,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Svipul","id":34562,"p":10,"sur":0,"c":10,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Svipul","id":34562,"p":10,"sur":1,"c":11,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Jackdaw","id":34828,"p":10,"sur":0,"c":10,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Slasher","id":585,"p":4,"sur":0,"c":4,"h":"Frigate","sz":"Frigate","flag":false},{"n":"Condor","id":583,"p":4,"sur":0,"c":4,"h":"Frigate","sz":"Frigate","flag":false}],"total":198},"illegal2":{"rows":[{"n":"Abaddon","id":24692,"p":40,"sur":0,"c":40,"h":"Battleship","sz":"Battleship","flag":false},{"n":"Apocalypse","id":642,"p":40,"sur":0,"c":40,"h":"Battleship","sz":"Battleship","flag":false},{"n":"Armageddon","id":643,"p":40,"sur":0,"c":40,"h":"Battleship","sz":"Battleship","flag":false},{"n":"Scimitar","id":11978,"p":32,"sur":0,"c":32,"h":"Logistics","sz":"Cruiser","flag":false},{"n":"Zealot","id":12003,"p":21,"sur":0,"c":21,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Cynabal","id":17720,"p":15,"sur":0,"c":15,"h":"Cruiser","sz":"Cruiser","flag":false},{"n":"Svipul","id":34562,"p":10,"sur":0,"c":10,"h":"Destroyer","sz":"Destroyer","flag":false},{"n":"Sentinel","id":11190,"p":11,"sur":0,"c":11,"h":"Frigate","sz":"Frigate","flag":false},{"n":"Crucifier","id":2161,"p":8,"sur":0,"c":8,"h":"Frigate","sz":"Frigate","flag":false},{"n":"Maulus","id":609,"p":7,"sur":0,"c":7,"h":"Frigate","sz":"Frigate","flag":false}],"total":224}};
+
+const CAP=200;
+const META={
+  cap:{name:"Angel Shield Kite",arch:"Kite",tags:["Shield","Angel"],by:"Vex",comments:4,forks:2},
+  flaglegal:{name:"Vindi Flagship Kite",arch:"Kite",tags:["Shield","Flagship"],by:"Vex",comments:3,forks:1},
+  dup:{name:"Dual-Orthrus Kite",arch:"Kite",tags:["Shield","Cheap"],by:"Sorren",comments:1,forks:0},
+  illegal2:{name:"Triple-BS Alpha",arch:"Brawl",tags:["Armor","Idea"],by:"Kadir",comments:2,forks:0}};
+
+function tagHue(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return h%360;}
+function icon(id){return `<img class="hicon" loading="lazy" src="https://images.evetech.net/types/${id}/icon?size=64" alt="" onerror="this.style.visibility='hidden'">`;}
+function chip(t,arch){const h=tagHue(t);return `<span class="chip ${arch?'arch':''}" style="--h:${h}">${arch?'':'<span class="cdot"></span>'}${t}</span>`;}
+const CHAT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+const FORK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M18 10.5c0 4-6 2-12 5"/></svg>';
+const WARN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.4"/></svg>';
+const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>';
+const X='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+const SEARCH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const PEOPLE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 5.5a3 3 0 0 1 0 5.5M21 20a6 6 0 0 0-4-5.6"/></svg>';
+const FOLDER='<svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const SHARE='<svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>';
+const CHEV='<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>';
+
+function summarize(comp){
+  const rows=comp.rows;const sizes={};let bs=0,lc=0,lf=0;
+  rows.forEach(r=>{const logi=r.h==="Logistics"||r.h==="Logistics Frigate";if(r.h==="Logistics")lc++;if(r.h==="Logistics Frigate")lf++;if(r.h==="Battleship")bs++;if(!logi)sizes[r.sz]=(sizes[r.sz]||0)+1;});
+  const flag=rows.some(r=>r.flag);return {sizes,bs,lc,lf,flag,bsCap:flag?3:2,filled:rows.length};
+}
+function violations(comp){
+  const s=summarize(comp);const v=[];const d=comp.total-CAP;
+  if(d>0)v.push({t:`Over budget by ${d} points`,fix:"Trim points or swap a hull down a class."});
+  ["Battleship","Cruiser","Battlecruiser","Destroyer","Frigate"].forEach(sz=>{const c=s.sizes[sz]||0;const cap=sz==="Battleship"?s.bsCap:3;
+    if(c>cap)v.push({t:`${c} ${sz.toLowerCase()}s — cap is ${cap}`,fix:sz==="Battleship"?"Drop one, or designate a flagship for a third.":`Drop one ${sz.toLowerCase()}.`});});
+  if(s.filled>10)v.push({t:`${s.filled} ships (max 10)`,fix:"Remove a slot."});
+  if(s.lc>1||(s.lc>=1&&s.lf>=1)||s.lf>2)v.push({t:"Per-match logistics limit exceeded",fix:"One logi cruiser, or two logi frigates."});
+  return v;
+}
+function dcls(total){const d=total-CAP;return d>0?'over':(d<0?'under':'exact');}
+function dtxt(total){const d=total-CAP;return d>0?('+'+d):(d<0?('−'+Math.abs(d)):'±0');}
+function dpill(total){return `<span class="dpill ${dcls(total)}">${dtxt(total)}</span>`;}
+function issueFlag(comp){const v=violations(comp);if(!v.length)return'';const cnt=v.length>1?`${v.length}× `:'';return `<button class="vtrig" onclick="togglePop(this)">${cnt}${WARN}</button>`;}
+function row(r){
+  const flag=r.flag?'<span class="flagpill">Flagship</span>':'';
+  return `<div class="trow"><span class="ic">${icon(r.id)}</span><span class="nm"><span class="t">${r.n}</span>${flag}</span><span class="dup">${r.sur?'+'+r.sur:''}</span><span class="cost">${r.c}</span></div>`;
+}
+function emptyRow(){return `<div class="trow empty"><span class="ic"><span class="ph"></span></span><span class="nm"><span class="t">Add hull</span></span><span class="dup"></span><span class="cost">–</span></div>`;}
+function scaffold(rows){let h="";for(let i=0;i<10;i++)h+=i<rows.length?row(rows[i]):emptyRow();return `<div class="rows">${h}</div>`;}
+function popover(comp){const v=violations(comp);if(!v.length)return'';return `<div class="vpop"><div class="vh">${WARN} ${v.length} rule violation${v.length>1?'s':''}</div>${v.map(x=>`<div class="vitem"><span class="vd"></span><span class="vt"><b>${x.t}</b><span class="fix">${x.fix}</span></span></div>`).join("")}</div>`;}
+
+function compTile(key){
+  const c=MOCK_COMPS[key],m=META[key];
+  return `<div class="tile">
+    <div class="thead"><span class="nm">${m.name}</span>${issueFlag(c)}${dpill(c.total)}</div>
+    <div class="tbody"><div class="chips chipsrow">${chip(m.arch,true)}${m.tags.map(t=>chip(t)).join("")}</div>${scaffold(c.rows)}</div>
+    <div class="tfoot"><span class="fa">by ${m.by}</span><span class="fa">${CHAT}${m.comments}</span><span class="fa">${FORK}${m.forks}</span><span class="spacer"></span><span class="fa faint">v2026-07-23</span></div>
+    ${popover(c)}
+  </div>`;
+}
+window.togglePop=function(btn){const p=btn.closest('.tile').querySelector('.vpop');if(p)p.classList.toggle('open');};
+
+/* ===== desktop ===== */
+function libSidebar(activeKey){
+  const groups=[["Kite",["cap","flaglegal","dup"]],["Brawl",["illegal2"]]];
+  let acc="";
+  groups.forEach(([g,keys],gi)=>{
+    acc+=`<div class="acc-head">${CHEV.replace('class="chev"','class="chev open"')}<span>${g}</span><span class="tree-count">${keys.length}</span></div>`;
+    acc+=`<div class="acc-body">`+keys.map(k=>{const c=MOCK_COMPS[k];const legal=!violations(c).length;return `<div class="leaf ${k===activeKey?'active':''}">${iconSm(c.rows[0].id)}<span class="ldot" style="background:${legal?'var(--success)':'var(--danger)'}"></span><span class="lnm">${META[k].name}</span><span class="lpts">${c.total}</span></div>`;}).join("")+`</div>`;
+  });
+  return `<aside class="lib">
+    <div class="lib-head"><span class="section-label" style="flex:1">Team comps</span><span class="tree-count">4</span></div>
+    <div class="lib-search">${SEARCH}<input placeholder="Search comps…"></div>
+    <div class="acc">${acc}<div class="leaf" style="color:var(--text-3);margin-top:6px"><span style="width:12px;height:12px;display:inline-flex">${PLUS}</span><span class="lnm">New comp</span></div></div>
+  </aside>`;
+}
+function iconSm(id){return `<img class="hicon" style="width:16px;height:16px" loading="lazy" src="https://images.evetech.net/types/${id}/icon?size=64" onerror="this.style.visibility='hidden'">`;}
+function appbar(){
+  return `<div class="appbar">
+    <div class="logo"><svg width="22" height="22" viewBox="0 0 44 44"><g stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"><line x1="22" y1="3" x2="22" y2="9"/><line x1="22" y1="35" x2="22" y2="41"/><line x1="3" y1="22" x2="9" y2="22"/><line x1="35" y1="22" x2="41" y2="22"/><line x1="12.8" y1="12.8" x2="8.6" y2="8.6"/><line x1="31.2" y1="31.2" x2="35.4" y2="35.4"/><line x1="31.2" y1="12.8" x2="35.4" y2="8.6"/><line x1="12.8" y1="31.2" x2="8.6" y2="35.4"/></g><circle cx="22" cy="22" r="6.5" fill="none" stroke="var(--accent)" stroke-width="2.4"/></svg><div class="word">burnsun<span class="s">.space</span></div></div>
+    <div class="divider"></div>
+    <div class="ruleset-chip"><span class="dot"></span><b class="brand" style="font-weight:500">ATXXII</b><span class="ver">v2026-07-23 · Fenris Creations</span></div>
+    <button class="team-chip">${PEOPLE}<span>Aurora Vanguard</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px"><path d="M6 9l6 6 6-6"/></svg></button>
+    <div class="spacer"></div>
+    <div class="enf-toggle"><span>Enforce rules</span><span class="switch"></span></div>
+    <button class="iconbtn">${PEOPLE}</button><div class="avatar">VA</div>
+  </div>`;
+}
+function ftabs(){
+  const tabs=[["Angel doctrines",false],["Armor lineups",false],["Scrim prep",true]];
+  let h=`<div class="ftabs-shell"><div class="ftabs">`;
+  tabs.forEach((t,i)=>{h+=`<div class="ftab ${i===0?'active':''} ${t[1]?'shared':''}">${t[1]?SHARE:FOLDER}<span>${t[0]}${t[1]?' · shared':''}</span><button class="ftab-close">${X}</button></div>`;});
+  h+=`<button class="ftab-new">+</button></div></div>`;return h;
+}
+function renderDesktop(){
+  document.getElementById('desktopView').innerHTML=appbar()+`<div class="ws">${libSidebar('cap')}<div class="ws-main">${ftabs()}
+    <div class="wsgrid">${['cap','flaglegal','dup','illegal2'].map(compTile).join("")}
+      <div class="ghost-tile">${PLUS}<span>New comp</span></div>
+    </div></div></div>`;
+}
+
+/* ===== mobile ===== */
+function mobTile(key){return compTile(key);}
+function renderMobile(){
+  document.getElementById('mobileView').innerHTML=`<div class="mobwrap">
+    <div class="device">
+      <div class="mob-status"><span>21:04</span><span>EVE · TQ</span></div>
+      <div class="mob-top"><svg width="20" height="20" viewBox="0 0 44 44"><g stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round"><line x1="22" y1="5" x2="22" y2="11"/><line x1="22" y1="33" x2="22" y2="39"/><line x1="5" y1="22" x2="11" y2="22"/><line x1="33" y1="22" x2="39" y2="22"/></g><circle cx="22" cy="22" r="7" fill="none" stroke="var(--accent)" stroke-width="2.6"/></svg>
+        <div style="flex:1"><div class="brand" style="font-size:13px;font-weight:500">Aurora Vanguard</div><div class="mlabel">ATXXII v2026-07-23</div></div>
+        <div class="avatar" style="width:26px;height:26px">VA</div></div>
+      <div class="mob-ftabs"><div class="mob-ftab active">${FOLDER}Angel</div><div class="mob-ftab">${FOLDER}Armor</div><div class="mob-ftab shared">${SHARE}Scrim</div><div class="mob-ftab">+</div></div>
+      <div class="mob-body">${['cap','flaglegal','dup','illegal2'].map(mobTile).join("")}
+        <div class="ghost-tile" style="min-height:64px">${PLUS}<span>New comp</span></div>
+      </div>
+      <div class="mob-bar"><div style="flex:1"><div class="brand" style="font-size:15px">4 comps</div><div class="mlabel">Angel doctrines</div></div><div class="mob-fab">${PLUS}</div></div>
+    </div>
+    <div class="handoff-note">
+      <h3>Both layouts, one tile</h3>
+      <p>The comp tile is identical on desktop and mobile — same header (name · issue flag · ± delta), same 10-row scaffold, same footer. Desktop lays tiles in a responsive grid beside the library rail; mobile stacks them one-up with a sticky action bar. Tap an issue flag to open its popover.</p>
+    </div>
+  </div>`;
+}
+
+/* ===== wiring ===== */
+renderDesktop();renderMobile();
+document.getElementById('viewSeg').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-view]');if(!b)return;
+  [...document.querySelectorAll('#viewSeg button')].forEach(x=>x.classList.toggle('active',x===b));
+  document.getElementById('desktopView').classList.toggle('active',b.dataset.view==='desktop');
+  document.getElementById('mobileView').classList.toggle('active',b.dataset.view==='mobile');
+});
+const root=document.documentElement;
+const sun='<svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>';
+const moon='<svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+document.getElementById('themeBtn').onclick=()=>{const t=root.getAttribute('data-theme')==='dark'?'light':'dark';root.setAttribute('data-theme',t);document.getElementById('themeLabel').textContent=t==='dark'?'Dark':'Light';document.getElementById('themeIcon').outerHTML=(t==='dark'?moon:sun);};
+</script>
+</body>
+</html>

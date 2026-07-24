@@ -1,0 +1,51 @@
+[project]
+name = "comptool"
+version = "0.1.0"
+description = "EVE Alliance Tournament team-composition tool — single-service API that also serves the SPA."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "alembic>=1.13",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "httpx>=0.27",
+    "ruff>=0.5",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# Only the application package is installable; alembic/, tests/, web/ are not packages.
+packages = ["comptool"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Generated migration files follow Alembic's own conventions; don't lint them.
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+# A small, stock rule set: pyflakes, pycodestyle, import sorting, pyupgrade, bugbear.
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends/Query/... are calls-in-defaults by design; don't flag them (B008).
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Header",
+    "fastapi.Cookie", "fastapi.Body", "fastapi.Form", "fastapi.File", "fastapi.Security",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
