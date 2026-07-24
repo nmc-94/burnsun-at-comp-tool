@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from comptool.db import dispose_db, get_engine, init_db
+from comptool.db import dispose_db, get_engine, get_session, init_db
 from comptool.models import Base
 from comptool.settings import get_settings
 
@@ -27,6 +27,16 @@ def database():
     finally:
         Base.metadata.drop_all(engine)
         dispose_db()
+
+
+@pytest.fixture()
+def session(database):
+    """A session from the app's own dependency, closed the way a request would close it."""
+    sessions = get_session()
+    try:
+        yield next(sessions)
+    finally:
+        sessions.close()
 
 
 @pytest.fixture()
