@@ -17,6 +17,11 @@
     "jsx": "react-jsx",
 
     /* Linting */
+    "strict": true,
+    // The legality engine is lookup-table math where an absent hull is itself a rule
+    // (absence from the point table = banned by omission), so an unchecked index must
+    // not silently type as present.
+    "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
