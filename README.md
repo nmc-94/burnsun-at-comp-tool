@@ -124,11 +124,27 @@ pip install -e ".[dev]" && pytest        # backend
 cd web && npm test                        # frontend (Vitest)
 ```
 
-The backend tests need a reachable Postgres and give themselves a clean schema per
-test, which drops every table while `alembic_version` survives. A later
-`alembic upgrade head` against the same database then silently does nothing and
-`alembic check` reports total drift. Run the drift gate against a scratch database
-instead — `alembic/env.py` prefers `ALEMBIC_DATABASE_URL`:
+The backend tests need a reachable Postgres and give themselves a clean schema per test,
+which **drops every table**. They therefore run against their own database rather than
+`DATABASE_URL` — `COMPTOOL_TEST_DATABASE_URL`, defaulting to `comptool_test` on the
+Postgres `docker compose` publishes. Create it once:
+
+```bash
+docker exec at-comp-tool-db-1 createdb -U comptool comptool_test
+```
+
+`tests/conftest.py` refuses to start unless that database's name says it is disposable
+(it must contain `test`, `scratch`, `ci` or `tmp`). This is not belt-and-braces: compose
+publishes the stack's Postgres on the host, `Settings` defaults `DATABASE_URL` to that
+same database, and a `.env` in the repo root usually names it too — so plain `pytest`
+with the stack up used to empty the development database. The guard is what makes the
+obvious invocation safe.
+
+The same drop leaves `alembic_version` behind, because it is not part of `Base.metadata`.
+A later `alembic upgrade head` against such a database silently does nothing and
+`alembic check` reports total drift; if it happens, drop `alembic_version` and migrate
+again. Run the drift gate against its own scratch database — `alembic/env.py` prefers
+`ALEMBIC_DATABASE_URL`:
 
 ```bash
 ALEMBIC_DATABASE_URL=postgresql://comptool:comptool@localhost:5432/comptool_drift alembic check

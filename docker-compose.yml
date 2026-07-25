@@ -22,7 +22,16 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile
+    # Local configuration — an EVE application's credentials, mainly. Optional, because a
+    # clone with no .env still has to come up: without one the app runs with SSO disabled
+    # and serves published ruleset data, which is what .env.example documents.
+    env_file:
+      - path: .env
+        required: false
     environment:
+      # These four are set after the env file on purpose, and compose lets them win. The
+      # database in particular has to differ: a .env is read by host tooling, where the
+      # database is on localhost, while in here it is another container.
       DATABASE_URL: postgresql://comptool:comptool@db:5432/comptool
       COMPTOOL_LOG_LEVEL: INFO
       COMPTOOL_ENVIRONMENT: docker

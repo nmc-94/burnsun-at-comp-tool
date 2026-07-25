@@ -1,15 +1,22 @@
 """Shared test fixtures.
 
-The DB-backed fixtures need a reachable Postgres (set ``DATABASE_URL``, or run
-``docker compose up -d db``). Pure tests (settings, URL normalization, ingestion) need
-nothing: the snapshots below are committed, so ingestion is tested offline and against the
-exact data that ships.
+The DB-backed fixtures need a reachable Postgres. They run against
+``COMPTOOL_TEST_DATABASE_URL``, which defaults to a ``comptool_test`` database on the
+Postgres ``docker compose up -d db`` publishes — deliberately *not* ``DATABASE_URL``, for
+the reason spelled out in ``_guard_the_test_database`` below. Create it once with:
+
+    docker exec at-comp-tool-db-1 createdb -U comptool comptool_test
+
+Pure tests (settings, URL normalization, ingestion) need nothing: the snapshots below are
+committed, so ingestion is tested offline and against the exact data that ships.
 """
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +25,70 @@ from comptool.db import dispose_db, get_engine, get_session, init_db
 from comptool.ingest import points_csv, ruleset, sde
 from comptool.models import Base
 from comptool.settings import get_settings
+
+#: Where the DB-backed tests run. Same server as the dev stack, different database.
+DEFAULT_TEST_DATABASE_URL = "postgresql://comptool:comptool@localhost:5432/comptool_test"
+
+#: A database name has to say it is disposable before anything here will drop its tables.
+TEST_DATABASE_MARKERS = ("test", "scratch", "ci", "tmp")
+
+
+def _guard_the_test_database() -> None:
+    """Refuse to run the DB suite against a database that is not obviously disposable.
+
+    The ``database`` fixture below drops every table, twice, for every test that touches
+    the database. That is the right behaviour for a test schema and a catastrophe anywhere
+    else, and nothing about running ``pytest`` announces which one it is pointed at.
+
+    The setup makes the mistake easy rather than exotic. ``docker-compose.yml`` publishes
+    the stack's Postgres on the host so local tooling can reach it, ``Settings`` defaults
+    ``DATABASE_URL`` to that same host and database, and a ``.env`` file — which
+    pydantic-settings reads — usually names the development database too. So the obvious
+    invocation, ``pytest`` from the repo root with the stack up, aims the whole suite at
+    the database somebody is actively using. It has happened; it emptied a dev database and
+    left the app crash-looping, because ``alembic_version`` is not part of ``Base.metadata``
+    and survives to tell the next migration there is nothing to do.
+
+    Hence a name check rather than a comment. The suite reads its own environment variable,
+    the default names a database that only exists to be dropped, and anything else has to
+    say in its name that it is disposable.
+    """
+    url = os.environ.get("COMPTOOL_TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
+    name = urlsplit(url).path.lstrip("/")
+    if not any(marker in name.lower() for marker in TEST_DATABASE_MARKERS):
+        raise pytest.UsageError(
+            f"Refusing to run the database suite against {name!r}: these tests drop every "
+            f"table. Point COMPTOOL_TEST_DATABASE_URL at a disposable database whose name "
+            f"contains one of {', '.join(TEST_DATABASE_MARKERS)} "
+            f"(default: {DEFAULT_TEST_DATABASE_URL})."
+        )
+    # Set before any settings are read, so the app's own configuration cannot aim the
+    # fixtures somewhere else.
+    os.environ["DATABASE_URL"] = url
+    os.environ["COMPTOOL_DATABASE_URL"] = url
+
+
+def _ignore_the_developers_env_file() -> None:
+    """Read configuration from this process's environment only, never from ``.env``.
+
+    ``Settings`` loads a ``.env`` from the repo root, which is right for running the app
+    and wrong for testing it: a developer who follows ``.env.example`` and turns off
+    ``COMPTOOL_SESSION_COOKIE_SECURE`` for local http then fails the two tests asserting
+    that the cookie is secure by default — a red suite reporting their configuration
+    rather than the code. Any key in a ``.env`` is a test the suite might silently be
+    answering from the wrong source.
+
+    So the suite supplies its own environment and nothing else. Tests that need a setting
+    say so explicitly, through the ``configure`` fixture or by constructing ``Settings``
+    with arguments.
+    """
+    from comptool.settings import Settings
+
+    Settings.model_config["env_file"] = None
+
+
+_guard_the_test_database()
+_ignore_the_developers_env_file()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCES = REPO_ROOT / "docs" / "sources"
