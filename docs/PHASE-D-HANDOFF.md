@@ -1,9 +1,36 @@
 # Phase D — Implementation Handoff
 
-> Self-contained brief for a fresh session. You need only this file plus the repo.
-> The campaign-level plan is `docs/IMPLEMENTATION-PLAN.md` (Phase D); the requirements
-> are `docs/REQUIREMENTS.md` §5 (authentication, authorization, session longevity).
-> The thing you are gating is the team content in `comptool/models.py`.
+> **Phase D is built.** This file is kept as the brief it was written as; the outcome
+> notes below record where the work departed from it. The campaign-level plan is
+> `docs/IMPLEMENTATION-PLAN.md` (Phase D); the requirements are `docs/REQUIREMENTS.md` §5
+> (authentication, authorization, session longevity).
+
+## Outcome — how the built phase differs from this brief
+
+Two decisions were taken during implementation that this brief argues the other way.
+
+- **There is no admin ruleset-import route, and no admin concept** (deliverable 4 and
+  Trap 6 below). The tournament's rules are codified, so an operator should not have to
+  supply them: the built payload is committed under `comptool/data/` and published by
+  `python -m comptool.ingest seed`, which the container entrypoint runs after the
+  migrations. Nothing needs gating, so `COMPTOOL_ADMIN_CHARACTER_IDS`, `python-multipart`
+  and the upload-or-URL question all disappeared with it.
+- **The design stance "the ruleset is never something compiled in" is therefore
+  reversed**, though only for the *output*: `docs/sources/` remains the source of truth,
+  `comptool/ingest/` remains the tool that reads it, and a test pins the bundled payload
+  against the sources so the two cannot drift. `import-points` still exists for importing
+  a snapshot directly.
+
+Everything else landed as briefed. Traps 1 through 5 were all real and are handled as
+described. What was added beyond the brief: `Team.archived_at` (§4.3 specifies archive,
+not delete, and Phase D was already writing a migration) and a partial unique index
+stopping the same unresolved name being invited twice.
+
+Two findings worth carrying forward. Requesting a scope is what makes EVE SSO issue a
+refresh token at all — CCP's docs are explicit — so `publicData` is mandatory rather than
+stylistic. And an expression index (`lower(subject_name)`) cannot pass `alembic check`
+under SQLAlchemy 2: Postgres reflects it back with casts the comparison never matches, so
+the pending-name index uses plain columns and case-insensitivity is enforced in the route.
 
 ## TL;DR — what to build in Phase D
 

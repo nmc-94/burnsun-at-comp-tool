@@ -218,7 +218,61 @@ def test_grants_round_trip_and_default_to_a_private_team(session):
     stored = session.execute(select(Team).where(Team.id == team.id)).scalar_one()
 
     assert stored.base_level == AccessLevel.NONE
+    assert stored.archived_at is None
     by_name = {grant.subject_name: grant for grant in stored.grants}
     assert by_name["Kadir"].subject_kind == SubjectKind.CHARACTER
     assert by_name["Kadir"].level == AccessLevel.EDITOR
     assert by_name["Aurora Coalition"].subject_id is None
+
+
+def pending_grant(team: Team, name: str = "Kadir") -> TeamGrant:
+    return TeamGrant(
+        team=team,
+        subject_kind=SubjectKind.CHARACTER,
+        subject_id=None,
+        subject_name=name,
+        level=AccessLevel.VIEWER,
+    )
+
+
+def test_a_team_holds_one_pending_invitation_per_name(session):
+    # The full unique constraint cannot catch this: Postgres counts null subject ids as
+    # distinct, so without the partial index the same name invites without limit.
+    team = make_team(session)
+    session.add(pending_grant(team))
+    session.add(pending_grant(team))
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_the_same_pending_name_is_free_on_another_team(session):
+    first = make_team(session)
+    second = Team(name="Nightfall Syndicate", owner_character_id=90_000_009)
+    session.add(second)
+    session.flush()
+    session.add(pending_grant(first))
+    session.add(pending_grant(second))
+    session.commit()
+
+    assert len(session.execute(select(TeamGrant)).scalars().all()) == 2
+
+
+def test_resolving_an_invitation_frees_the_name_to_be_invited_again(session):
+    # The index covers unresolved rows only, so a resolved grant and a later pending one
+    # for the same name coexist — which is what re-inviting after a rename looks like.
+    team = make_team(session)
+    session.add(
+        TeamGrant(
+            team=team,
+            subject_kind=SubjectKind.CHARACTER,
+            subject_id=90_000_003,
+            subject_name="Kadir",
+            level=AccessLevel.VIEWER,
+        )
+    )
+    session.add(pending_grant(team))
+    session.commit()
+
+    assert len(session.execute(select(TeamGrant)).scalars().all()) == 2

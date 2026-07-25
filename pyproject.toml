@@ -13,12 +13,19 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "alembic>=1.13",
     "python-dotenv>=1.0",
+    # Talking to EVE SSO and to public ESI. Sync and async, and already what FastAPI's
+    # TestClient speaks, so the two halves of the stack share one HTTP client.
+    "httpx>=0.27",
+    # Verifying the SSO identity token against the published signing keys. 2.10 is the
+    # first release whose decode() accepts a list of acceptable issuers, which EVE needs.
+    "pyjwt>=2.10",
+    # Signature verification for the above, and Fernet for the refresh token at rest.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
-    "httpx>=0.27",
     "ruff>=0.5",
 ]
 
@@ -28,7 +35,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 # Only the application package is installable; alembic/, tests/, web/ are not packages.
-packages = ["comptool", "comptool.ingest"]
+packages = ["comptool", "comptool.auth", "comptool.ingest"]
+
+[tool.setuptools.package-data]
+# The codified ruleset ships inside the package: docs/ is excluded from the image, so a
+# deployment seeds itself from this rather than from a file the operator has to supply.
+comptool = ["data/*.json"]
 
 [tool.ruff]
 line-length = 100

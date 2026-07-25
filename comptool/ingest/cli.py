@@ -1,12 +1,16 @@
 """The ingestion command: ``python -m comptool.ingest``.
 
-Importing a ruleset is a maintenance action, not a request, so it lives here rather than
-behind an HTTP route — no authentication surface, runnable in a container, and importable
-by tests. An admin upload path can be built on top of these functions once sessions exist.
+Ingesting a ruleset is a maintenance action, not a request, so it lives here rather than
+behind an HTTP route — no authentication surface to get wrong, runnable in a container, and
+importable by tests.
 
-The source files are arguments rather than baked-in paths. They are captured snapshots that
-live beside the repo's documentation and are deliberately not shipped in the image: the
-ruleset is ingested data, never something compiled in.
+Two ways in, for two different audiences. ``import-points`` reads the captured snapshots
+that live beside the repo's documentation, and is how a maintainer publishes a new capture;
+its sources are arguments rather than baked-in paths, and are not shipped in the image.
+``seed`` publishes the payload that *is* shipped, under ``comptool/data/`` — because the
+tournament's rules are codified, and a deployment should arrive with them rather than wait
+for someone to supply them. The bundled payload is this command's own output, committed and
+pinned by a test against the sources, so the two cannot disagree.
 """
 
 from __future__ import annotations
@@ -15,7 +19,6 @@ import argparse
 import json
 import re
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 from . import atxxii, points_csv, ruleset, sde
@@ -65,55 +68,63 @@ def _emit_payload(args: argparse.Namespace) -> None:
     print(f"{version}: {len(payload['ships'])} ships", file=sys.stderr)
 
 
-def _import_points(args: argparse.Namespace) -> None:
-    # Imported here, not at module scope: building a payload needs neither a database nor
-    # app settings, and emit-payload should stay runnable without either.
-    from sqlalchemy import select
+def _open_session():
+    """A database session for a command.
 
+    Imported here, not at module scope: building a payload needs neither a database nor
+    app settings, and emit-payload should stay runnable without either.
+    """
     from ..db import get_session, init_db
-    from ..models import Ruleset as RulesetRecord
-    from ..models import RulesetVersion
     from ..settings import get_settings
-
-    payload, version = _payload(args)
-    fetched_at = datetime.fromisoformat(version).replace(tzinfo=UTC)
 
     init_db(get_settings())
     sessions = get_session()
-    session = next(sessions)
+    return sessions, next(sessions)
+
+
+def _import_points(args: argparse.Namespace) -> None:
+    from .store import store_version
+
+    payload, version = _payload(args)
+
+    sessions, session = _open_session()
     try:
-        record = session.scalar(select(RulesetRecord).where(RulesetRecord.slug == args.slug))
-        if record is None:
-            record = RulesetRecord(slug=args.slug, name=args.name, organizer=args.organizer)
-            session.add(record)
-            session.flush()
-
-        already = session.scalar(
-            select(RulesetVersion).where(
-                RulesetVersion.ruleset_id == record.id,
-                RulesetVersion.version_label == version,
-            )
-        )
-        if already is not None:
-            raise IngestError(
-                f"{args.slug} version {version!r} is already imported. A version is an "
-                "immutable snapshot — publish the change under a new label instead."
-            )
-
-        session.add(
-            RulesetVersion(
-                ruleset_id=record.id,
-                version_label=version,
-                source_url=args.source_url,
-                fetched_at=fetched_at,
-                payload=payload,
-            )
+        store_version(
+            session,
+            payload=payload,
+            version_label=version,
+            slug=args.slug,
+            name=args.name,
+            organizer=args.organizer,
+            source_url=args.source_url,
         )
         session.commit()
     finally:
         sessions.close()
 
     print(f"imported {args.slug} {version}: {len(payload['ships'])} ships", file=sys.stderr)
+
+
+def _seed(args: argparse.Namespace) -> None:
+    """Publish the ruleset that ships with the application.
+
+    Run at deploy time, beside the migrations. Idempotent, so a restart is a no-op rather
+    than an error — which is what makes it safe to put in the entrypoint.
+    """
+    from .bundled import seed
+
+    sessions, session = _open_session()
+    try:
+        added = seed(session)
+        session.commit()
+    finally:
+        sessions.close()
+
+    if not added:
+        print("ruleset already published; nothing to seed", file=sys.stderr)
+        return
+    for version in added:
+        print(f"seeded {args.slug} {version.version_label}", file=sys.stderr)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -146,6 +157,11 @@ def build_parser() -> argparse.ArgumentParser:
     importer.add_argument("--name", default=atxxii.NAME)
     importer.add_argument("--organizer", default=atxxii.ORGANIZER)
     importer.add_argument("--source-url", default=atxxii.SOURCE_URL)
+
+    seed_command = commands.add_parser(
+        "seed", help="publish the ruleset bundled with the application (idempotent)"
+    )
+    seed_command.set_defaults(run=_seed, slug=atxxii.SLUG)
     return parser
 
 

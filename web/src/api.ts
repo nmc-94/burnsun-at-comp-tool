@@ -15,6 +15,11 @@ export class ApiError extends Error {
   }
 }
 
+/** What to show a user about a failed call, whether or not it came from the API. */
+export function messageFor(problem: unknown): string {
+  return problem instanceof ApiError ? problem.message : String(problem)
+}
+
 function detailFrom(bodyText: string): string | undefined {
   try {
     const body: unknown = bodyText ? JSON.parse(bodyText) : null

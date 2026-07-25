@@ -18,12 +18,14 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from . import __version__
+from .auth.routes import router as auth_router
 from .db import dispose_db, get_engine, init_db
 from .health import router as health_router
 from .logging_config import configure_logging
 from .models import AppMeta
 from .rulesets import router as rulesets_router
 from .settings import Settings, get_settings
+from .teams import router as teams_router
 
 logger = logging.getLogger("comptool")
 
@@ -58,7 +60,12 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="AT Comp Tool", version=__version__, lifespan=lifespan)
 app.include_router(health_router)
+# Ruleset reads stay unauthenticated: they are published tournament data, and the SPA has
+# to render them before anyone signs in. Only routes that touch a *team* need an identity,
+# so authentication is attached per router and never to the /api/v1 prefix as a whole.
 app.include_router(rulesets_router)
+app.include_router(auth_router)
+app.include_router(teams_router)
 
 # Hashed, immutable bundles. Mounted only when a build is present (backend-only dev/CI
 # runs without a web/dist); the catch-all handles the index and other root files.

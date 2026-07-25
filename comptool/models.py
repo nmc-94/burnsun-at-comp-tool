@@ -8,6 +8,9 @@ re-validates against the rules it was designed under even after point values mov
 Legality itself is never stored. It is derived on the client from the ruleset payload, so
 nothing here records whether a comp is legal — only what it contains.
 
+The ``auth_*`` tables are a third concern again: who is asking. They hold no game data,
+only what is needed to recognize a returning browser and to prove which character it is.
+
 ``app_meta`` predates the domain and stays: the health probe reads it to prove migrations
 have been applied without coupling ops to a domain table.
 """
@@ -145,6 +148,9 @@ class Team(Base):
     owner_character_id: Mapped[int] = mapped_column(BigInteger, index=True)
     # What someone with no matching grant gets. Teams are private by default.
     base_level: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    # Put away rather than deleted: a team's comps are other people's work and a season's
+    # record. Null means live; the timestamp is when it was archived.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -171,6 +177,19 @@ class TeamGrant(Base):
         UniqueConstraint("team_id", "subject_kind", "subject_id"),
         # The lookup every login performs: which teams does this identity reach?
         Index("ix_team_grant_subject", "subject_kind", "subject_id"),
+        # Postgres counts NULLs as distinct, so the constraint above lets the same
+        # *unresolved* name be invited over and over. One pending invitation per name.
+        # Plain columns rather than lower(subject_name): an expression index reflects
+        # back from Postgres with casts the drift check cannot match, and would report
+        # permanent drift. Case-insensitivity is enforced where it can explain itself.
+        Index(
+            "uq_team_grant_one_pending_name",
+            "team_id",
+            "subject_kind",
+            "subject_name",
+            unique=True,
+            postgresql_where=text("subject_id IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -265,3 +284,89 @@ class CompComment(Base):
     created_at: Mapped[datetime] = _created_at()
 
     comp: Mapped[Comp] = relationship(back_populates="comments")
+
+
+class AuthSession(Base):
+    """A signed-in browser.
+
+    The cookie carries a random token; only its hash is stored here. Expiry slides: each
+    use pushes ``expires_at`` out again, so an active person is never signed out while an
+    abandoned session ages away on its own.
+    """
+
+    __tablename__ = "auth_session"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    # SHA-256 of the cookie value. The token itself is never written down, so a leaked
+    # backup cannot be replayed as a login. No salt: the token is 256 random bits, which
+    # is not guessable and leaves nothing for a precomputed table to hit.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    character_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    # Display only — authorization always matches on the id.
+    character_name: Mapped[str] = mapped_column(String(200))
+    # The SSO's owner claim, which changes when a character moves to another account.
+    # Sessions opened before that belong to a different person.
+    character_owner_hash: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = _created_at()
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    # Stored rather than derived from last_seen_at: a live session's expiry must not move
+    # retroactively when an operator edits the TTL, and "still valid" has to be indexable.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    esi_token: Mapped[AuthEsiToken | None] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+
+class AuthEsiToken(Base):
+    """The SSO refresh token a session holds, encrypted with the configured secret.
+
+    One row per session rather than per character: the SSO rotates a refresh token as it
+    is used, so two browsers sharing one row would invalidate each other. Kept out of
+    ``auth_session`` because that row is read on every request and this ciphertext on
+    almost none — and because the cascade below is what makes signing out destroy it.
+    """
+
+    __tablename__ = "auth_esi_token"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("auth_session.id", ondelete="CASCADE"), unique=True
+    )
+    refresh_token_encrypted: Mapped[str] = mapped_column(Text)
+    # The last time the token was exchanged successfully, which is the only durable thing
+    # a refresh tells us. The access token itself is not stored: it outlives its usefulness
+    # in about twenty minutes and nothing here calls a scoped endpoint.
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    session: Mapped[AuthSession] = relationship(back_populates="esi_token")
+
+
+class AuthLoginAttempt(Base):
+    """A login in flight.
+
+    Holds the PKCE verifier — which only this server may present — from the redirect out
+    to the SSO until the callback comes back. Single-use and short-lived: the row is
+    deleted when the callback claims it, which is what makes a replayed callback fail.
+    """
+
+    __tablename__ = "auth_login_attempt"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    state: Mapped[str] = mapped_column(String(64), unique=True)
+    # Not encrypted: it is worthless without the matching one-time authorization code,
+    # and it must be presented to the SSO verbatim, so it could not be hashed either.
+    code_verifier: Mapped[str] = mapped_column(String(128))
+    # Where to send the browser afterwards. A relative path, validated on the way in —
+    # an absolute URL from the query string would make signing in an open redirect.
+    next_path: Mapped[str] = mapped_column(String(500), default="/")
+    created_at: Mapped[datetime] = _created_at()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

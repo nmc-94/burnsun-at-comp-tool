@@ -29,8 +29,8 @@ h3 {
 }
 
 .app-shell {
-  max-width: 520px;
-  margin: 12vh auto;
+  max-width: 720px;
+  margin: 8vh auto;
   padding: 24px;
 }
 
@@ -38,6 +38,9 @@ h3 {
   display: flex;
   align-items: baseline;
   gap: 8px;
+}
+.header-actions {
+  margin-left: 12px;
 }
 .wordmark {
   font-family: var(--font-brand);
@@ -79,8 +82,184 @@ h3 {
   color: var(--danger);
 }
 
-.theme-toggle {
+/* --- Sign-in chrome, teams and access lists --- */
+
+.btn {
+  height: 26px;
+  padding: 0 10px;
+  background: var(--bg-panel-alt);
+  color: var(--text-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.btn:hover:not(:disabled) {
+  background: var(--bg-soft);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn.primary {
+  color: var(--text-1);
+  border-color: var(--line-2, var(--line-1));
+}
+.btn.subtle {
+  background: none;
+  color: var(--text-3);
+  border-color: transparent;
+}
+.btn.subtle:hover:not(:disabled) {
+  color: var(--text-2);
+}
+.btn.danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+.btn.right,
+.level.right {
+  margin-left: auto;
+}
+
+.link {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.link:hover {
+  text-decoration: underline;
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.portrait {
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.character-name {
+  font-weight: 500;
+}
+.chip-muted {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.team-name {
+  font-family: var(--font-brand);
+}
+.section-title {
   margin-top: 16px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.team-list,
+.grant-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.team-list li,
+.grant-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-1);
+}
+.grant-list li.pending .subject-name {
+  color: var(--text-3);
+}
+.subject-name {
+  color: var(--text-1);
+}
+.level {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.hint {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.badge {
+  padding: 1px 6px;
+  border: 1px solid var(--line-1);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.badge.warn {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.notice {
+  padding: 8px 10px;
+  background: var(--bg-soft);
+  border-radius: var(--radius-md);
+}
+.empty {
+  color: var(--text-3);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.row input,
+.row select {
+  height: 26px;
+  padding: 0 8px;
+  background: var(--bg-app);
+  color: var(--text-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 12px;
+}
+.row input {
+  flex: 1;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+.health {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.health .ok {
+  color: var(--success);
+}
+.health .err {
+  color: var(--danger);
+}
+
+.theme-toggle {
+  margin-left: auto;
   height: 30px;
   padding: 0 12px;
   background: var(--bg-panel-alt);

@@ -33,33 +33,63 @@ Everything comes up with one command:
 docker compose up --build
 ```
 
-Postgres starts, the app applies migrations on boot, then serves the SPA and the API
-at http://localhost:8000. Check health at http://localhost:8000/api/health.
+Postgres starts, the app applies migrations, publishes the bundled ruleset, then
+serves the SPA and the API at http://localhost:8000. Check health at
+http://localhost:8000/api/health.
 
 All configuration is via environment variables — see [.env.example](.env.example).
 
-### Load a ruleset
+### The ruleset
 
-A fresh database has no ruleset in it. Point values are ingested data, not something
-compiled into the app, so import a captured snapshot once:
+The tournament's rules are codified and ship with the application, so a fresh
+deployment arrives with them: the entrypoint runs `python -m comptool.ingest seed`
+after the migrations, and the ruleset is served at
+`/api/v1/rulesets/atxxii/latest`. Seeding is idempotent, so restarts are a no-op.
+Ruleset reads need no sign-in — it is published tournament data, and the SPA renders
+it before anyone has an identity.
 
-```bash
-python -m comptool.ingest import-points --csv docs/sources/points-atxxii-2026-07-23.csv --ships docs/sources/ships-sde-3444265.json
-```
-
-It is then served at `/api/v1/rulesets/atxxii/latest`. A version is immutable: when
-point values change mid-tournament, re-export the snapshot and import it under a new
-label rather than editing the one already published.
-
-The snapshots live under `docs/` and are deliberately not baked into the image, so
-running this in a container means mounting them:
+A version is immutable. When point values change mid-tournament, publish a new label
+rather than editing the one already there. To cut a new one, re-export the snapshot
+into `docs/sources/`, then regenerate the bundled payload and commit it:
 
 ```bash
-docker compose run --rm -v "$PWD/docs:/app/docs" --entrypoint python app -m comptool.ingest import-points --csv docs/sources/points-atxxii-2026-07-23.csv --ships docs/sources/ships-sde-3444265.json
+python -m comptool.ingest emit-payload --csv docs/sources/points-atxxii-2026-07-23.csv --ships docs/sources/ships-sde-3444265.json --out comptool/data/atxxii-2026-07-23.json
 ```
 
-See [docs/sources/README.md](docs/sources/README.md) for where each snapshot comes
-from and how to re-cut it.
+The snapshots under `docs/` stay the source of truth and are deliberately not in the
+image; a test pins the bundled payload against them, so the two cannot drift. See
+[docs/sources/README.md](docs/sources/README.md) for where each snapshot comes from
+and how to re-cut it. `python -m comptool.ingest import-points` remains available for
+importing a snapshot straight into a database without bundling it.
+
+### Sign-in (EVE SSO)
+
+Signing in is optional: without it the app serves ruleset data and offers no teams.
+To enable it, register an application at
+[developers.eveonline.com](https://developers.eveonline.com) and set the four
+`COMPTOOL_ESI_*` values in `.env`:
+
+- **Callback URL** must match `COMPTOOL_ESI_CALLBACK_URL` byte for byte — scheme, host,
+  port and trailing slash included. The default is
+  `http://localhost:8000/api/v1/auth/callback`.
+- Request the **`publicData`** scope and nothing more. The tool needs only a verified
+  character id and name, but a scope has to be requested for the SSO to issue a refresh
+  token at all.
+- The flow is **PKCE**, so the application is a public client and there is no client
+  secret to configure. `COMPTOOL_ESI_TOKEN_SECRET` is unrelated to the exchange — it
+  encrypts the stored refresh token at rest, and can be a comma-separated list to
+  rotate keys (newest first).
+
+Sessions live in Postgres with a rolling 30-day expiry that each request pushes out, so
+an active user stays signed in across restarts. The browser holds only an opaque
+`HttpOnly` cookie; no EVE token ever reaches it. **Sign out** ends the current session
+and **everywhere** ends that character's sessions on every device.
+
+Set `COMPTOOL_SESSION_COOKIE_SECURE=false` for local HTTP development — a browser
+silently drops a `Secure` cookie over plain http, which looks exactly like a broken
+login. When developing against the Vite dev server, also set
+`COMPTOOL_ESI_POST_LOGIN_URL=http://localhost:4173/` so the callback lands back on the
+SPA rather than on the API's own origin.
 
 ## Develop
 
@@ -71,6 +101,7 @@ pip install -e ".[dev]"
 # Point at a local Postgres (or `docker compose up db`):
 export DATABASE_URL=postgresql://comptool:comptool@localhost:5432/comptool
 alembic upgrade head
+python -m comptool.ingest seed     # publish the bundled ruleset
 uvicorn comptool.main:app --reload
 ```
 
@@ -91,4 +122,14 @@ serves both from one origin.
 ```bash
 pip install -e ".[dev]" && pytest        # backend
 cd web && npm test                        # frontend (Vitest)
+```
+
+The backend tests need a reachable Postgres and give themselves a clean schema per
+test, which drops every table while `alembic_version` survives. A later
+`alembic upgrade head` against the same database then silently does nothing and
+`alembic check` reports total drift. Run the drift gate against a scratch database
+instead — `alembic/env.py` prefers `ALEMBIC_DATABASE_URL`:
+
+```bash
+ALEMBIC_DATABASE_URL=postgresql://comptool:comptool@localhost:5432/comptool_drift alembic check
 ```

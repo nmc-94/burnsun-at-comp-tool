@@ -73,5 +73,109 @@ def client(database):
     """A TestClient whose lifespan (startup/shutdown) runs against the clean schema."""
     from comptool.main import app
 
-    with TestClient(app) as test_client:
+    # https, not http: the session cookie is Secure by default and a cookie jar will not
+    # send a Secure cookie over plain http, so an http client would silently exercise a
+    # configuration nothing deploys. No TLS is involved — the scheme is just part of the
+    # request scope.
+    with TestClient(app, base_url="https://testserver") as test_client:
         yield test_client
+
+
+@pytest.fixture()
+def configure(client):
+    """Override application settings for one test, undone afterwards.
+
+    Via dependency_overrides rather than the environment: ``database`` has already called
+    ``get_settings.cache_clear()`` by the time a test body runs, so a variable set there
+    arrives too late to be read and then leaks into the next test.
+    """
+    from comptool.main import app
+
+    def apply(**overrides):
+        settings = get_settings().model_copy(update=overrides)
+        app.dependency_overrides[get_settings] = lambda: settings
+        return settings
+
+    try:
+        yield apply
+    finally:
+        # pop, not clear: other fixtures put their own overrides in this same dictionary.
+        app.dependency_overrides.pop(get_settings, None)
+
+
+class FakeResolver:
+    """Stands in for the character lookup.
+
+    Nothing resolves unless a test says so, which means a test that forgets to register a
+    name gets a pending invitation rather than an accidental network call.
+    """
+
+    def __init__(self):
+        from comptool.esi import Character, Resolution
+
+        self._character = Character
+        self._resolution = Resolution
+        self._known: dict[str, tuple] = {}
+
+    def knows(self, name: str, character_id: int, spelled: str | None = None) -> None:
+        self._known[name.lower()] = (self._resolution.RESOLVED, character_id, spelled or name)
+
+    def finds_several(self, name: str) -> None:
+        self._known[name.lower()] = (self._resolution.AMBIGUOUS, None, None)
+
+    def is_unreachable(self, name: str) -> None:
+        self._known[name.lower()] = (self._resolution.UNAVAILABLE, None, None)
+
+    def __call__(self, name: str):
+        resolution, character_id, spelled = self._known.get(
+            name.strip().lower(), (self._resolution.NOT_FOUND, None, None)
+        )
+        return self._character(resolution, character_id=character_id, name=spelled)
+
+
+@pytest.fixture()
+def resolver(client):
+    """Route character-name lookups to a fake for the duration of one test."""
+    from comptool.esi import get_character_resolver
+    from comptool.main import app
+
+    fake = FakeResolver()
+    app.dependency_overrides[get_character_resolver] = lambda: fake
+    try:
+        yield fake
+    finally:
+        app.dependency_overrides.pop(get_character_resolver, None)
+
+
+@pytest.fixture()
+def sign_in(client):
+    """Sign the test client in as a character.
+
+    Mints a real session row and presents the real cookie, so routes are exercised through
+    the same dependency a browser would go through — the difference from a live sign-in is
+    only that EVE is not involved.
+    """
+    from comptool.auth import sessions
+
+    def as_character(character_id: int, name: str = "Kadir") -> str:
+        opened = get_session()
+        db = next(opened)
+        try:
+            issued = sessions.mint(
+                db,
+                character_id=character_id,
+                character_name=name,
+                owner_hash="an-owner-hash",
+                ttl_seconds=get_settings().session_ttl_seconds,
+            )
+            db.commit()
+            token = issued.token
+        finally:
+            opened.close()
+        client.cookies.set(sessions.COOKIE_NAME, token)
+        return token
+
+    try:
+        yield as_character
+    finally:
+        client.cookies.clear()

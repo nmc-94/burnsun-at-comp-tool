@@ -85,3 +85,10 @@ jobs:
         run: alembic -c alembic.ini upgrade head
       - name: Drift gate (models match migrations)
         run: alembic -c alembic.ini check
+      # The deploy sequence, on the only install here that is not editable — so a bundled
+      # payload missing from the wheel fails here rather than in a container. Run twice:
+      # the entrypoint runs it on every start, so it has to be a no-op the second time.
+      - name: Seed the bundled ruleset (and prove it is idempotent)
+        run: |
+          python -m comptool.ingest seed
+          python -m comptool.ingest seed

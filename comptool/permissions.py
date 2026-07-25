@@ -22,6 +22,9 @@ class Viewer:
     character_id: int
     corporation_id: int | None = None
     alliance_id: int | None = None
+    #: Display only, and absent wherever the caller had no reason to look it up.
+    #: Resolution never reads it — names change, ids do not.
+    character_name: str | None = None
 
 
 def _subject_id_for(kind: str, viewer: Viewer) -> int | None:

@@ -21,3 +21,16 @@ export function buildCcpTypeIconUrl(
   const base = baseUrl.replace(/\/$/, '')
   return `${base}/types/${Math.trunc(typeId)}/icon?size=${nearestSize(size)}`
 }
+
+// The signed-in character's portrait, from the same image service as the hull icons.
+export function buildCcpPortraitUrl(
+  characterId: number | null | undefined,
+  size: number = brand.icons.defaultIconSize,
+  baseUrl: string = brand.icons.ccpImageBaseUrl,
+): string | null {
+  if (typeof characterId !== 'number' || !Number.isFinite(characterId) || characterId <= 0) {
+    return null
+  }
+  const base = baseUrl.replace(/\/$/, '')
+  return `${base}/characters/${Math.trunc(characterId)}/portrait?size=${nearestSize(size)}`
+}

@@ -240,6 +240,16 @@ permission ladder; logout / log-out-everywhere. No matching grant → the user s
 only their own teams. Also picks up the **admin ruleset-import route** deferred
 from Phase C, built on the ingester's existing functions.
 
+> **Done, with one correction, and the library choices re-picked.** There is no
+> admin import route and no admin concept: the rules are codified, so the built
+> payload ships inside the package and `python -m comptool.ingest seed` publishes it
+> from the entrypoint, beside the migrations. That removes the upload/URL question,
+> `python-multipart` and the env-listed admin ids in one go. `httpx` + `PyJWT` +
+> `cryptography` replaced this plan's `requests` + `python-jose` — the first was
+> already present via `TestClient`, and the others are the conventional current
+> choice for a JWKS-verified token and for Fernet at rest. Added beyond the plan:
+> `Team.archived_at`, because §4.3 asks for archive rather than delete.
+
 **Phase E — Single live-validating comp builder.** Build the `HANDOFF.md` **comp
 tile** (name · issue-flag · **± delta pill** green/amber/red · archetype+tag chips ·
 **fixed 10-row scaffold** with the dup-surcharge column · flagship oval pill ·
@@ -249,6 +259,14 @@ in focus, persisted — not yet the multi-tile board. Includes inline
 the row's hull were absent), the **Enforce-rules toggle (default OFF)**, flagship
 designation, and hull icons via the configurable helper. **This closes the vertical
 slice: a real user builds a real, live-validated (client-side) comp.**
+
+> **Two notes before starting.** The tile's **chip row has no data behind it yet**:
+> `Comp` was modelled in Phase B without `archetype`, `tags` or `forked_from_comp_id`,
+> and the plan puts all three in Phase H. Render the row from nothing, or move those
+> columns forward deliberately — do not discover it halfway through the tile. And
+> `teams.py`'s `_authorize` is the seam comp routes need (it answers existence and
+> permission together, which is what makes under-privilege a 404); it is module-private
+> today and wants promoting to a shared home rather than copying.
 
 ### — Post-v1 (the full workspace) —
 
@@ -288,10 +306,14 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
   two-table split, verbatim inflation (Geri = 3), name normalization, and that all
   ATXXII ships resolve to `type_id`s (unresolved = loud failure).
 - **Auth/session:** end-to-end SSO login in a dev config; grant-by-name resolution;
-  session survives restart; long-TTL sliding renewal.
-- **UI:** `docker compose up`, load a ruleset, rebuild the mockup's example comps in
-  tiles, confirm live totals / delta pill / violations popover match the mockup, and
-  verify the enforcement toggle gates add/swap/drag.
+  session survives restart; long-TTL sliding renewal. *(Built in Phase D; the last
+  three are covered by tests, and only the live SSO round trip needs a person.)*
+- **UI:** `docker compose up` — which now arrives with the ruleset already published —
+  then rebuild the mockup's example comps in tiles, confirm live totals / delta pill /
+  violations popover match the mockup, and verify the enforcement toggle gates
+  add/swap/drag. Note the mockup's **duplicate-inflation example carries stale
+  figures**: it was baked before the surcharge was settled as retroactive, so the
+  engine is right and that one panel is not.
 
 ## Decisions & open questions
 
