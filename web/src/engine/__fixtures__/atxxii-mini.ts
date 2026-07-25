@@ -18,8 +18,10 @@
 import type { Ruleset, RulesetShip } from '../types'
 
 /**
- * Ids at or above this are local to the fixture: they stand in for hulls the mockup
- * doesn't cover, and get real ids once ship-reference data is ingested.
+ * Ids at or above this are local to the fixture. Two remain, both standing in for a
+ * pricing outcome the real snapshot never produces: a hull only its class prices, and a
+ * hull neither layer prices. Both are rules the engine has to implement regardless of
+ * whether one tournament's data happens to exercise them.
  */
 const FIXTURE_TYPE_ID_BASE = 900_000
 
@@ -53,12 +55,15 @@ export const SHIP = {
   crucifier: 2161,
   maulus: 609,
 
-  // Fixture-local ids for hulls the mockup doesn't use.
-  guardian: FIXTURE_TYPE_ID_BASE + 1,
-  scalpel: FIXTURE_TYPE_ID_BASE + 2,
-  deacon: FIXTURE_TYPE_ID_BASE + 3,
-  bhaalgorn: FIXTURE_TYPE_ID_BASE + 4,
-  nestor: FIXTURE_TYPE_ID_BASE + 5,
+  // Real ids for hulls the mockup doesn't use but the ruleset does.
+  guardian: 11987,
+  scalpel: 37460,
+  deacon: 37457,
+  bhaalgorn: 17920,
+  nestor: 33472,
+
+  // A hull the per-ship table skips, so only its class prices it. The real ATXXII table
+  // prices everything it lists, so this case has no counterpart in the ingested data.
   unlistedCruiser: FIXTURE_TYPE_ID_BASE + 6,
 } as const
 

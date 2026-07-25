@@ -28,7 +28,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 # Only the application package is installable; alembic/, tests/, web/ are not packages.
-packages = ["comptool"]
+packages = ["comptool", "comptool.ingest"]
 
 [tool.ruff]
 line-length = 100
@@ -39,6 +39,11 @@ extend-exclude = ["alembic/versions"]
 [tool.ruff.lint]
 # A small, stock rule set: pyflakes, pycodestyle, import sorting, pyupgrade, bugbear.
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# pytest puts the test directory on the path, so tests share constants through conftest;
+# it belongs with our own imports, not with third-party ones.
+known-first-party = ["conftest"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's Depends/Query/... are calls-in-defaults by design; don't flag them (B008).

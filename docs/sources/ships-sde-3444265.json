@@ -1,0 +1,3814 @@
+{
+  "source": "https://developers.eveonline.com/static-data/tranquility/eve-online-static-data-3444265-jsonl.zip",
+  "sde_build": 3444265,
+  "sde_release_date": "2026-07-23T11:06:22Z",
+  "hulls": [
+    {
+      "type_id": 582,
+      "name": "Bantam",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 583,
+      "name": "Condor",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 584,
+      "name": "Griffin",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 585,
+      "name": "Slasher",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 586,
+      "name": "Probe",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 587,
+      "name": "Rifter",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 588,
+      "name": "Reaper",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 589,
+      "name": "Executioner",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 590,
+      "name": "Inquisitor",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 591,
+      "name": "Tormentor",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": null,
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 592,
+      "name": "Navitas",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 593,
+      "name": "Tristan",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 594,
+      "name": "Incursus",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 596,
+      "name": "Impairor",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": null,
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 597,
+      "name": "Punisher",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 598,
+      "name": "Breacher",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 599,
+      "name": "Burst",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 601,
+      "name": "Ibis",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": null,
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 602,
+      "name": "Kestrel",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 603,
+      "name": "Merlin",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 605,
+      "name": "Heron",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 606,
+      "name": "Velator",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 607,
+      "name": "Imicus",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 608,
+      "name": "Atron",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 609,
+      "name": "Maulus",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 615,
+      "name": "Immolator",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": "Faction",
+      "faction": "Sansha's Nation",
+      "special_edition": true
+    },
+    {
+      "type_id": 617,
+      "name": "Echo",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": true
+    },
+    {
+      "type_id": 620,
+      "name": "Osprey",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 621,
+      "name": "Caracal",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 622,
+      "name": "Stabber",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 623,
+      "name": "Moa",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 624,
+      "name": "Maller",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 625,
+      "name": "Augoror",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 626,
+      "name": "Vexor",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 627,
+      "name": "Thorax",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 628,
+      "name": "Arbitrator",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 629,
+      "name": "Rupture",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 630,
+      "name": "Bellicose",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 631,
+      "name": "Scythe",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 632,
+      "name": "Blackbird",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 633,
+      "name": "Celestis",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 634,
+      "name": "Exequror",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 635,
+      "name": "Opux Luxury Yacht",
+      "group": "Special Edition Yachts",
+      "group_id": 5087,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 638,
+      "name": "Raven",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 639,
+      "name": "Tempest",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 640,
+      "name": "Scorpion",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 641,
+      "name": "Megathron",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 642,
+      "name": "Apocalypse",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 643,
+      "name": "Armageddon",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 644,
+      "name": "Typhoon",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 645,
+      "name": "Dominix",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 648,
+      "name": "Badger",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 649,
+      "name": "Tayra",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 650,
+      "name": "Nereus",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 651,
+      "name": "Hoarder",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 652,
+      "name": "Mammoth",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 653,
+      "name": "Wreathe",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 654,
+      "name": "Kryos",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 655,
+      "name": "Epithal",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 656,
+      "name": "Miasmos",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 657,
+      "name": "Iteron Mark V",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 670,
+      "name": "Capsule",
+      "group": "Capsule",
+      "group_id": 29,
+      "tech": "Tech I",
+      "faction": "Jove Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 671,
+      "name": "Erebus",
+      "group": "Titan",
+      "group_id": 30,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 672,
+      "name": "Caldari Shuttle",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 1944,
+      "name": "Bestower",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 2006,
+      "name": "Omen",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 2078,
+      "name": "Zephyr",
+      "group": "Prototype Exploration Ship",
+      "group_id": 1022,
+      "tech": null,
+      "faction": "The Syndicate",
+      "special_edition": true
+    },
+    {
+      "type_id": 2161,
+      "name": "Crucifier",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 2834,
+      "name": "Utu",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 2836,
+      "name": "Adrestia",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 2863,
+      "name": "Primae",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "ORE",
+      "special_edition": true
+    },
+    {
+      "type_id": 2998,
+      "name": "Noctis",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 3514,
+      "name": "Revenant",
+      "group": "Supercarrier",
+      "group_id": 659,
+      "tech": "Faction",
+      "faction": "Sansha's Nation",
+      "special_edition": false
+    },
+    {
+      "type_id": 3516,
+      "name": "Malice",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": true
+    },
+    {
+      "type_id": 3518,
+      "name": "Vangel",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": true
+    },
+    {
+      "type_id": 3532,
+      "name": "Echelon",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "CONCORD Assembly",
+      "special_edition": true
+    },
+    {
+      "type_id": 3756,
+      "name": "Gnosis",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": null,
+      "faction": "The Society of Conscious Thought",
+      "special_edition": true
+    },
+    {
+      "type_id": 3764,
+      "name": "Leviathan",
+      "group": "Titan",
+      "group_id": 30,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 3766,
+      "name": "Vigil",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 4302,
+      "name": "Oracle",
+      "group": "Attack Battlecruiser",
+      "group_id": 1201,
+      "tech": null,
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 4306,
+      "name": "Naga",
+      "group": "Attack Battlecruiser",
+      "group_id": 1201,
+      "tech": null,
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 4308,
+      "name": "Talos",
+      "group": "Attack Battlecruiser",
+      "group_id": 1201,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 4310,
+      "name": "Tornado",
+      "group": "Attack Battlecruiser",
+      "group_id": 1201,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 4363,
+      "name": "Miasmos Quafe Ultra Edition",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 4388,
+      "name": "Miasmos Quafe Ultramarine Edition",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 11011,
+      "name": "Guardian-Vexor",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": true
+    },
+    {
+      "type_id": 11129,
+      "name": "Gallente Shuttle",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11132,
+      "name": "Minmatar Shuttle",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11134,
+      "name": "Amarr Shuttle",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": null,
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11172,
+      "name": "Helios",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11174,
+      "name": "Keres",
+      "group": "Electronic Attack Ship",
+      "group_id": 893,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11176,
+      "name": "Crow",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11178,
+      "name": "Raptor",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11182,
+      "name": "Cheetah",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11184,
+      "name": "Crusader",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11186,
+      "name": "Malediction",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11188,
+      "name": "Anathema",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11190,
+      "name": "Sentinel",
+      "group": "Electronic Attack Ship",
+      "group_id": 893,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11192,
+      "name": "Buzzard",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11194,
+      "name": "Kitsune",
+      "group": "Electronic Attack Ship",
+      "group_id": 893,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11196,
+      "name": "Claw",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11198,
+      "name": "Stiletto",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11200,
+      "name": "Taranis",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11202,
+      "name": "Ares",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11365,
+      "name": "Vengeance",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11371,
+      "name": "Wolf",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11377,
+      "name": "Nemesis",
+      "group": "Stealth Bomber",
+      "group_id": 834,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11379,
+      "name": "Hawk",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11381,
+      "name": "Harpy",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11387,
+      "name": "Hyena",
+      "group": "Electronic Attack Ship",
+      "group_id": 893,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11393,
+      "name": "Retribution",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11400,
+      "name": "Jaguar",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11567,
+      "name": "Avatar",
+      "group": "Titan",
+      "group_id": 30,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11936,
+      "name": "Apocalypse Imperial Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": true
+    },
+    {
+      "type_id": 11938,
+      "name": "Armageddon Imperial Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": true
+    },
+    {
+      "type_id": 11940,
+      "name": "Gold Magnate",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": true
+    },
+    {
+      "type_id": 11942,
+      "name": "Silver Magnate",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": true
+    },
+    {
+      "type_id": 11957,
+      "name": "Falcon",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11959,
+      "name": "Rook",
+      "group": "Combat Recon Ship",
+      "group_id": 906,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11961,
+      "name": "Huginn",
+      "group": "Combat Recon Ship",
+      "group_id": 906,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11963,
+      "name": "Rapier",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11965,
+      "name": "Pilgrim",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11969,
+      "name": "Arazu",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11971,
+      "name": "Lachesis",
+      "group": "Combat Recon Ship",
+      "group_id": 906,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11978,
+      "name": "Scimitar",
+      "group": "Logistics",
+      "group_id": 832,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 11985,
+      "name": "Basilisk",
+      "group": "Logistics",
+      "group_id": 832,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11987,
+      "name": "Guardian",
+      "group": "Logistics",
+      "group_id": 832,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 11989,
+      "name": "Oneiros",
+      "group": "Logistics",
+      "group_id": 832,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 11993,
+      "name": "Cerberus",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11995,
+      "name": "Onyx",
+      "group": "Heavy Interdiction Cruiser",
+      "group_id": 894,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 11999,
+      "name": "Vagabond",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 12003,
+      "name": "Zealot",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 12005,
+      "name": "Ishtar",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 12011,
+      "name": "Eagle",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 12013,
+      "name": "Broadsword",
+      "group": "Heavy Interdiction Cruiser",
+      "group_id": 894,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 12015,
+      "name": "Muninn",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 12017,
+      "name": "Devoter",
+      "group": "Heavy Interdiction Cruiser",
+      "group_id": 894,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 12019,
+      "name": "Sacrilege",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 12021,
+      "name": "Phobos",
+      "group": "Heavy Interdiction Cruiser",
+      "group_id": 894,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 12023,
+      "name": "Deimos",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 12032,
+      "name": "Manticore",
+      "group": "Stealth Bomber",
+      "group_id": 834,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 12034,
+      "name": "Hound",
+      "group": "Stealth Bomber",
+      "group_id": 834,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 12038,
+      "name": "Purifier",
+      "group": "Stealth Bomber",
+      "group_id": 834,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 12042,
+      "name": "Ishkur",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 12044,
+      "name": "Enyo",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 12729,
+      "name": "Crane",
+      "group": "Blockade Runner",
+      "group_id": 1202,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 12731,
+      "name": "Bustard",
+      "group": "Deep Space Transport",
+      "group_id": 380,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 12733,
+      "name": "Prorator",
+      "group": "Blockade Runner",
+      "group_id": 1202,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 12735,
+      "name": "Prowler",
+      "group": "Blockade Runner",
+      "group_id": 1202,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 12743,
+      "name": "Viator",
+      "group": "Blockade Runner",
+      "group_id": 1202,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 12745,
+      "name": "Occator",
+      "group": "Deep Space Transport",
+      "group_id": 380,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 12747,
+      "name": "Mastodon",
+      "group": "Deep Space Transport",
+      "group_id": 380,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 12753,
+      "name": "Impel",
+      "group": "Deep Space Transport",
+      "group_id": 380,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 13202,
+      "name": "Megathron Federate Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 16227,
+      "name": "Ferox",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 16229,
+      "name": "Brutix",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 16231,
+      "name": "Cyclone",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 16233,
+      "name": "Prophecy",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 16236,
+      "name": "Coercer",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 16238,
+      "name": "Cormorant",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 16240,
+      "name": "Catalyst",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 16242,
+      "name": "Thrasher",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 17476,
+      "name": "Covetor",
+      "group": "Mining Barge",
+      "group_id": 463,
+      "tech": "Tech I",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 17478,
+      "name": "Retriever",
+      "group": "Mining Barge",
+      "group_id": 463,
+      "tech": "Tech I",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 17480,
+      "name": "Procurer",
+      "group": "Mining Barge",
+      "group_id": 463,
+      "tech": "Tech I",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 17619,
+      "name": "Caldari Navy Hookbill",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 17634,
+      "name": "Caracal Navy Issue",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 17636,
+      "name": "Raven Navy Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 17703,
+      "name": "Imperial Navy Slicer",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 17709,
+      "name": "Omen Navy Issue",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 17713,
+      "name": "Stabber Fleet Issue",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 17715,
+      "name": "Gila",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": false
+    },
+    {
+      "type_id": 17718,
+      "name": "Phantasm",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Sansha's Nation",
+      "special_edition": false
+    },
+    {
+      "type_id": 17720,
+      "name": "Cynabal",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": false
+    },
+    {
+      "type_id": 17722,
+      "name": "Vigilant",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": false
+    },
+    {
+      "type_id": 17726,
+      "name": "Apocalypse Navy Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 17728,
+      "name": "Megathron Navy Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 17732,
+      "name": "Tempest Fleet Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 17736,
+      "name": "Nightmare",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Sansha's Nation",
+      "special_edition": false
+    },
+    {
+      "type_id": 17738,
+      "name": "Machariel",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": false
+    },
+    {
+      "type_id": 17740,
+      "name": "Vindicator",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": false
+    },
+    {
+      "type_id": 17812,
+      "name": "Republic Fleet Firetail",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 17841,
+      "name": "Federation Navy Comet",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 17843,
+      "name": "Vexor Navy Issue",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 17918,
+      "name": "Rattlesnake",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": false
+    },
+    {
+      "type_id": 17920,
+      "name": "Bhaalgorn",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": false
+    },
+    {
+      "type_id": 17922,
+      "name": "Ashimmu",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": false
+    },
+    {
+      "type_id": 17924,
+      "name": "Succubus",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Sansha's Nation",
+      "special_edition": false
+    },
+    {
+      "type_id": 17926,
+      "name": "Cruor",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": false
+    },
+    {
+      "type_id": 17928,
+      "name": "Daredevil",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": false
+    },
+    {
+      "type_id": 17930,
+      "name": "Worm",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": false
+    },
+    {
+      "type_id": 17932,
+      "name": "Dramiel",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": false
+    },
+    {
+      "type_id": 19720,
+      "name": "Revelation",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 19722,
+      "name": "Naglfar",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 19724,
+      "name": "Moros",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 19726,
+      "name": "Phoenix",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 19744,
+      "name": "Sigil",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 20125,
+      "name": "Curse",
+      "group": "Combat Recon Ship",
+      "group_id": 906,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 20183,
+      "name": "Providence",
+      "group": "Freighter",
+      "group_id": 513,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 20185,
+      "name": "Charon",
+      "group": "Freighter",
+      "group_id": 513,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 20187,
+      "name": "Obelisk",
+      "group": "Freighter",
+      "group_id": 513,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 20189,
+      "name": "Fenrir",
+      "group": "Freighter",
+      "group_id": 513,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 21097,
+      "name": "Goru's Shuttle",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": "Storyline",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 21628,
+      "name": "Guristas Shuttle",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 22428,
+      "name": "Redeemer",
+      "group": "Black Ops",
+      "group_id": 898,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 22430,
+      "name": "Sin",
+      "group": "Black Ops",
+      "group_id": 898,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 22436,
+      "name": "Widow",
+      "group": "Black Ops",
+      "group_id": 898,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 22440,
+      "name": "Panther",
+      "group": "Black Ops",
+      "group_id": 898,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 22442,
+      "name": "Eos",
+      "group": "Command Ship",
+      "group_id": 540,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 22444,
+      "name": "Sleipnir",
+      "group": "Command Ship",
+      "group_id": 540,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 22446,
+      "name": "Vulture",
+      "group": "Command Ship",
+      "group_id": 540,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 22448,
+      "name": "Absolution",
+      "group": "Command Ship",
+      "group_id": 540,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 22452,
+      "name": "Heretic",
+      "group": "Interdictor",
+      "group_id": 541,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 22456,
+      "name": "Sabre",
+      "group": "Interdictor",
+      "group_id": 541,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 22460,
+      "name": "Eris",
+      "group": "Interdictor",
+      "group_id": 541,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 22464,
+      "name": "Flycatcher",
+      "group": "Interdictor",
+      "group_id": 541,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 22466,
+      "name": "Astarte",
+      "group": "Command Ship",
+      "group_id": 540,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 22468,
+      "name": "Claymore",
+      "group": "Command Ship",
+      "group_id": 540,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 22470,
+      "name": "Nighthawk",
+      "group": "Command Ship",
+      "group_id": 540,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 22474,
+      "name": "Damnation",
+      "group": "Command Ship",
+      "group_id": 540,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 22544,
+      "name": "Hulk",
+      "group": "Exhumer",
+      "group_id": 543,
+      "tech": "Tech II",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 22546,
+      "name": "Skiff",
+      "group": "Exhumer",
+      "group_id": 543,
+      "tech": "Tech II",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 22548,
+      "name": "Mackinaw",
+      "group": "Exhumer",
+      "group_id": 543,
+      "tech": "Tech II",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 22852,
+      "name": "Hel",
+      "group": "Supercarrier",
+      "group_id": 659,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 23757,
+      "name": "Archon",
+      "group": "Carrier",
+      "group_id": 547,
+      "tech": null,
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 23773,
+      "name": "Ragnarok",
+      "group": "Titan",
+      "group_id": 30,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 23911,
+      "name": "Thanatos",
+      "group": "Carrier",
+      "group_id": 547,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 23913,
+      "name": "Nyx",
+      "group": "Supercarrier",
+      "group_id": 659,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 23915,
+      "name": "Chimera",
+      "group": "Carrier",
+      "group_id": 547,
+      "tech": null,
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 23917,
+      "name": "Wyvern",
+      "group": "Supercarrier",
+      "group_id": 659,
+      "tech": null,
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 23919,
+      "name": "Aeon",
+      "group": "Supercarrier",
+      "group_id": 659,
+      "tech": null,
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 24483,
+      "name": "Nidhoggur",
+      "group": "Carrier",
+      "group_id": 547,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 24688,
+      "name": "Rokh",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": null,
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 24690,
+      "name": "Hyperion",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 24692,
+      "name": "Abaddon",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": null,
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 24694,
+      "name": "Maelstrom",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 24696,
+      "name": "Harbinger",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 24698,
+      "name": "Drake",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 24700,
+      "name": "Myrmidon",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 24702,
+      "name": "Hurricane",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 26840,
+      "name": "Raven State Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": true
+    },
+    {
+      "type_id": 26842,
+      "name": "Tempest Tribal Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": true
+    },
+    {
+      "type_id": 28352,
+      "name": "Rorqual",
+      "group": "Capital Industrial Ship",
+      "group_id": 883,
+      "tech": null,
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 28606,
+      "name": "Orca",
+      "group": "Industrial Command Ship",
+      "group_id": 941,
+      "tech": null,
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 28659,
+      "name": "Paladin",
+      "group": "Marauder",
+      "group_id": 900,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 28661,
+      "name": "Kronos",
+      "group": "Marauder",
+      "group_id": 900,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 28665,
+      "name": "Vargur",
+      "group": "Marauder",
+      "group_id": 900,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 28710,
+      "name": "Golem",
+      "group": "Marauder",
+      "group_id": 900,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 28844,
+      "name": "Rhea",
+      "group": "Jump Freighter",
+      "group_id": 902,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 28846,
+      "name": "Nomad",
+      "group": "Jump Freighter",
+      "group_id": 902,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 28848,
+      "name": "Anshar",
+      "group": "Jump Freighter",
+      "group_id": 902,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 28850,
+      "name": "Ark",
+      "group": "Jump Freighter",
+      "group_id": 902,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 29248,
+      "name": "Magnate",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 29266,
+      "name": "Apotheosis",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": null,
+      "faction": "The Society of Conscious Thought",
+      "special_edition": true
+    },
+    {
+      "type_id": 29336,
+      "name": "Scythe Fleet Issue",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 29337,
+      "name": "Augoror Navy Issue",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 29340,
+      "name": "Osprey Navy Issue",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 29344,
+      "name": "Exequror Navy Issue",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 29984,
+      "name": "Tengu",
+      "group": "Strategic Cruiser",
+      "group_id": 963,
+      "tech": "Tech III",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 29986,
+      "name": "Legion",
+      "group": "Strategic Cruiser",
+      "group_id": 963,
+      "tech": "Tech III",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 29988,
+      "name": "Proteus",
+      "group": "Strategic Cruiser",
+      "group_id": 963,
+      "tech": "Tech III",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 29990,
+      "name": "Loki",
+      "group": "Strategic Cruiser",
+      "group_id": 963,
+      "tech": "Tech III",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 30842,
+      "name": "InterBus Shuttle",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 32207,
+      "name": "Freki",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": true
+    },
+    {
+      "type_id": 32209,
+      "name": "Mimir",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": true
+    },
+    {
+      "type_id": 32305,
+      "name": "Armageddon Navy Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 32307,
+      "name": "Dominix Navy Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 32309,
+      "name": "Scorpion Navy Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 32311,
+      "name": "Typhoon Fleet Issue",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 32788,
+      "name": "Cambion",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": true
+    },
+    {
+      "type_id": 32790,
+      "name": "Etana",
+      "group": "Logistics",
+      "group_id": 832,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": true
+    },
+    {
+      "type_id": 32811,
+      "name": "Miasmos Amastris Edition",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 32872,
+      "name": "Algos",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 32874,
+      "name": "Dragoon",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 32876,
+      "name": "Corax",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 32878,
+      "name": "Talwar",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 32880,
+      "name": "Venture",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 33079,
+      "name": "Hematos",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": true
+    },
+    {
+      "type_id": 33081,
+      "name": "Taipan",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": true
+    },
+    {
+      "type_id": 33083,
+      "name": "Violator",
+      "group": "Corvette",
+      "group_id": 237,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": true
+    },
+    {
+      "type_id": 33151,
+      "name": "Brutix Navy Issue",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 33153,
+      "name": "Drake Navy Issue",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 33155,
+      "name": "Harbinger Navy Issue",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 33157,
+      "name": "Hurricane Fleet Issue",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 33328,
+      "name": "Capsule - Genolution 'Auroral' 197-variant",
+      "group": "Capsule",
+      "group_id": 29,
+      "tech": "Faction",
+      "faction": "Jove Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 33395,
+      "name": "Moracha",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": true
+    },
+    {
+      "type_id": 33397,
+      "name": "Chremoas",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": true
+    },
+    {
+      "type_id": 33468,
+      "name": "Astero",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Servant Sisters of EVE",
+      "special_edition": false
+    },
+    {
+      "type_id": 33470,
+      "name": "Stratios",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Servant Sisters of EVE",
+      "special_edition": false
+    },
+    {
+      "type_id": 33472,
+      "name": "Nestor",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Servant Sisters of EVE",
+      "special_edition": false
+    },
+    {
+      "type_id": 33513,
+      "name": "Leopard",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": true
+    },
+    {
+      "type_id": 33553,
+      "name": "Stratios Emergency Responder",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Servant Sisters of EVE",
+      "special_edition": false
+    },
+    {
+      "type_id": 33673,
+      "name": "Whiptail",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Tech II",
+      "faction": "Guristas Pirates",
+      "special_edition": true
+    },
+    {
+      "type_id": 33675,
+      "name": "Chameleon",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Tech II",
+      "faction": "Guristas Pirates",
+      "special_edition": true
+    },
+    {
+      "type_id": 33697,
+      "name": "Prospect",
+      "group": "Expedition Frigate",
+      "group_id": 1283,
+      "tech": "Tech II",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 33816,
+      "name": "Garmur",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Mordu's Legion Command",
+      "special_edition": false
+    },
+    {
+      "type_id": 33818,
+      "name": "Orthrus",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Faction",
+      "faction": "Mordu's Legion Command",
+      "special_edition": false
+    },
+    {
+      "type_id": 33820,
+      "name": "Barghest",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": "Faction",
+      "faction": "Mordu's Legion Command",
+      "special_edition": false
+    },
+    {
+      "type_id": 34317,
+      "name": "Confessor",
+      "group": "Tactical Destroyer",
+      "group_id": 1305,
+      "tech": "Tech III",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 34328,
+      "name": "Bowhead",
+      "group": "Freighter",
+      "group_id": 513,
+      "tech": null,
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 34496,
+      "name": "Council Diplomatic Shuttle",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": "Faction",
+      "faction": "CONCORD Assembly",
+      "special_edition": true
+    },
+    {
+      "type_id": 34562,
+      "name": "Svipul",
+      "group": "Tactical Destroyer",
+      "group_id": 1305,
+      "tech": "Tech III",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 34590,
+      "name": "Victorieux Luxury Yacht",
+      "group": "Special Edition Yachts",
+      "group_id": 5087,
+      "tech": "Faction",
+      "faction": "The Syndicate",
+      "special_edition": true
+    },
+    {
+      "type_id": 34828,
+      "name": "Jackdaw",
+      "group": "Tactical Destroyer",
+      "group_id": 1305,
+      "tech": "Tech III",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 35683,
+      "name": "Hecate",
+      "group": "Tactical Destroyer",
+      "group_id": 1305,
+      "tech": "Tech III",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 35779,
+      "name": "Imp",
+      "group": "Interceptor",
+      "group_id": 831,
+      "tech": "Faction",
+      "faction": "Sansha's Nation",
+      "special_edition": true
+    },
+    {
+      "type_id": 35781,
+      "name": "Fiend",
+      "group": "Heavy Interdiction Cruiser",
+      "group_id": 894,
+      "tech": "Faction",
+      "faction": "Sansha's Nation",
+      "special_edition": true
+    },
+    {
+      "type_id": 37135,
+      "name": "Endurance",
+      "group": "Expedition Frigate",
+      "group_id": 1283,
+      "tech": "Tech II",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 37453,
+      "name": "Crucifier Navy Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 37454,
+      "name": "Vigil Fleet Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 37455,
+      "name": "Griffin Navy Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 37456,
+      "name": "Maulus Navy Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 37457,
+      "name": "Deacon",
+      "group": "Logistics Frigate",
+      "group_id": 1527,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 37458,
+      "name": "Kirin",
+      "group": "Logistics Frigate",
+      "group_id": 1527,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 37459,
+      "name": "Thalia",
+      "group": "Logistics Frigate",
+      "group_id": 1527,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 37460,
+      "name": "Scalpel",
+      "group": "Logistics Frigate",
+      "group_id": 1527,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 37480,
+      "name": "Bifrost",
+      "group": "Command Destroyer",
+      "group_id": 1534,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 37481,
+      "name": "Pontifex",
+      "group": "Command Destroyer",
+      "group_id": 1534,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 37482,
+      "name": "Stork",
+      "group": "Command Destroyer",
+      "group_id": 1534,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 37483,
+      "name": "Magus",
+      "group": "Command Destroyer",
+      "group_id": 1534,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 37604,
+      "name": "Apostle",
+      "group": "Force Auxiliary",
+      "group_id": 1538,
+      "tech": "Tech I",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 37605,
+      "name": "Minokawa",
+      "group": "Force Auxiliary",
+      "group_id": 1538,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 37606,
+      "name": "Lif",
+      "group": "Force Auxiliary",
+      "group_id": 1538,
+      "tech": null,
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 37607,
+      "name": "Ninazu",
+      "group": "Force Auxiliary",
+      "group_id": 1538,
+      "tech": null,
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 42124,
+      "name": "Vehement",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": false
+    },
+    {
+      "type_id": 42125,
+      "name": "Vendetta",
+      "group": "Supercarrier",
+      "group_id": 659,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": false
+    },
+    {
+      "type_id": 42126,
+      "name": "Vanquisher",
+      "group": "Titan",
+      "group_id": 30,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": false
+    },
+    {
+      "type_id": 42241,
+      "name": "Molok",
+      "group": "Titan",
+      "group_id": 30,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": false
+    },
+    {
+      "type_id": 42242,
+      "name": "Dagon",
+      "group": "Force Auxiliary",
+      "group_id": 1538,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": false
+    },
+    {
+      "type_id": 42243,
+      "name": "Chemosh",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": false
+    },
+    {
+      "type_id": 42244,
+      "name": "Porpoise",
+      "group": "Industrial Command Ship",
+      "group_id": 941,
+      "tech": null,
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 42245,
+      "name": "Rabisu",
+      "group": "Logistics",
+      "group_id": 832,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": true
+    },
+    {
+      "type_id": 42246,
+      "name": "Caedes",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Faction",
+      "faction": "Blood Raider Covenant",
+      "special_edition": true
+    },
+    {
+      "type_id": 42685,
+      "name": "Sunesis",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": null,
+      "faction": "The Society of Conscious Thought",
+      "special_edition": true
+    },
+    {
+      "type_id": 44993,
+      "name": "Pacifier",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Tech II",
+      "faction": "CONCORD Assembly",
+      "special_edition": true
+    },
+    {
+      "type_id": 44995,
+      "name": "Enforcer",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Tech II",
+      "faction": "CONCORD Assembly",
+      "special_edition": true
+    },
+    {
+      "type_id": 44996,
+      "name": "Marshal",
+      "group": "Black Ops",
+      "group_id": 898,
+      "tech": "Tech II",
+      "faction": "CONCORD Assembly",
+      "special_edition": true
+    },
+    {
+      "type_id": 45530,
+      "name": "Virtuoso",
+      "group": "Stealth Bomber",
+      "group_id": 834,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": true
+    },
+    {
+      "type_id": 45531,
+      "name": "Victor",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Faction",
+      "faction": "Serpentis",
+      "special_edition": true
+    },
+    {
+      "type_id": 45534,
+      "name": "Monitor",
+      "group": "Flag Cruiser",
+      "group_id": 1972,
+      "tech": "Tech II",
+      "faction": "CONCORD Assembly",
+      "special_edition": false
+    },
+    {
+      "type_id": 45645,
+      "name": "Loggerhead",
+      "group": "Force Auxiliary",
+      "group_id": 1538,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": false
+    },
+    {
+      "type_id": 45647,
+      "name": "Caiman",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": false
+    },
+    {
+      "type_id": 45649,
+      "name": "Komodo",
+      "group": "Titan",
+      "group_id": 30,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": false
+    },
+    {
+      "type_id": 47269,
+      "name": "Damavik",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 47270,
+      "name": "Vedmak",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 47271,
+      "name": "Leshak",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": null,
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 47466,
+      "name": "Praxis",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": null,
+      "faction": "The Society of Conscious Thought",
+      "special_edition": true
+    },
+    {
+      "type_id": 48635,
+      "name": "Tiamat",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Tech II",
+      "faction": "Triglavian Collective",
+      "special_edition": true
+    },
+    {
+      "type_id": 48636,
+      "name": "Hydra",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Tech II",
+      "faction": "Triglavian Collective",
+      "special_edition": true
+    },
+    {
+      "type_id": 49710,
+      "name": "Kikimora",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 49711,
+      "name": "Drekavac",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": null,
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 49712,
+      "name": "Rodiva",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 49713,
+      "name": "Zarmazd",
+      "group": "Logistics",
+      "group_id": 832,
+      "tech": "Tech II",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 52250,
+      "name": "Nergal",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Tech II",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 52252,
+      "name": "Ikitursa",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Tech II",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 52254,
+      "name": "Draugur",
+      "group": "Command Destroyer",
+      "group_id": 1534,
+      "tech": "Tech II",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 52907,
+      "name": "Zirnitra",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": null,
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 54731,
+      "name": "Skybreaker",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "EDENCOM",
+      "special_edition": false
+    },
+    {
+      "type_id": 54732,
+      "name": "Stormbringer",
+      "group": "Cruiser",
+      "group_id": 26,
+      "tech": "Tech I",
+      "faction": "EDENCOM",
+      "special_edition": false
+    },
+    {
+      "type_id": 54733,
+      "name": "Thunderchild",
+      "group": "Battleship",
+      "group_id": 27,
+      "tech": null,
+      "faction": "EDENCOM",
+      "special_edition": false
+    },
+    {
+      "type_id": 60764,
+      "name": "Laelaps",
+      "group": "Heavy Interdiction Cruiser",
+      "group_id": 894,
+      "tech": "Faction",
+      "faction": "Mordu's Legion Command",
+      "special_edition": true
+    },
+    {
+      "type_id": 60765,
+      "name": "Raiju",
+      "group": "Electronic Attack Ship",
+      "group_id": 893,
+      "tech": "Faction",
+      "faction": "Mordu's Legion Command",
+      "special_edition": true
+    },
+    {
+      "type_id": 64034,
+      "name": "Boobook",
+      "group": "Shuttle",
+      "group_id": 31,
+      "tech": "Tech I",
+      "faction": "Caldari State",
+      "special_edition": true
+    },
+    {
+      "type_id": 72811,
+      "name": "Cyclone Fleet Issue",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 72812,
+      "name": "Ferox Navy Issue",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 72869,
+      "name": "Myrmidon Navy Issue",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 72872,
+      "name": "Prophecy Navy Issue",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 72903,
+      "name": "Probe Fleet Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 72904,
+      "name": "Heron Navy Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 72907,
+      "name": "Magnate Navy Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 72913,
+      "name": "Imicus Navy Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 73787,
+      "name": "Naglfar Fleet Issue",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 73789,
+      "name": "Coercer Navy Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 73790,
+      "name": "Revelation Navy Issue",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 73792,
+      "name": "Moros Navy Issue",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 73793,
+      "name": "Phoenix Navy Issue",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 73794,
+      "name": "Thrasher Fleet Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 73795,
+      "name": "Cormorant Navy Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 73796,
+      "name": "Catalyst Navy Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 74141,
+      "name": "Geri",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": true
+    },
+    {
+      "type_id": 74316,
+      "name": "Bestla",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": true
+    },
+    {
+      "type_id": 77114,
+      "name": "Metamorphosis",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Tech I",
+      "faction": "The Society of Conscious Thought",
+      "special_edition": true
+    },
+    {
+      "type_id": 77281,
+      "name": "Hubris",
+      "group": "Lancer Dreadnought",
+      "group_id": 4594,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 77283,
+      "name": "Bane",
+      "group": "Lancer Dreadnought",
+      "group_id": 4594,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 77284,
+      "name": "Karura",
+      "group": "Lancer Dreadnought",
+      "group_id": 4594,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 77288,
+      "name": "Valravn",
+      "group": "Lancer Dreadnought",
+      "group_id": 4594,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 77726,
+      "name": "Cybele",
+      "group": "Heavy Assault Cruiser",
+      "group_id": 358,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 78333,
+      "name": "Mekubal",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": false
+    },
+    {
+      "type_id": 78366,
+      "name": "Alligator",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": false
+    },
+    {
+      "type_id": 78367,
+      "name": "Mamba",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": false
+    },
+    {
+      "type_id": 78369,
+      "name": "Khizriel",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": false
+    },
+    {
+      "type_id": 78414,
+      "name": "Shapash",
+      "group": "Assault Frigate",
+      "group_id": 324,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 78576,
+      "name": "Azariel",
+      "group": "Titan",
+      "group_id": 30,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": false
+    },
+    {
+      "type_id": 81008,
+      "name": "Squall",
+      "group": "Hauler",
+      "group_id": 28,
+      "tech": "Tech I",
+      "faction": "EDENCOM",
+      "special_edition": false
+    },
+    {
+      "type_id": 81040,
+      "name": "Avalanche",
+      "group": "Freighter",
+      "group_id": 513,
+      "tech": "Tech I",
+      "faction": "EDENCOM",
+      "special_edition": false
+    },
+    {
+      "type_id": 81046,
+      "name": "Deluge",
+      "group": "Blockade Runner",
+      "group_id": 1202,
+      "tech": "Tech II",
+      "faction": "EDENCOM",
+      "special_edition": false
+    },
+    {
+      "type_id": 81047,
+      "name": "Torrent",
+      "group": "Deep Space Transport",
+      "group_id": 380,
+      "tech": "Tech II",
+      "faction": "EDENCOM",
+      "special_edition": false
+    },
+    {
+      "type_id": 85062,
+      "name": "Sidewinder",
+      "group": "Covert Ops",
+      "group_id": 830,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": true
+    },
+    {
+      "type_id": 85086,
+      "name": "Cenotaph",
+      "group": "Combat Battlecruiser",
+      "group_id": 419,
+      "tech": "Faction",
+      "faction": "Deathless Circle",
+      "special_edition": false
+    },
+    {
+      "type_id": 85087,
+      "name": "Tholos",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Deathless Circle",
+      "special_edition": false
+    },
+    {
+      "type_id": 85229,
+      "name": "Cobra",
+      "group": "Force Recon Ship",
+      "group_id": 833,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": true
+    },
+    {
+      "type_id": 85236,
+      "name": "Python",
+      "group": "Black Ops",
+      "group_id": 898,
+      "tech": "Faction",
+      "faction": "Guristas Pirates",
+      "special_edition": true
+    },
+    {
+      "type_id": 87381,
+      "name": "Sarathiel",
+      "group": "Dreadnought",
+      "group_id": 485,
+      "tech": "Faction",
+      "faction": "Angel Cartel",
+      "special_edition": false
+    },
+    {
+      "type_id": 88001,
+      "name": "Babaroga",
+      "group": "Marauder",
+      "group_id": 900,
+      "tech": "Tech II",
+      "faction": "Triglavian Collective",
+      "special_edition": false
+    },
+    {
+      "type_id": 89240,
+      "name": "Pioneer",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Tech I",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 89607,
+      "name": "Odysseus",
+      "group": "Expedition Command Ship",
+      "group_id": 4902,
+      "tech": "Faction",
+      "faction": "Servant Sisters of EVE",
+      "special_edition": false
+    },
+    {
+      "type_id": 89647,
+      "name": "Pioneer Consortium Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 89648,
+      "name": "Venture Consortium Issue",
+      "group": "Frigate",
+      "group_id": 25,
+      "tech": "Faction",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 89649,
+      "name": "Outrider",
+      "group": "Command Destroyer",
+      "group_id": 1534,
+      "tech": "Tech II",
+      "faction": "ORE",
+      "special_edition": false
+    },
+    {
+      "type_id": 89807,
+      "name": "Anhinga",
+      "group": "Attack Battlecruiser",
+      "group_id": 1201,
+      "tech": null,
+      "faction": "Caldari State",
+      "special_edition": true
+    },
+    {
+      "type_id": 89808,
+      "name": "Skua",
+      "group": "Tactical Destroyer",
+      "group_id": 1305,
+      "tech": "Tech III",
+      "faction": "Caldari State",
+      "special_edition": true
+    },
+    {
+      "type_id": 91174,
+      "name": "Perseverance",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "ORE",
+      "special_edition": true
+    },
+    {
+      "type_id": 91775,
+      "name": "Dragoon Navy Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 91849,
+      "name": "Algos Navy Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 91857,
+      "name": "Corax Navy Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 91858,
+      "name": "Talwar Fleet Issue",
+      "group": "Destroyer",
+      "group_id": 420,
+      "tech": "Faction",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    },
+    {
+      "type_id": 92282,
+      "name": "Tenzin YC128 Campaign Bus",
+      "group": "Special Edition Yachts",
+      "group_id": 5087,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 92283,
+      "name": "Moreau YC128 Campaign Bus",
+      "group": "Special Edition Yachts",
+      "group_id": 5087,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 92284,
+      "name": "Roden YC128 Campaign Bus",
+      "group": "Special Edition Yachts",
+      "group_id": 5087,
+      "tech": "Faction",
+      "faction": "Gallente Federation",
+      "special_edition": true
+    },
+    {
+      "type_id": 92822,
+      "name": "Salvation",
+      "group": "Command Carrier",
+      "group_id": 5120,
+      "tech": "Tech II",
+      "faction": "Amarr Empire",
+      "special_edition": false
+    },
+    {
+      "type_id": 92823,
+      "name": "Simurgh",
+      "group": "Command Carrier",
+      "group_id": 5120,
+      "tech": "Tech II",
+      "faction": "Caldari State",
+      "special_edition": false
+    },
+    {
+      "type_id": 92824,
+      "name": "Gaia",
+      "group": "Command Carrier",
+      "group_id": 5120,
+      "tech": "Tech II",
+      "faction": "Gallente Federation",
+      "special_edition": false
+    },
+    {
+      "type_id": 92825,
+      "name": "Ymir",
+      "group": "Command Carrier",
+      "group_id": 5120,
+      "tech": "Tech II",
+      "faction": "Minmatar Republic",
+      "special_edition": false
+    }
+  ]
+}

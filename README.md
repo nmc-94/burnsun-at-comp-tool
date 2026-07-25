@@ -38,6 +38,29 @@ at http://localhost:8000. Check health at http://localhost:8000/api/health.
 
 All configuration is via environment variables — see [.env.example](.env.example).
 
+### Load a ruleset
+
+A fresh database has no ruleset in it. Point values are ingested data, not something
+compiled into the app, so import a captured snapshot once:
+
+```bash
+python -m comptool.ingest import-points --csv docs/sources/points-atxxii-2026-07-23.csv --ships docs/sources/ships-sde-3444265.json
+```
+
+It is then served at `/api/v1/rulesets/atxxii/latest`. A version is immutable: when
+point values change mid-tournament, re-export the snapshot and import it under a new
+label rather than editing the one already published.
+
+The snapshots live under `docs/` and are deliberately not baked into the image, so
+running this in a container means mounting them:
+
+```bash
+docker compose run --rm -v "$PWD/docs:/app/docs" --entrypoint python app -m comptool.ingest import-points --csv docs/sources/points-atxxii-2026-07-23.csv --ships docs/sources/ships-sde-3444265.json
+```
+
+See [docs/sources/README.md](docs/sources/README.md) for where each snapshot comes
+from and how to re-cut it.
+
 ## Develop
 
 Backend (Python 3.12+):

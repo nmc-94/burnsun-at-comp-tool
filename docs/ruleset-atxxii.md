@@ -86,9 +86,13 @@ point value** — preferring its individual per-ship value, else its class/facti
 value. A ship that resolves via **neither** table is **banned by omission**. The
 per-ship table is the primary, already-resolved lookup (278 ships in the
 snapshot); the class table is the fallback for anything not individually listed
-(and a human-readable summary). Note the per-ship table is *not* guaranteed
-exhaustive of every legal hull — some ships may draw their value only from the
-class table — so both layers must be ingested.
+(and a human-readable summary).
+
+The per-ship table is **not** exhaustive of every legal hull, which has been
+measured rather than assumed: exactly nine published hulls — the Tech 2
+industrials — draw their value from the class table alone. Everything else
+absent from it is excluded by §5 or by size. See `sources/README.md` for the
+measurement, and for what the tool does about it.
 
 - Individual ship point values in the current snapshot range **1–53**.
 - 278 individual ships are enumerated in the snapshot.
@@ -236,6 +240,14 @@ positioned to validate them later. Highlights:
   Bhaalgorn** (explicitly prohibited from flagship status).
 - A flagship **costs the same points** as a normal ship of its type and counts
   as a normal hull in all respects except the exemptions below.
+
+> **Scope of "T1/T2/faction" — settled by the owner (2026-07-24).** All 38
+> battleships in the points table classify as Battleship / Navy / Pirate /
+> Marauder / Black Ops, so the operative rule is simply **every battleship
+> except the Bhaalgorn**. The one hull this had to decide is the **Praxis**, a
+> special edition §5 permits explicitly and which carries the plain `Battleship`
+> bucket: it **is** flagship-eligible, reading §7's intent as "any battleship you
+> may field, except that one". The tool implements exactly this predicate.
 - **Meta-level exemption:** flagships may ignore meta-level restrictions for a
   listed set of module types (turrets/launchers, webs, smartbombs, prop mods,
   tackle, painters, sensor boosters/sig amps, overdrives/nanos/inertials, weapon

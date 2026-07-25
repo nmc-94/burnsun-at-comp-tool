@@ -22,6 +22,7 @@ from .db import dispose_db, get_engine, init_db
 from .health import router as health_router
 from .logging_config import configure_logging
 from .models import AppMeta
+from .rulesets import router as rulesets_router
 from .settings import Settings, get_settings
 
 logger = logging.getLogger("comptool")
@@ -57,6 +58,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="AT Comp Tool", version=__version__, lifespan=lifespan)
 app.include_router(health_router)
+app.include_router(rulesets_router)
 
 # Hashed, immutable bundles. Mounted only when a build is present (backend-only dev/CI
 # runs without a web/dist); the catch-all handles the index and other root files.
