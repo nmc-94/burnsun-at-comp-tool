@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 
 from comptool.db import dispose_db, get_engine, get_session, init_db
 from comptool.ingest import points_csv, ruleset, sde
@@ -141,13 +142,46 @@ def payload(snapshot, ship_index) -> dict:
     return ruleset.build(snapshot, ship_index, VERSION_LABEL)
 
 
+def _unreachable(problem: OperationalError) -> str:
+    """What to do about a database the suite cannot open.
+
+    Raised in place of psycopg's traceback, which reports the failure accurately and says
+    nothing about the fix. The test database is deliberately not the one the app uses, so
+    "it does not exist" is the expected state of a fresh clone rather than a fault.
+    """
+    url = os.environ.get("COMPTOOL_TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
+    return (
+        f"Cannot open the test database {_redacted(url)}.\n\n"
+        f"It is deliberately separate from the one the app runs on, so a fresh clone has "
+        f"to create it once:\n"
+        f"    docker exec at-comp-tool-db-1 createdb -U comptool comptool_test\n\n"
+        f"If Postgres is not running at all:\n"
+        f"    docker compose up -d db\n\n"
+        f"Underlying error: {problem.orig}"
+    )
+
+
+def _redacted(url: str) -> str:
+    """The URL with any password removed, so a failure is quotable in a bug report."""
+    parts = urlsplit(url)
+    if not parts.password:
+        return url
+    return url.replace(f":{parts.password}@", ":***@", 1)
+
+
 @pytest.fixture()
 def database():
     """A clean schema for one test: create tables, yield, drop, dispose."""
     get_settings.cache_clear()
     init_db(get_settings())
     engine = get_engine()
-    Base.metadata.drop_all(engine)
+    try:
+        Base.metadata.drop_all(engine)
+    except OperationalError as problem:
+        # Only the first contact is wrapped. Once the connection is known good, a later
+        # failure is a real one and deserves its own traceback rather than this advice.
+        dispose_db()
+        raise pytest.UsageError(_unreachable(problem)) from None
     Base.metadata.create_all(engine)
     try:
         yield
