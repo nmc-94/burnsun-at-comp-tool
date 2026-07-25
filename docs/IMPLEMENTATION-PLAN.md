@@ -141,8 +141,11 @@ type and session cookie get brand-neutral names).
   `web_library.py` (owner + base permission) + `web_library_grants.py` (grants on
   `(subject_kind, subject_id)` for character/corp/alliance) +
   `web_library_permissions.py` (the authz resolver: an `IntEnum` level ladder,
-  owner short-circuit, **404-not-403** on under-privilege). Re-key ownership to
-  the new accounts table. (Single-owner `WebShareStore` is the simpler fallback.)
+  owner short-circuit, **404-not-403** on under-privilege). **Built in Phase B**
+  as `comptool/permissions.py` + `Team`/`TeamGrant`. Note the correction to this
+  plan: ownership is keyed on the EVE **character id** directly and there is *no*
+  accounts table — the verified character is the identity, so an account row
+  would only be an alias for it.
 - **Config** — consolidate BurnSun's scattered env reads (`runtime_db.py`,
   `db.py`, `env_compat.py`) into a single **Pydantic Settings** module; replace
   pyfa's file-based secret scheme with env-provided values.
@@ -223,12 +226,19 @@ SDE-derived ship-reference index (reporting unresolved/ambiguous names loudly).
 Ingest ban/restriction lists as data; store as an immutable, version-stamped
 ruleset. Import = upload CSV or point at the Sheet CSV-export URL (admin path).
 
+> **Done, with two corrections.** Bans are *not* ingested as data: every hull the
+> rules exclude is absent from the points table, so omission already bans it and
+> the list survives only as an ingester assertion. And the admin import path
+> needs authentication, so Phase C shipped a CLI (`python -m comptool.ingest`)
+> and the HTTP route moved to **Phase D**.
+
 **Phase D — Auth, teams & grants.** Reimplement the session + OAuth machinery
 (BurnSun-modeled, pyfa-free; new ESI crypto layer, identity-only scopes). Team CRUD;
 grant access by **character name** (resolve name→`character_id` via ESI at grant
 time, store both, match on ID at login); Owner/Editor/Viewer via the reused
 permission ladder; logout / log-out-everywhere. No matching grant → the user sees
-only their own teams.
+only their own teams. Also picks up the **admin ruleset-import route** deferred
+from Phase C, built on the ingester's existing functions.
 
 **Phase E — Single live-validating comp builder.** Build the `HANDOFF.md` **comp
 tile** (name · issue-flag · **± delta pill** green/amber/red · archetype+tag chips ·
