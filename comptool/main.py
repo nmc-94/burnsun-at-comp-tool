@@ -28,6 +28,7 @@ from .models import AppMeta
 from .rulesets import router as rulesets_router
 from .settings import Settings, get_settings
 from .teams import router as teams_router
+from .workspace import router as workspace_router
 
 logger = logging.getLogger("comptool")
 
@@ -72,6 +73,10 @@ app.include_router(teams_router)
 # list and create, and on their own id thereafter.
 app.include_router(team_comps_router)
 app.include_router(comps_router)
+# The workspace hangs off a team for the same reason the comp listing does — a board is a
+# view onto one team's comps — but it belongs to the character rather than to the team,
+# which is why it is in neither teams.py nor comps.py.
+app.include_router(workspace_router)
 
 # Hashed, immutable bundles. Mounted only when a build is present (backend-only dev/CI
 # runs without a web/dist); the catch-all handles the index and other root files.

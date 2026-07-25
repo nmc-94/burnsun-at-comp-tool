@@ -5,7 +5,7 @@
 // flag and its popover, and `slots` become the row scaffold. Anything that needed working
 // out lives in tile-model.ts, where it can be tested without a DOM.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CompSlot, LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
@@ -32,6 +32,9 @@ interface Props {
   saveState: SaveState
   onChange: (slots: CompSlot[]) => void
   onRename: (name: string) => void
+  /** Put the cursor in the name. Set only for a comp that was just created, so naming it is
+   *  the next thing rather than a second click. */
+  autoFocusName?: boolean
 }
 
 export default function CompTile({
@@ -45,10 +48,21 @@ export default function CompTile({
   saveState,
   onChange,
   onRename,
+  autoFocusName,
 }: Props) {
   const [openRow, setOpenRow] = useState<number | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [highlighted, setHighlighted] = useState<readonly number[]>([])
+  const nameField = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    // Focused here rather than with the autoFocus attribute, which jsx-a11y rightly objects
+    // to: this runs only for a comp that was created a moment ago, where naming it is the
+    // obvious next act, and never on a tile that merely appeared on a board.
+    if (!autoFocusName) return
+    nameField.current?.focus()
+    nameField.current?.select()
+  }, [autoFocusName])
 
   const rows = useMemo(() => scaffold(result, ruleset.fieldSize), [result, ruleset.fieldSize])
   const blamed = useMemo(() => rowsBlamedBy(result.violations), [result.violations])
@@ -70,6 +84,7 @@ export default function CompTile({
             defaultValue={name}
             maxLength={200}
             aria-label="Comp name"
+            ref={nameField}
             // Uncontrolled with a blur guard, the way a team is renamed: a controlled
             // field here would put a round trip between a keystroke and the letter
             // appearing.
@@ -245,9 +260,13 @@ export default function CompTile({
           by {createdByName ?? 'unknown'}
         </span>
         <span className="spacer" />
-        {/* Announced, because an autosave nobody is told about is indistinguishable from
-            no autosave — and it is what lets a driver wait for a write instead of sleeping
-            through the debounce. */}
+        {/* Stated, because an autosave nobody is told about is indistinguishable from no
+            autosave — and it is what lets a driver wait for a write instead of sleeping
+            through the debounce.
+
+            Not *announced*, though: aria-live is off here because a board opens twenty of
+            these at once and a screen reader would read "saved" twenty times before anyone
+            had done anything. The board carries one live region for the whole set. */}
         <span
           className="fa faint"
           data-testid="comp-save-state"
@@ -255,7 +274,7 @@ export default function CompTile({
           // a clock, and it survives the label being rephrased.
           data-save-state={saveState}
           role="status"
-          aria-live="polite"
+          aria-live="off"
         >
           {saveLabel(saveState)}
         </span>

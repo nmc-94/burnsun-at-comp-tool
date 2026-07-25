@@ -11,6 +11,10 @@ nothing here records whether a comp is legal — only what it contains.
 The ``auth_*`` tables are a third concern again: who is asking. They hold no game data,
 only what is needed to recognize a returning browser and to prove which character it is.
 
+``workspace_layout`` is a fourth: not what a team owns and not who is asking, but how one
+person has arranged the first in front of the second. It holds no game data either, and
+the comp ids inside it are never trusted — see ``comptool/workspace.py``.
+
 ``app_meta`` predates the domain and stays: the health probe reads it to prove migrations
 have been applied without coupling ops to a domain table.
 """
@@ -284,6 +288,54 @@ class CompComment(Base):
     created_at: Mapped[datetime] = _created_at()
 
     comp: Mapped[Comp] = relationship(back_populates="comments")
+
+
+class WorkspaceLayout(Base):
+    """How one character has arranged one team's comps: boards, tiles, and their order.
+
+    Scoped to a team and a character together. A board is a view onto *a team's* comps —
+    the rail it is opened from is headed with the team's comps — and every grant in this
+    schema is team-scoped, so a layout that spanned teams would have to be authorized a
+    team at a time. Scoping it here means one gate, the same one every other team-owned
+    route goes through. There is no user table, so the character is a bare id, the way
+    ``team.owner_character_id`` and ``comp.created_by_character_id`` are.
+
+    The arrangement is a document rather than tables of boards and tiles. Nothing queries
+    across it: it is read whole when a workspace opens and written whole when a board is
+    switched, so normalizing would buy a join nobody makes and cost a dozen deleted and
+    re-inserted rows every time a tile is closed. It also leaves room for the parts that
+    are not built — a tile's position and size, once the board stops being a fixed grid —
+    without a migration, the way ``ruleset_version.payload`` leaves room for the engine.
+
+    What the server *does* read is the comp ids, and it never trusts them. A stored id is
+    something somebody wrote down earlier; the comp may have been deleted since. Both
+    routes intersect the document with the team's own comps, so a layout can never hand
+    back an id its holder could not have listed for themselves. See ``comptool/workspace.py``.
+    """
+
+    __tablename__ = "workspace_layout"
+    __table_args__ = (
+        # One arrangement per character per team. Also the index both routes look up by,
+        # and — leading with team_id — the one the cascade walks, which is why there is no
+        # separate index on team_id: a second index on a row written this often would be
+        # paid for on every save and read by nothing.
+        UniqueConstraint("team_id", "character_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("team.id", ondelete="CASCADE"))
+    # An EVE character id, with no foreign key, because identity lives in the session and
+    # there is nothing here to point at.
+    character_id: Mapped[int] = mapped_column(BigInteger)
+    # ``{"boards": [...], "activeBoardId": ...}``, camelCase, stored as it is served —
+    # minus the comp ids, which the routes filter on the way in and on the way out.
+    document: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team: Mapped[Team] = relationship()
 
 
 class AuthSession(Base):

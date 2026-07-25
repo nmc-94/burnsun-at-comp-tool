@@ -2,13 +2,17 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { ApiError, request } from './api'
 import { brand } from './brand/brandConfig'
-import CompScreen from './comps/CompScreen'
+import CompResolver from './comps/CompResolver'
+import { hrefFor, workspaceRoute } from './router/route'
+import type { Route } from './router/route'
+import { navigate, useRoute } from './router/useRoute'
 import type { Session } from './session'
 import { fetchSession } from './session'
 import TeamList from './teams/TeamList'
 import TeamScreen from './teams/TeamScreen'
 import { readThemePref, resolveTheme, toggleTheme } from './theme'
 import UserChip from './UserChip'
+import WorkspaceScreen from './workspace/WorkspaceScreen'
 
 type HealthState =
   | { kind: 'loading' }
@@ -19,20 +23,11 @@ interface HealthResponse {
   status?: string
 }
 
-// No router yet. One comp in focus is Phase E's shape and a board of tabs is Phase F's;
-// a router retrofitted now would be designed for neither. The cost is no deep link to a
-// team or a comp, which nothing yet depends on.
-type Screen =
-  | { kind: 'teams' }
-  | { kind: 'team'; id: string }
-  // A comp carries the team it came from so closing it returns where it was opened.
-  | { kind: 'comp'; id: string; teamId: string }
-
 export default function App() {
   const [health, setHealth] = useState<HealthState>({ kind: 'loading' })
   const [theme, setTheme] = useState<'light' | 'dark'>(() => resolveTheme(readThemePref()))
   const [session, setSession] = useState<Session | null>(null)
-  const [screen, setScreen] = useState<Screen>({ kind: 'teams' })
+  const route = useRoute()
 
   useEffect(() => {
     document.title = brand.appName
@@ -43,7 +38,7 @@ export default function App() {
       .then((found) => {
         setSession(found)
         // Signing out should not leave a team open behind the sign-in prompt.
-        if (!found.character) setScreen({ kind: 'teams' })
+        if (!found.character) navigate({ kind: 'teams' }, { replace: true })
       })
       .catch(() => setSession({ ssoEnabled: false, character: null }))
   }, [])
@@ -74,7 +69,13 @@ export default function App() {
     // header and footer sit outside main deliberately: nested inside it they are generic
     // elements rather than the banner and contentinfo landmarks, so nothing could navigate
     // to them.
-    <div className="app-shell" data-testid="app-shell">
+    // The workspace wants the whole window; every other screen is a card in a centred
+    // column. One modifier rather than a second shell, so the header and footer landmarks
+    // stay exactly where they are.
+    <div
+      className={`app-shell${route.kind === 'workspace' ? ' app-shell-wide' : ''}`}
+      data-testid="app-shell"
+    >
       <header className="app-header" data-testid="app-header">
         <span className="wordmark">{brand.wordmark.primary}</span>
         <span className="wordmark-suffix">{brand.wordmark.suffix}</span>
@@ -84,9 +85,7 @@ export default function App() {
         </span>
       </header>
 
-      <main>
-        {session?.character ? renderScreen(screen, setScreen) : <SignedOut session={session} />}
-      </main>
+      <main>{session?.character ? renderRoute(route) : <SignedOut session={session} />}</main>
 
       <footer className="app-footer" data-testid="app-footer">
         <span className="health" data-testid="app-health" role="status">
@@ -111,22 +110,34 @@ export default function App() {
   )
 }
 
-// A switch rather than nested ternaries: at three arms the ternary stopped being readable,
-// and Phase F adds a fourth.
-function renderScreen(screen: Screen, go: (screen: Screen) => void) {
-  switch (screen.kind) {
+function renderRoute(route: Route) {
+  switch (route.kind) {
     case 'teams':
-      return <TeamList onOpen={(id) => go({ kind: 'team', id })} />
-    case 'team':
+      return <TeamList onOpen={(id) => navigate(workspaceRoute(id))} />
+    case 'workspace':
+      // `view` is Phase G's compare screen. Until it exists a compare URL still resolves to
+      // a real board rather than to nothing, which is what keeps a shared link from rotting.
+      return <WorkspaceScreen teamId={route.teamId} boardId={route.boardId} />
+    case 'team-settings':
       return (
-        <TeamScreen
-          teamId={screen.id}
-          onBack={() => go({ kind: 'teams' })}
-          onOpenComp={(id) => go({ kind: 'comp', id, teamId: screen.id })}
-        />
+        <TeamScreen teamId={route.teamId} onBack={() => navigate(workspaceRoute(route.teamId))} />
       )
     case 'comp':
-      return <CompScreen compId={screen.id} onBack={() => go({ kind: 'team', id: screen.teamId })} />
+      return <CompResolver compId={route.compId} />
+    case 'not-found':
+      return (
+        <section className="card" data-testid="not-found">
+          <h2 className="card-title">Nothing here</h2>
+          <div className="card-body">
+            <p>
+              <code>{route.path}</code> is not a page in this app.
+            </p>
+            <a className="link" href={hrefFor({ kind: 'teams' })}>
+              Back to your teams
+            </a>
+          </div>
+        </section>
+      )
   }
 }
 

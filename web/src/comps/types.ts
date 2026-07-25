@@ -9,7 +9,12 @@ export interface CompSlotDetail {
   isFlagship: boolean
 }
 
-export interface CompSummary {
+/**
+ * One comp, contents and all. There is no lighter shape: the library rail judges every
+ * comp on the team in the browser, so a comp without its slots is one it cannot draw a
+ * legality dot for, and the listing serves this same shape.
+ */
+export interface CompDetail {
   id: string
   teamId: string
   name: string
@@ -23,9 +28,6 @@ export interface CompSummary {
   updatedAt: string
   /** What the signed-in character holds on the owning team. Controls are gated on this. */
   yourLevel: AccessLevel
-}
-
-export interface CompDetail extends CompSummary {
   slots: CompSlotDetail[]
 }
 

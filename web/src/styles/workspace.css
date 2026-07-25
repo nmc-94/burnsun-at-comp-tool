@@ -1,0 +1,493 @@
+/* The workspace: board tabs, the library rail, the grid of tiles and the ghost tile.
+ *
+ * Ported from docs/comp-tool-mockup.html, which is the locked design. Colours come from
+ * tokens.css and nothing here introduces one; no gradients, blur, glow or shadow, per §6.4.
+ *
+ * Three parts of the mockup are deliberately NOT here. The accordion (.acc/.acc-head/.chev)
+ * has nothing to group by until archetype arrives in Phase H, and the rail is a flat list
+ * until it does. The shared-tab styling (.ftab.shared) belongs with the shared tab itself,
+ * which is §4.7. And .enf-toggle was dead before it was written — rules are reported, never
+ * enforced. Dead CSS ported "for later" is what the handoff complained about; none of it is
+ * here.
+ */
+
+/* The workspace is the one screen that wants the whole window rather than the centred
+ * column every other screen sits in.
+ *
+ * Written as `.app-shell.app-shell-wide` rather than the modifier alone, and that is not
+ * decoration. base.css pulls this file in with an @import at its top, so every rule here
+ * lands *before* base.css's own `.app-shell { max-width: 720px }`. At equal specificity the
+ * later rule wins, so a bare `.app-shell-wide` loses to the very rule it exists to override
+ * — silently, and only in a browser, because jsdom loads no stylesheet at all. Two classes
+ * beat one, and the element always carries both. */
+.app-shell.app-shell-wide {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  /* dvh, not vh: mobile browser chrome would otherwise clip the bottom of the grid. */
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell.app-shell-wide > main {
+  flex: 1 1 auto;
+  /* Load-bearing. Without it this flex item refuses to shrink below its content and the
+   * grid's own overflow never becomes a scrollbar. */
+  min-height: 0;
+  display: flex;
+}
+
+.app-shell.app-shell-wide .app-header,
+.app-shell.app-shell-wide .app-footer {
+  padding: 8px 16px;
+  margin: 0;
+}
+
+/* underline tabs */
+.ftabs-shell {
+  flex: 0 0 auto;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.ftabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 0 10px;
+  align-items: center;
+  min-height: 38px;
+}
+
+.ftabs-list {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ftab {
+  position: relative;
+  color: var(--text-3);
+  min-height: 37px;
+  border-bottom: 2px solid transparent;
+  padding: 0 40px 0 10px;
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.ftab:hover {
+  color: var(--text-1);
+}
+
+.ftab.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.ftab-open {
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+}
+
+.ftab-open:hover {
+  text-decoration: none;
+}
+
+/* Revealed on hover and on keyboard focus. The focus half is not optional: without it the
+ * only way to rename or close a board would be a mouse. */
+.ftab-rename,
+.ftab-close {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--text-4);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 0;
+  font-size: 10px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ftab-rename {
+  right: 23px;
+}
+
+.ftab-close {
+  right: 6px;
+  font-size: 13px;
+}
+
+.ftab:hover .ftab-rename,
+.ftab:hover .ftab-close,
+.ftab-rename:focus-visible,
+.ftab-close:focus-visible {
+  opacity: 1;
+}
+
+.ftab-rename:hover,
+.ftab-close:hover {
+  color: var(--text-1);
+  background: var(--bg-soft);
+}
+
+.ftab-name {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-1);
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  width: 130px;
+}
+
+.ftab-new {
+  min-height: 37px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.ftab-new:hover:not(:disabled) {
+  color: var(--text-1);
+  border-bottom-color: color-mix(in srgb, var(--accent) 46%, transparent);
+}
+
+.ftab-new:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* library rail */
+.ws {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+.lib {
+  flex: 0 0 auto;
+  width: 236px;
+  background: color-mix(in srgb, var(--bg-panel-alt) 94%, transparent);
+  border-right: 1px solid var(--line-1);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.lib-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 31px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.lib-head .section-label {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.lib-search {
+  margin: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 9px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+}
+
+.lib-search input {
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lib-status {
+  margin: 0;
+  padding: 0 14px 4px;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+.lib-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 8px 12px;
+  flex: 1 1 auto;
+}
+
+.tree-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 14px;
+  font-size: 10px;
+  color: var(--text-3);
+  border: 1px solid color-mix(in srgb, var(--line-1) 85%, transparent);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-family: var(--font-brand);
+}
+
+.leaf {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.leaf:hover {
+  background: var(--bg-soft);
+}
+
+/* The comp is already open on the board being looked at. */
+.leaf:has(.lnm[aria-current]) {
+  background: var(--bg-soft);
+  color: var(--text-1);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.leaf .licon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+}
+
+.leaf .ldot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-4);
+}
+
+.leaf .ldot.legal {
+  background: var(--success);
+}
+
+.leaf .ldot.illegal {
+  background: var(--danger);
+}
+
+.leaf .lnm {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.leaf .lpts {
+  font-family: var(--font-brand);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.lib-new {
+  margin: 0 8px 10px;
+  padding: 6px;
+  background: transparent;
+  border: 1px dashed var(--line-1);
+  border-radius: var(--radius-md);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.lib-new:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Only ever visible on a narrow viewport — see the media query at the foot of this file. */
+.library-toggle {
+  display: none;
+}
+
+/* the board */
+.ws-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wsgrid {
+  flex: 1 1 auto;
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  align-items: start;
+  align-content: start;
+  grid-auto-rows: max-content;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.board-tile {
+  position: relative;
+  min-width: 0;
+}
+
+.board-tile-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-4);
+  font-size: 14px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.board-tile:hover .board-tile-close,
+.board-tile-close:focus-visible {
+  opacity: 1;
+}
+
+.board-tile-close:hover {
+  color: var(--danger);
+  background: var(--bg-soft);
+}
+
+.board-tile-loading {
+  border: 1px solid var(--line-1);
+  border-radius: 11px;
+  min-height: 130px;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.ghost-tile {
+  border: 1px dashed var(--line-1);
+  border-radius: 11px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-3);
+  min-height: 130px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ghost-tile:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ghost-tile:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Sits in the grid's flow, so an empty board says so where the tiles would have been. */
+.board-empty {
+  grid-column: 1 / -1;
+  order: -1;
+  margin: 0;
+  color: var(--text-4);
+  font-size: 11.5px;
+}
+
+.ws-status {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 4px 16px 8px;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+
+/* Below this the rail costs more width than it earns, so it slides over the grid instead of
+ * sitting beside it. A disclosure, not a dialog: nothing is trapped and nothing is modal. */
+@media (max-width: 860px) {
+  .lib {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 2;
+    transform: translateX(-100%);
+    transition: transform 0.14s ease-out;
+  }
+
+  .lib.open {
+    transform: none;
+  }
+
+  .library-toggle {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    left: 100%;
+    top: 8px;
+    width: 20px;
+    height: 30px;
+    background: var(--bg-panel);
+    border: 1px solid var(--line-1);
+    border-left: 0;
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    color: var(--text-3);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .ghost-tile {
+    min-height: 64px;
+  }
+}

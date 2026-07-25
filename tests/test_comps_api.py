@@ -312,6 +312,39 @@ def test_listing_a_teams_comps_is_scoped_to_that_team(client, sign_in, publish):
     assert [comp["name"] for comp in listed] == ["Angel Shield Kite", "Zenith Rush"]
 
 
+def test_the_comp_listing_carries_each_comps_slots_so_the_rail_can_judge_them(
+    client, sign_in, publish
+):
+    """Legality is computed in the browser, so a comp without its slots cannot be judged."""
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    built = make_comp(client, team, name="Angel Shield Kite")
+    make_comp(client, team, name="Zenith Rush")
+    client.put(f"/api/v1/comps/{built['id']}/slots", json=slots(ABADDON, VINDICATOR, flagship=1))
+
+    listed = client.get(f"/api/v1/teams/{team['id']}/comps").json()
+
+    assert [slot["typeId"] for slot in listed[0]["slots"]] == [ABADDON, VINDICATOR]
+    assert listed[0]["slots"][1]["isFlagship"] is True
+    assert [comp["shipCount"] for comp in listed] == [2, 0]
+    assert listed[1]["slots"] == []
+
+
+def test_the_listing_and_the_detail_agree_on_a_comp(client, sign_in, publish):
+    """One comp shape. A lighter one would be a second thing to keep in step."""
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+    client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(RIFTER))
+
+    listed = client.get(f"/api/v1/teams/{team['id']}/comps").json()
+    fetched = client.get(f"/api/v1/comps/{comp['id']}").json()
+
+    assert listed == [fetched]
+
+
 def test_an_archived_team_refuses_comp_edits_until_it_is_restored(client, sign_in, publish):
     publish()
     sign_in(OWNER)

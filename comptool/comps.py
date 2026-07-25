@@ -80,7 +80,9 @@ class SlotWrite(_Request):
     is_flagship: bool = False
 
 
-class CompSummary(_Response):
+class CompDetail(_Response):
+    """One comp, contents and all. There is no lighter shape, deliberately — see below."""
+
     id: uuid.UUID
     team_id: uuid.UUID
     name: str
@@ -96,9 +98,11 @@ class CompSummary(_Response):
     #: What the requesting character holds on the owning team. The SPA gates its controls
     #: on this rather than guessing.
     your_level: str
-
-
-class CompDetail(CompSummary):
+    #: Always present, the listing included. The library rail draws a legality dot and a
+    #: point total per comp, legality is the client's to compute, and a comp without its
+    #: slots is a comp the client cannot judge. The listing already loads them to count
+    #: ships; withholding them only bought a second request per comp on the rail's first
+    #: paint.
     slots: list[SlotDetail]
 
 
@@ -125,28 +129,20 @@ class SlotsReplace(_Request):
     slots: Annotated[list[SlotWrite], Field(max_length=MAX_SLOTS)]
 
 
-def _summary_fields(comp: Comp, level: AccessLevel) -> dict:
-    return {
-        "id": comp.id,
-        "team_id": comp.team_id,
-        "name": comp.name,
-        "ruleset_slug": comp.ruleset_version.ruleset.slug,
-        "ruleset_version_label": comp.ruleset_version.version_label,
-        "ship_count": len(comp.slots),
-        "created_by_name": comp.created_by_name,
-        "created_at": comp.created_at,
-        "updated_at": comp.updated_at,
-        "your_level": _LEVEL_NAMES[level],
-    }
-
-
-def _summary(comp: Comp, level: AccessLevel) -> CompSummary:
-    return CompSummary(**_summary_fields(comp, level))
-
-
 def _detail(comp: Comp, level: AccessLevel) -> CompDetail:
     return CompDetail(
-        **_summary_fields(comp, level),
+        id=comp.id,
+        team_id=comp.team_id,
+        name=comp.name,
+        ruleset_slug=comp.ruleset_version.ruleset.slug,
+        ruleset_version_label=comp.ruleset_version.version_label,
+        # Redundant with len(slots) now, and kept deliberately: it is the number a list
+        # prints, and a client should not have to derive the headline from the payload.
+        ship_count=len(comp.slots),
+        created_by_name=comp.created_by_name,
+        created_at=comp.created_at,
+        updated_at=comp.updated_at,
+        your_level=_LEVEL_NAMES[level],
         slots=[
             SlotDetail(position=slot.position, type_id=slot.type_id, is_flagship=slot.is_flagship)
             for slot in comp.slots
@@ -226,20 +222,31 @@ def _apply_slots(session: Session, comp: Comp, slots: list[SlotWrite]) -> None:
         )
 
 
-@team_router.get("/{team_id}/comps", response_model=list[CompSummary])
+@team_router.get("/{team_id}/comps", response_model=list[CompDetail])
 def list_comps(
     team_id: uuid.UUID,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
-) -> list[CompSummary]:
+) -> list[CompDetail]:
+    """Every comp on the team, contents and all.
+
+    Slots included because the library rail's legality dot is computed in the browser and
+    there is nothing to compute it from otherwise. They were already being loaded here to
+    count ships.
+    """
     access = authorize(session, team_id, viewer, AccessLevel.VIEWER)
     comps = session.scalars(
         select(Comp)
         .where(Comp.team_id == access.team.id)
-        .options(selectinload(Comp.slots), selectinload(Comp.ruleset_version))
+        .options(
+            selectinload(Comp.slots),
+            # Down to the ruleset itself: the response reads its slug, and stopping at the
+            # version leaves that to a lazy load once per comp.
+            selectinload(Comp.ruleset_version).selectinload(RulesetVersion.ruleset),
+        )
         .order_by(Comp.name)
     ).all()
-    return [_summary(comp, access.level) for comp in comps]
+    return [_detail(comp, access.level) for comp in comps]
 
 
 @team_router.post("/{team_id}/comps", response_model=CompDetail, status_code=201)

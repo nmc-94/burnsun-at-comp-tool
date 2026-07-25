@@ -31,7 +31,11 @@ export async function fetchSession(): Promise<Session> {
 
 // A full-page navigation, never fetch: the response redirects to EVE's consent page on
 // another origin, and a background request cannot follow that.
-export function signIn(next: string = window.location.pathname): void {
+// The search string is part of where you were: a link carrying a selection would otherwise
+// come back from the SSO round trip having quietly lost it.
+export function signIn(
+  next: string = window.location.pathname + window.location.search,
+): void {
   const target = next.startsWith('/') && !next.startsWith('//') ? next : '/'
   window.location.assign(`${apiBase}/api/v1/auth/login?next=${encodeURIComponent(target)}`)
 }

@@ -8,12 +8,6 @@
  * or shadow either, with a single exception noted at the popover: it is an overlay rather
  * than app chrome. */
 
-/* The tile is wider than a settings card, so the shell opens up for this screen rather
-   than the global max-width moving for every screen. */
-.card-wide {
-  max-width: 560px;
-}
-
 .ruleset-chip {
   display: inline-flex;
   align-items: center;

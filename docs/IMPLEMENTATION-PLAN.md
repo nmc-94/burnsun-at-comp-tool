@@ -278,10 +278,41 @@ of comp tiles + "New comp" ghost tile, the left library rail (comps grouped by
 archetype), tiles independently memoized, and **layout persistence** (tabs, open
 comps, sizes).
 
+> **Done, with four decisions taken and one thing not built.** The **rail is a flat
+> list, not an accordion** — `archetype` is a Phase H column with its own editor and
+> namespace, and an accordion grouped by something that merely exists would produce
+> one group per team. **Layout persistence is server-side and per-user**, scoped to a
+> team (`workspace_layout`, migration `0004`), which settles §9.3's first open
+> question; the read and write paths both intersect the document with the team's own
+> comps, because a layout that outlived its comps would be a record of ids the
+> 404-not-403 stance exists to hide. The **router is hand-rolled** over the History
+> API — four routes did not justify a third runtime dependency — and it already parses
+> Phase G's `?sel=` and `/compare`, so that phase adds a screen rather than reopening
+> the router. **Trap 1 (concurrent slot writes) was deliberately deferred**; see the
+> Phase G handoff for why `Comp.updated_at` cannot be the precondition. Two things
+> moved that the plan did not call for: the comp listing now carries each comp's
+> **slots** (the rail's legality dot is computed in the browser and had nothing to
+> compute from — and the listing was already loading them to count ships), and
+> `TeamScreen` became **team settings**, since the rail and the ghost tile now own
+> listing and creating comps. **Sizes are not persisted**: the locked design is a
+> grid, so a tile has no size or position beyond its order, and the stored tile object
+> reserves room for both.
+
 **Phase G — Cross-tile iteration & comparison.** **Multi-select rows → new comp**
 (partial fork) and **drag a hull between comps to copy** — the drop always lands and
 the target flags whatever it breaks — plus the explicit **compare view** across
 selected comps.
+
+> **Still the right shape after Phase F, with three things now pinned down.** The
+> **URL is already built for it**: `?sel=id,id` and `/teams/:t/boards/:b/compare` both
+> parse and format today, so the compare view is a screen to write, not a router to
+> revisit. The **board state shape is the constraint to respect** — each tile owns its
+> own slots and nothing lifts them, which is what makes tiles independent, so a
+> cross-tile drag needs a deliberate channel rather than a shared parent holding both
+> comps. And **two selections are not one**: `?sel=` names *comps* for comparison,
+> while multi-select of *rows* inside a tile is ephemeral and belongs nowhere near the
+> URL. Fork lineage stays in Phase H, so a partial extraction in G records no parent
+> until then. See `docs/PHASE-G-HANDOFF.md`.
 
 **Phase H — Team content.** Creator tracking, per-comp **comments**, **fork/copy
 with lineage**, and **Archetype (single) + Tags (multi)** via the reused chip editor
@@ -349,5 +380,17 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
   carry `data-testid`, async state is announced rather than slept through, and ids ship
   in production. Retrofitting five phases of UI cost an afternoon; retrofitting after the
   workspace, the rail and the pick-ban tool would not have.
+- **Workspace layout is per-user and server-side (Phase F).** Resolves §9.3's first
+  standing question. One saved arrangement per character per team, so a board follows you
+  between machines; the shareable per-team board is the §4.7 shared tab, a different
+  object arriving with real-time collaboration.
+- **The rail groups by nothing until there is something to group by (Phase F).**
+  `archetype` keeps its Phase H scope rather than being pulled forward half-built, so the
+  rail is a flat searchable list of the team's comps.
+- **The router is hand-rolled (Phase F).** Four routes over the History API, no runtime
+  dependency, and Phase G's selection and compare URLs already parse and format.
+- **The comp listing carries slots (Phase F).** Legality stays client-only, so the rail's
+  dot has to be computed in the browser, and there is nothing to compute it from
+  otherwise. `CompSummary` is gone: one comp shape on the wire.
 
 **Still open (do not block the plan):**

@@ -6,10 +6,11 @@
 // already written on it.
 
 import { request } from '../api'
-import type { CompDetail, CompSlotWrite, CompSummary } from './types'
+import type { CompDetail, CompSlotWrite } from './types'
 
-export function listComps(teamId: string): Promise<CompSummary[]> {
-  return request<CompSummary[]>(`/api/v1/teams/${teamId}/comps`)
+/** Every comp on the team, slots included — the rail judges each one itself. */
+export function listComps(teamId: string): Promise<CompDetail[]> {
+  return request<CompDetail[]>(`/api/v1/teams/${teamId}/comps`)
 }
 
 export function createComp(teamId: string, name: string, rulesetSlug: string): Promise<CompDetail> {

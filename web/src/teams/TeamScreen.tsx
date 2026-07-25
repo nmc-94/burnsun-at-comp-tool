@@ -1,10 +1,13 @@
+// A team's settings: its name, whether it is archived, and who may reach it.
+//
+// The team's *comps* are not here. They were, when this was the only way into one; the
+// workspace's library rail lists them now and its ghost tile makes them, so a second list
+// and a second create form would be two more things to keep in step and two more controls a
+// driver has to tell apart from the real ones.
+
 import { useCallback, useEffect, useState } from 'react'
 
 import { messageFor } from '../api'
-import { createComp, listComps } from '../comps/api'
-import type { CompSummary } from '../comps/types'
-import { listRulesets } from '../rulesets/api'
-import type { RulesetSummary } from '../rulesets/types'
 import {
   addGrant,
   archiveTeam,
@@ -21,16 +24,11 @@ import type { Grant, GrantableLevel, Resolution, Team } from './types'
 interface Props {
   teamId: string
   onBack: () => void
-  onOpenComp: (compId: string) => void
 }
 
-export default function TeamScreen({ teamId, onBack, onOpenComp }: Props) {
+export default function TeamScreen({ teamId, onBack }: Props) {
   const [team, setTeam] = useState<Team | null>(null)
   const [grants, setGrants] = useState<Grant[]>([])
-  const [comps, setComps] = useState<CompSummary[] | null>(null)
-  const [rulesets, setRulesets] = useState<RulesetSummary[]>([])
-  const [compName, setCompName] = useState('')
-  const [slug, setSlug] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [level, setLevel] = useState<GrantableLevel>('viewer')
@@ -42,35 +40,13 @@ export default function TeamScreen({ teamId, onBack, onOpenComp }: Props) {
   const reload = useCallback(async () => {
     setError(null)
     try {
-      const [found, roster, drafts] = await Promise.all([
-        getTeam(teamId),
-        listGrants(teamId),
-        listComps(teamId),
-      ])
+      const [found, roster] = await Promise.all([getTeam(teamId), listGrants(teamId)])
       setTeam(found)
       setGrants(roster)
-      setComps(drafts)
     } catch (problem: unknown) {
       setError(messageFor(problem))
     }
   }, [teamId])
-
-  useEffect(() => {
-    let cancelled = false
-    // Published rulesets, so a new comp can name one without a slug baked into the client.
-    // A failure here is not the screen's failure: it only costs the create form.
-    listRulesets()
-      .then((found) => {
-        if (cancelled) return
-        const publishable = found.filter((ruleset) => ruleset.latestVersion !== null)
-        setRulesets(publishable)
-        setSlug((current) => current || (publishable[0]?.slug ?? ''))
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   function remember(grant: Grant) {
     if (grant.resolution) setReasons((current) => ({ ...current, [grant.id]: grant.resolution! }))
@@ -92,8 +68,6 @@ export default function TeamScreen({ teamId, onBack, onOpenComp }: Props) {
   // Everything below is gated on the level the server reported, so the controls match
   // what the API will actually allow rather than guessing from ownership.
   const owns = team.yourLevel === 'owner'
-  // Comps are an editor's business; access is the owner's.
-  const canEdit = owns || team.yourLevel === 'editor'
 
   async function act(work: () => Promise<unknown>) {
     setError(null)
@@ -103,15 +77,6 @@ export default function TeamScreen({ teamId, onBack, onOpenComp }: Props) {
     } catch (problem: unknown) {
       setError(messageFor(problem))
     }
-  }
-
-  async function addComp(event: React.FormEvent) {
-    event.preventDefault()
-    if (!compName.trim() || !slug) return
-    await act(async () => {
-      await createComp(teamId, compName.trim(), slug)
-      setCompName('')
-    })
   }
 
   async function invite(event: React.FormEvent) {
@@ -169,83 +134,6 @@ export default function TeamScreen({ teamId, onBack, onOpenComp }: Props) {
               {team.archived ? 'Restore' : 'Archive'}
             </button>
           </div>
-        )}
-
-        <h3 className="section-title">Comps</h3>
-        <ul className="comp-list" data-testid="comp-list" aria-label="Comps in this team">
-          {comps === null && (
-            <li className="empty" data-testid="comp-list-loading" role="status">
-              Loading…
-            </li>
-          )}
-          {comps?.length === 0 && (
-            <li className="empty" data-testid="comp-list-empty">
-              No comps in this team yet.
-            </li>
-          )}
-          {comps?.map((comp) => (
-            <li key={comp.id} data-testid="comp-list-item">
-              <button
-                className="link comp-name"
-                data-testid="comp-open"
-                type="button"
-                onClick={() => onOpenComp(comp.id)}
-              >
-                {comp.name}
-              </button>
-              <span className="hint" data-testid="comp-list-item-meta">
-                {comp.shipCount} {comp.shipCount === 1 ? 'hull' : 'hulls'} · v
-                {comp.rulesetVersionLabel}
-              </span>
-            </li>
-          ))}
-        </ul>
-
-        {canEdit && (
-          <form
-            className="row"
-            data-testid="comp-create-form"
-            onSubmit={(event) => void addComp(event)}
-          >
-            <input
-              data-testid="comp-create-name"
-              value={compName}
-              onChange={(event) => setCompName(event.target.value)}
-              placeholder="New comp name"
-              maxLength={200}
-              disabled={team.archived}
-              aria-label="New comp name"
-            />
-            {/* Which ruleset a comp is built against is a choice, not a constant. With one
-                published there is nothing to choose, so the select stays out of the way. */}
-            {rulesets.length > 1 && (
-              <select
-                data-testid="comp-create-ruleset"
-                value={slug}
-                onChange={(event) => setSlug(event.target.value)}
-                aria-label="Ruleset"
-              >
-                {rulesets.map((ruleset) => (
-                  <option key={ruleset.slug} value={ruleset.slug}>
-                    {ruleset.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              className="btn primary"
-              data-testid="comp-create-submit"
-              type="submit"
-              disabled={!compName.trim() || !slug || team.archived}
-            >
-              New comp
-            </button>
-          </form>
-        )}
-        {rulesets.length === 0 && canEdit && (
-          <p className="hint" data-testid="comp-create-unavailable">
-            No ruleset has been published, so comps cannot be created yet.
-          </p>
         )}
 
         <h3 className="section-title">Access</h3>

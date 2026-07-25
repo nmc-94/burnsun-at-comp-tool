@@ -235,11 +235,17 @@ comp editor. Within a tab the user can:
 - **Add tiles** to the board (new blank comp, an existing comp, or a fork of one)
   so several comps are visible and editable side by side.
 - **Move / rearrange** tiles freely and **resize** them; a board behaves like a
-  modular canvas, not a fixed grid or a single-comp page.
+  modular canvas, not a fixed grid or a single-comp page. *(Later ambition, not the
+  current build. The locked design in `HANDOFF.md` chose a responsive **grid**
+  workspace over a free-floating canvas, so a tile's only spatial property today is
+  its order on the board. Read this bullet as where the workspace may go, not as a
+  description of what Phase F shipped.)*
 - **Close** a tile without deleting the comp (the comp persists; the tile is just
   a view onto it).
-- Have the **layout persist** (tabs, which comps are open, where, at what size) so
-  a session can be resumed. (Scope: per-user workspace assumed; confirm — §9.3.)
+- Have the **layout persist** so a session can be resumed. Stored **server-side, per
+  user, per team** (§9.3). What is persisted today is the boards, which comps are
+  open on each, and their order; a tile has no free position or size while the board
+  is a grid, and the stored document reserves room per tile for both.
 
 **Tabs come in two kinds:**
 
@@ -741,7 +747,7 @@ Rules for the ids themselves:
 | | |
 |---|---|
 | Format | `<area>-<thing>` or `<area>-<thing>-<part>`, kebab-case, lowercase |
-| Areas | `app`, `user`, `team`, `grant`, `comp`, `ship-search`, `ruleset` |
+| Areas | `app`, `user`, `team`, `grant`, `comp`, `ship-search`, `ruleset`, `workspace`, `board`, `library` |
 | Repeated items | every item in a list shares one id; disambiguate by position within the scope, or by accessible content |
 | Variants | a distinct kind gets a distinct id (`comp-row` vs `comp-row-empty`), so selecting by position is never ambiguous across kinds |
 | Values | the element wrapping the value, not its container — `comp-row-cost`, not the row |
@@ -885,9 +891,13 @@ owner. What remains open are design calls, not facts.
 
 ### 9.3 Standing design calls (owner preferences, not rule facts)
 
-- **Workspace layout persistence scope:** assumed **per-user** (each user's open
-  tiles/positions persist for them). Alternative: a shareable **per-team** saved
-  board. Confirm; the data model can support either.
+- **Workspace layout persistence scope:** *Resolved (Phase F)* — **per-user and
+  server-side**, scoped to a team. Each character has one saved arrangement per team
+  in `workspace_layout`, so switching teams switches workspaces; the rail is headed
+  with the team's comps and every grant is team-scoped, so a board is a view onto
+  exactly one team. The per-team **shared** board is not this: it is the shared tab
+  of §4.7, a different object with a different writer model, and it arrives with
+  real-time collaboration.
 - **Copy/port carry-over rules:** when porting rows into a new comp or dragging a
   hull between comps, the hull always carries; whether **pilot assignment, notes,
   and flagship status** carry over (where still valid) vs. reset is a refinement

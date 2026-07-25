@@ -23,6 +23,7 @@ from comptool.models import (
     SubjectKind,
     Team,
     TeamGrant,
+    WorkspaceLayout,
 )
 
 # A cut-down stand-in for an ingested ruleset. The keys are camelCase because this payload
@@ -257,6 +258,48 @@ def test_the_same_pending_name_is_free_on_another_team(session):
     session.commit()
 
     assert len(session.execute(select(TeamGrant)).scalars().all()) == 2
+
+
+def layout(team: Team, character_id: int, *board_names: str) -> WorkspaceLayout:
+    return WorkspaceLayout(
+        team=team,
+        character_id=character_id,
+        document={
+            "boards": [{"id": name, "name": name, "tiles": []} for name in board_names],
+            "activeBoardId": None,
+        },
+    )
+
+
+def test_a_character_saves_one_arrangement_per_team(session):
+    team = make_team(session)
+    session.add(layout(team, 90_000_001, "Angel"))
+    session.add(layout(team, 90_000_001, "Armor"))
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_two_characters_arrange_the_same_team_independently(session):
+    team = make_team(session)
+    session.add(layout(team, 90_000_001, "Angel"))
+    session.add(layout(team, 90_000_002, "Armor"))
+    session.commit()
+
+    assert len(session.execute(select(WorkspaceLayout)).scalars().all()) == 2
+
+
+def test_deleting_a_team_takes_its_saved_arrangements_with_it(session):
+    # No route deletes a team — it archives — so the cascade is only ever exercised here.
+    team = make_team(session)
+    session.add(layout(team, 90_000_001, "Angel"))
+    session.commit()
+
+    session.delete(team)
+    session.commit()
+
+    assert session.execute(select(WorkspaceLayout)).scalars().all() == []
 
 
 def test_resolving_an_invitation_frees_the_name_to_be_invited_again(session):

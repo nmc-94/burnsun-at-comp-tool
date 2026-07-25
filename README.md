@@ -149,21 +149,30 @@ docker exec at-comp-tool-app-1 python -c "from comptool.db import init_db,get_se
 ```
 
 Then drive it. Note the shape: scope to a region by test id, find things inside it the way
-a person would, and wait on state rather than sleeping.
+a person would, and wait on state rather than sleeping. A board holds many comps, so every
+`comp-*` id inside a tile is scoped by the `board-tile` it belongs to — a tile is named for
+its comp, which is what tells twenty of them apart.
 
 ```javascript
 const ctx = await browser.newContext()
 await ctx.addCookies([{ name: 'comptool_session', value: TOKEN, domain: 'localhost', path: '/' }])
 const page = await ctx.newPage()
-await page.goto('http://localhost:8000')
+await page.goto('http://localhost:8000/teams/' + TEAM_ID)
 
-await page.getByTestId('comp-row-empty').first().getByRole('button').click()
+await page.getByTestId('library-rail').getByRole('button', { name: 'Open Angel Shield Kite' }).click()
+const tile = page.getByTestId('board-tile').filter({ has: page.getByLabel('Angel Shield Kite') })
+
+await tile.getByTestId('comp-row-empty').first().getByRole('button').click()
 await page.getByTestId('ship-search-input').fill('Abaddon')
 await page.getByTestId('ship-search-results').getByRole('button', { name: /^Abaddon/ }).click()
 
-await expect(page.getByTestId('comp-points-delta')).toHaveText('−160')
-await expect(page.getByTestId('comp-save-state')).toHaveText('saved')   // never a fixed sleep
+await expect(tile.getByTestId('comp-points-delta')).toHaveText('−160')
+await expect(tile.getByTestId('comp-save-state')).toHaveAttribute('data-save-state', 'idle')
+await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-layout-state', 'idle')
 ```
+
+Deep links work, so a board is addressable directly: `/teams/:teamId/boards/:boardId`, and
+`/comps/:compId` opens that comp on whichever board was last in front.
 
 Over plain http the minted cookie must be presented without the `Secure` flag, as above;
 see `COMPTOOL_SESSION_COOKIE_SECURE` under [Sign-in](#sign-in-eve-sso). **A locator that

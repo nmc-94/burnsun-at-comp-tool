@@ -293,7 +293,7 @@ describe('a viewer', () => {
 })
 
 describe('the save state', () => {
-  it('is announced, so a write can be waited for instead of slept through', () => {
+  it('is stated so a write can be waited for, but not announced twenty times over', () => {
     const view = render(
       <CompTile
         name="Angel Shield Kite"
@@ -312,7 +312,10 @@ describe('the save state', () => {
     const state = screen.getByTestId('comp-save-state')
     expect(state.textContent).toBe('saving…')
     expect(state.getAttribute('role')).toBe('status')
-    expect(state.getAttribute('aria-live')).toBe('polite')
+    expect(state.getAttribute('data-save-state')).toBe('saving')
+    // Silent on purpose: a board opens twenty of these at once, so the live region that
+    // speaks belongs to the board, not to each tile. A driver reads the attributes above.
+    expect(state.getAttribute('aria-live')).toBe('off')
     view.unmount()
   })
 })
