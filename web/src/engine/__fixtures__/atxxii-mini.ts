@@ -152,17 +152,11 @@ const classPoints: Record<string, number> = {
   Frigate: 4,
 }
 
-/**
- * The main-tournament ruleset, reading duplicate inflation as escalating.
- *
- * Which reading ATXXII actually uses is unconfirmed, so the corpus proves both rather
- * than picking one — see the flat variant below.
- */
-export const escalatingRuleset: Ruleset = {
+/** The main-tournament ruleset. */
+export const atxxiiRuleset: Ruleset = {
   version: 'v2026-07-23',
   pointCap: 200,
   fieldSize: 10,
-  inflationMode: 'escalating',
   ships,
   classPoints,
   hullSizeCaps: {
@@ -178,13 +172,10 @@ export const escalatingRuleset: Ruleset = {
   flagship: { allowed: true, battleshipAllowance: 3 },
 }
 
-/** Identical, except every extra copy of a hull adds the same surcharge. */
-export const flatRuleset: Ruleset = { ...escalatingRuleset, inflationMode: 'flat' }
-
 /** The preliminary tournament, which does not permit flagships. */
 export const prelimRuleset: Ruleset = {
-  ...escalatingRuleset,
-  flagship: { ...escalatingRuleset.flagship, allowed: false },
+  ...atxxiiRuleset,
+  flagship: { ...atxxiiRuleset.flagship, allowed: false },
 }
 
 /**
@@ -193,6 +184,6 @@ export const prelimRuleset: Ruleset = {
  * is the only thing that matters.
  */
 export const bannedTyphoonRuleset: Ruleset = {
-  ...escalatingRuleset,
+  ...atxxiiRuleset,
   ships: { ...ships, [SHIP.typhoon]: { ...TYPHOON, banned: true } },
 }

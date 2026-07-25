@@ -135,11 +135,12 @@ The engine must compute:
 
 - **Two-layer point resolution.** Each hull's point value = its **individual** value if the
   ruleset lists one, else the **class/faction fallback** value. (Individual overrides class.)
-- **Duplicate-hull inflation — the pluggable formula (see Open Question).** Extra copies of a
-  hull add a surcharge derived from that hull's `inflation_value` (ingested **verbatim** per
-  ship — never derived from hull size; there is a known Geri exception where
-  `inflation_value = 3`). Put the flat-vs-escalating choice behind one small function and
-  **unit-test both interpretations.**
+- **Duplicate-hull inflation — retroactive.** Fielding more than one of a hull raises what
+  **every** copy costs, not just the extra ones: `cost per copy = base + (copies − 1) × I`,
+  where `I` is that hull's `inflation_value` (ingested **verbatim** per ship — never derived
+  from hull size; there is a known Geri exception where `inflation_value = 3`). An Abaddon
+  (base 40, I = 4) costs 40 alone, 44 each as a pair, 48 each as a trio. Keep the formula in
+  one small function; note that a slot cannot be priced until the whole comp is counted.
 - **Running totals:** `pointsUsed` (resolved points + inflation surcharges), `pointsRemaining`
   = cap − used, and "points left on the table" for legal comps. Point cap = **200**, field
   size = **10** ships.
@@ -172,7 +173,7 @@ Replace the placeholder `web/src/engine/legality.test.ts` with real assertions, 
 - exactly-at-cap (200 / ±0, legal)
 - under budget (legal, points left on the table)
 - over budget (illegal, over-cap violation)
-- duplicate-hull inflation (both formula interpretations)
+- duplicate-hull inflation (the ruleset's Abaddon example: 40 / 44 each / 48 each)
 - hull-size-cap edges (at 3/size; a 3rd battleship without a flagship = illegal; with a
   flagship = legal)
 - logistics exempt from the size cap
@@ -180,16 +181,16 @@ Replace the placeholder `web/src/engine/legality.test.ts` with real assertions, 
 - banned / omitted hull present
 
 The mockup's example comps are ready-made references (`docs/comp-tool-mockup.html`, the
-`mockcomps` block): cap = 200/±0, a flagship-legal 198/−2, a duplicate-inflation 198/−2, and
+`mockcomps` block): cap = 200/±0, a flagship-legal 198/−2, a duplicate-inflation comp, and
 an `illegal2` = 224 with two violations.
 
-## Open question (resolve before hard-coding the number)
-
-**Duplicate-hull inflation formula: flat vs escalating.** `inflation_value` per hull is known
-and captured, but it's unconfirmed whether each extra copy adds a **flat** `base + I` or an
-**escalating** `base, base + I, base + 2I, …`. Model it as a pluggable function and unit-test
-both; confirm the real rule from the Quick Comp Creator's building tab or the tournament
-Discord (owner to confirm). This is the one open numeric unknown.
+> **Caveat on the duplicate-inflation example.** The mockup's `dup` comp ("Dual-Orthrus
+> Kite") renders as a legal 198, but its baked `sur` figures charge the surcharge only to
+> the second copy of a hull. Under the confirmed retroactive rule both Orthrus cost 21 and
+> both Svipul cost 11, putting the comp at **201 — one point over the cap, and therefore
+> illegal**. The engine follows the rule; the mockup's arithmetic is what is out of date.
+> Its other three comps contain no duplicates and are unaffected. The mockup remains the
+> authority on **layout and interaction**, not on these numbers.
 
 ## Key files / seams to build on
 
@@ -208,8 +209,8 @@ Discord (owner to confirm). This is the one open numeric unknown.
 
 - Domain ORM models exist; a migration applies on a fresh DB; **`alembic check` is clean**;
   a backend test round-trips the Team→Comp→Slot graph.
-- `evaluate()` is implemented, pure, and covers every rule above with the pluggable inflation
-  formula.
+- `evaluate()` is implemented, pure, and covers every rule above, including the retroactive
+  inflation formula.
 - The Vitest **golden corpus** covers the cases listed and passes (`npm test`); frontend
   `lint` + `build` stay green.
 - CI (frontend / backend / migrations) is green.

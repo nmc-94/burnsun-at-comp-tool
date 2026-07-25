@@ -31,7 +31,6 @@ PAYLOAD = {
     "version": "v2026-07-23",
     "pointCap": 200,
     "fieldSize": 10,
-    "inflationMode": "escalating",
     "ships": {
         "11978": {
             "typeId": 11978,
@@ -97,7 +96,7 @@ def test_round_trips_a_team_comp_and_slots(session):
     assert stored.created_by_name == "Vex"
     assert stored.team.name == "Aurora Vanguard"
     assert stored.ruleset_version.version_label == "v2026-07-23"
-    assert stored.ruleset_version.payload["inflationMode"] == "escalating"
+    assert stored.ruleset_version.payload["ships"]["11978"]["inflationValue"] == 2
     assert stored.ruleset_version.ruleset.slug == "atxxii"
 
     assert [slot.position for slot in stored.slots] == [0, 1, 2]

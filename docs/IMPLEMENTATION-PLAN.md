@@ -83,11 +83,13 @@ copy wholesale.
    BurnSun's `webLibraryFitVersion` immutable-version-chain table is the structural
    precedent.
 
-4. **Duplicate-hull inflation is a pluggable formula.** The one unresolved numeric
-   unknown (flat `+I` per extra copy vs. escalating `+I, +2I, …`) sits behind a
-   small function so resolving it is a one-line change, and both interpretations
-   are unit-tested. Per-ship `inflation_value` is ingested **verbatim**, never
-   derived from hull size (the Geri exception).
+4. **Duplicate-hull inflation is retroactive.** The surcharge falls on *every*
+   copy of a hull, not only the extra ones: `cost per copy = base + (copies − 1) ×
+   I` (confirmed 2026-07-24; `ruleset-atxxii.md` §4.2). It lives in one small
+   function so the rule has a single home. Per-ship `inflation_value` is ingested
+   **verbatim**, never derived from hull size (the Geri exception). Consequence
+   for the engine: a slot cannot be priced until the whole comp has been counted,
+   and adding a hull re-prices the copies already present.
 
 5. **Ship-reference data vs. ruleset data are two different sources.** Ship static
    data — **name→type_id, group/category, tech/meta level, faction** — is extracted
@@ -208,7 +210,7 @@ tests; the client engine's golden corpus lives in the TS suite from day one.
 **Ruleset/RulesetVersion, Team, Grant, Comp, Slot, Comment** on the server
 (SQLAlchemy Core). Build the pure **TypeScript** legality engine behind a golden
 corpus (Vitest): two-layer point resolution (individual overrides class),
-allow-by-presence, per-ship inflation (pluggable formula), running total /
+allow-by-presence, per-ship retroactive inflation, running total /
 remaining / points-left-on-the-table, ship-count and hull-size caps (≤3/size, ≤2
 BS, logistics exempt, flagship → BS allowance 3), per-match logi limit, flagship
 eligibility. The engine consumes the served **resolved ruleset** (Phase C); the
@@ -288,11 +290,13 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
 - **Validation engine = purely client-side (TypeScript only).** The server is not
   authoritative for legality; trusting the client is acceptable for a team build-aid.
   This departs from REQUIREMENTS §6.5/§6.7 — **update the requirements doc to match.**
+- **Duplicate-hull inflation formula — resolved (2026-07-24).** The surcharge is
+  **retroactive**, charged to every copy: `base + (copies − 1) × I`. This was the
+  project's one open numeric unknown. Note it invalidates the duplicate-inflation
+  example comp in `comp-tool-mockup.html`, whose baked figures assumed a marginal
+  surcharge (see decision 4).
 
 **Still open (do not block the plan):**
-- **Duplicate-hull inflation formula** (flat vs escalating) — the one open numeric
-  unknown; resolve from the comp-creator's building tab / tournament Discord.
-  Modeled pluggably regardless.
 - **Enforcement-toggle scope** — per-user build assist (assumed) vs. per-comp shared
   property; and whether locking a comp "final" requires legality. (Deferrable to the
   detailed-planning session.)
