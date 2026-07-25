@@ -13,6 +13,9 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+# Vitest writes its cache to a node_modules beside wherever it was invoked from, so this
+# turns up at the root as well as under web/, which has its own ignore.
+node_modules/
 
 # OS / editor
 .DS_Store
