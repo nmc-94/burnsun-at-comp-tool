@@ -9,7 +9,7 @@
 // hulls, so a battleship replacing a battleship introduces no cap violation, and the
 // points move by the difference rather than by the newcomer's list price.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CompSlot, LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
@@ -28,6 +28,14 @@ interface Props {
 
 export default function ShipSearch({ slots, index, ruleset, current, onPick, onCancel }: Props) {
   const [query, setQuery] = useState('')
+  const field = useRef<HTMLInputElement>(null)
+
+  // Focused deliberately rather than with `autoFocus`. The behaviour is the same and it is
+  // wanted — this field only exists because someone just clicked a row — but saying it here
+  // makes it a decision about this control instead of a blanket attribute.
+  useEffect(() => {
+    field.current?.focus()
+  }, [])
 
   const candidates = useMemo(
     () => annotate(searchHulls(ruleset, query), slots, index, ruleset, current),
@@ -35,12 +43,13 @@ export default function ShipSearch({ slots, index, ruleset, current, onPick, onC
   )
 
   return (
-    <div className="shipsearch">
+    <div className="shipsearch" data-testid="ship-search">
       <input
         className="shipsearch-input"
+        data-testid="ship-search-input"
+        ref={field}
         type="text"
         value={query}
-        autoFocus
         placeholder="Search hulls…"
         aria-label="Search hulls"
         onChange={(event) => setQuery(event.target.value)}
@@ -53,15 +62,26 @@ export default function ShipSearch({ slots, index, ruleset, current, onPick, onC
         <p className="hint">No hull in this ruleset matches that.</p>
       )}
 
-      <ul className="shipsearch-results" aria-label="Matching hulls">
+      <ul className="shipsearch-results" data-testid="ship-search-results" aria-label="Matching hulls">
         {candidates.map((candidate) => {
           const icon = buildCcpTypeIconUrl(candidate.ship.typeId, 32)
           const breaks = candidate.introduces[0]
+          const delta =
+            candidate.delta >= 0 ? `+${candidate.delta}` : `−${Math.abs(candidate.delta)}`
           return (
             <li key={candidate.ship.typeId}>
               <button
                 className="shipsearch-option"
+                data-testid="ship-search-option"
+                data-type-id={candidate.ship.typeId}
                 type="button"
+                // Spelled out, because the name assembled from the child spans reads
+                // "Abaddon +44 3 battleships — cap is 2" and shifts with the comp's state.
+                aria-label={
+                  breaks
+                    ? `${candidate.ship.name}, ${delta} points, ${breaks.message}`
+                    : `${candidate.ship.name}, ${delta} points`
+                }
                 onClick={() => onPick(candidate.ship.typeId)}
               >
                 <span className="ic">
@@ -70,11 +90,11 @@ export default function ShipSearch({ slots, index, ruleset, current, onPick, onC
                 <span className="nm">{candidate.ship.name}</span>
                 {/* The cost of picking it here, not the hull's list price: a duplicate
                     re-prices every copy already in the comp. */}
-                <span className="cost">
-                  {candidate.delta >= 0 ? `+${candidate.delta}` : `−${Math.abs(candidate.delta)}`}
+                <span className="cost" data-testid="ship-search-option-delta">
+                  {delta}
                 </span>
                 {breaks && (
-                  <span className="warns" title={breaks.fix}>
+                  <span className="warns" data-testid="ship-search-option-warning" title={breaks.fix}>
                     {breaks.message}
                   </span>
                 )}

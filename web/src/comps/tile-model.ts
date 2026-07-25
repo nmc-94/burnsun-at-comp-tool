@@ -33,6 +33,14 @@ export type DeltaTone = 'exact' | 'under' | 'over'
 export interface DeltaPill {
   readonly text: string
   readonly tone: DeltaTone
+  /**
+   * The same fact in words, for the accessible name.
+   *
+   * The pill reads `−12`, which is a signed distance from the cap and means nothing said
+   * aloud on its own — and announcing the *total* instead, as this once did, contradicts
+   * what the pill visibly says.
+   */
+  readonly label: string
 }
 
 /** A hull offered by the search, with what picking it would do to the comp. */
@@ -63,9 +71,15 @@ export function scaffold(result: LegalityResult, fieldSize: number): Row[] {
 /** The signed distance from the point cap, as the tile shows it. */
 export function deltaPill(summary: LegalitySummary): DeltaPill {
   const delta = summary.pointsUsed - summary.pointCap
-  if (delta === 0) return { text: '±0', tone: 'exact' }
-  if (delta < 0) return { text: `−${Math.abs(delta)}`, tone: 'under' }
-  return { text: `+${delta}`, tone: 'over' }
+  const cap = summary.pointCap
+  if (delta === 0) {
+    return { text: '±0', tone: 'exact', label: `Exactly at the ${cap} point cap` }
+  }
+  if (delta < 0) {
+    const under = Math.abs(delta)
+    return { text: `−${under}`, tone: 'under', label: `${under} points under the ${cap} point cap` }
+  }
+  return { text: `+${delta}`, tone: 'over', label: `${delta} points over the ${cap} point cap` }
 }
 
 /** The comp as the engine wants it: hull choices in row order. */

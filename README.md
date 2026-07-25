@@ -133,3 +133,39 @@ instead — `alembic/env.py` prefers `ALEMBIC_DATABASE_URL`:
 ```bash
 ALEMBIC_DATABASE_URL=postgresql://comptool:comptool@localhost:5432/comptool_drift alembic check
 ```
+
+### Driving the front end
+
+The SPA is built to be automated: every control carries a role and an accessible name,
+every region a stable `data-testid`, and anything worth waiting for announces itself. See
+`docs/REQUIREMENTS.md` §6.8 for the contract. There is no end-to-end suite yet and no
+Playwright dependency — a script through `npx` is enough to drive a running app.
+
+Signing in needs a session, and there is deliberately no dev backdoor route, so mint one
+against the database and present it as a cookie:
+
+```bash
+docker exec at-comp-tool-app-1 python -c "from comptool.db import init_db,get_session; from comptool.settings import get_settings; from comptool.auth import sessions; init_db(get_settings()); d=next(get_session()); i=sessions.mint(d,character_id=90000001,character_name='Kadir',owner_hash='dev',ttl_seconds=2592000); d.commit(); print(i.token)"
+```
+
+Then drive it. Note the shape: scope to a region by test id, find things inside it the way
+a person would, and wait on state rather than sleeping.
+
+```javascript
+const ctx = await browser.newContext()
+await ctx.addCookies([{ name: 'comptool_session', value: TOKEN, domain: 'localhost', path: '/' }])
+const page = await ctx.newPage()
+await page.goto('http://localhost:8000')
+
+await page.getByTestId('comp-row-empty').first().getByRole('button').click()
+await page.getByTestId('ship-search-input').fill('Abaddon')
+await page.getByTestId('ship-search-results').getByRole('button', { name: /^Abaddon/ }).click()
+
+await expect(page.getByTestId('comp-points-delta')).toHaveText('−160')
+await expect(page.getByTestId('comp-save-state')).toHaveText('saved')   // never a fixed sleep
+```
+
+Over plain http the minted cookie must be presented without the `Secure` flag, as above;
+see `COMPTOOL_SESSION_COOKIE_SECURE` under [Sign-in](#sign-in-eve-sso). **A locator that
+has to reach for a CSS class is a missing test id, not a selector to keep** — class names
+are presentation and change without notice.

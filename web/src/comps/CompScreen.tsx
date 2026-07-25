@@ -115,13 +115,23 @@ export default function CompScreen({ compId, onBack }: Props) {
   )
 
   if (error && !comp) return <ErrorCard message={error} onBack={onBack} />
-  if (!comp || !ruleset || !result) return <section className="card">Loading…</section>
+  if (!comp || !ruleset || !result) {
+    return (
+      <section className="card" data-testid="comp-screen-loading" role="status">
+        Loading…
+      </section>
+    )
+  }
 
   const editable = comp.yourLevel === 'editor' || comp.yourLevel === 'owner'
 
   function change(next: CompSlot[]) {
     pending.current = next
     setSlots(next)
+    // Said immediately, not when the debounce fires: between the edit and the write the
+    // comp on screen and the comp on the server genuinely differ, and the tile should not
+    // claim otherwise.
+    setSaveState('pending')
   }
 
   async function rename(name: string) {
@@ -134,19 +144,21 @@ export default function CompScreen({ compId, onBack }: Props) {
   }
 
   return (
-    <section className="card card-wide">
-      <div className="card-title">
-        <button className="link" type="button" onClick={onBack}>
+    <section className="card card-wide" data-testid="comp-screen">
+      <h2 className="card-title">
+        <button className="link" data-testid="comp-back" type="button" onClick={onBack}>
           ← Team
         </button>
         <span className="spacer" />
         {/* What is loaded, named rather than assumed — the dot is lit because the payload
             this tile is judging against is the one in hand. */}
-        <span className="ruleset-chip">
-          <span className="dot ok" />
-          {ruleset.name} · v{ruleset.versionLabel} · {ruleset.organizer}
+        <span className="ruleset-chip" data-testid="ruleset-chip">
+          <span className="dot ok" aria-hidden="true" />
+          <span data-testid="ruleset-name">{ruleset.name}</span> ·{' '}
+          <span data-testid="ruleset-version">v{ruleset.versionLabel}</span> ·{' '}
+          <span data-testid="ruleset-organizer">{ruleset.organizer}</span>
         </span>
-      </div>
+      </h2>
 
       <div className="card-body">
         <CompTile
@@ -163,9 +175,15 @@ export default function CompScreen({ compId, onBack }: Props) {
         />
 
         {!editable && (
-          <p className="hint">You have read access to this comp, so it cannot be edited here.</p>
+          <p className="hint" data-testid="comp-read-only">
+            You have read access to this comp, so it cannot be edited here.
+          </p>
         )}
-        {error && <p className="err">{error}</p>}
+        {error && (
+          <p className="err" data-testid="comp-screen-error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </section>
   )
@@ -177,14 +195,16 @@ function toWire(slot: CompSlot) {
 
 function ErrorCard({ message, onBack }: { message: string; onBack: () => void }) {
   return (
-    <section className="card">
-      <div className="card-title">
-        <button className="link" type="button" onClick={onBack}>
+    <section className="card" data-testid="comp-screen">
+      <h2 className="card-title">
+        <button className="link" data-testid="comp-back" type="button" onClick={onBack}>
           ← Team
         </button>
-      </div>
+      </h2>
       <div className="card-body">
-        <p className="err">{message}</p>
+        <p className="err" data-testid="comp-screen-error" role="alert">
+          {message}
+        </p>
       </div>
     </section>
   )

@@ -702,6 +702,73 @@ once**, so responsiveness is a first-class requirement, not an afterthought:
 - Legality is an O(comp-size) check over a small in-memory ruleset (the point
   table + caps), so it stays trivial even with a full workspace of tiles.
 
+### 6.8 Testability & front-end automation
+
+**The front end must be drivable by automation without reading its stylesheet.**
+CSS class names are presentation: they exist to be restyled, renamed and split,
+and nothing outside `styles/` may depend on them. A test or a script that reaches
+for `.trow:not(.empty) .cost` breaks the next time a row is restyled, and it
+breaks looking like a product bug rather than a test bug.
+
+Two mechanisms, with different jobs:
+
+- **The accessibility tree is the primary contract.** Every interactive element
+  carries a correct role and an accessible name that says what it *does*, not
+  merely what it is near. A control whose name is only a hull's name collides
+  with every other control naming that hull; a control whose name changes with
+  its own state (`"Theme: dark"`, `"Restore"`) cannot be matched at all — state
+  belongs in `aria-pressed`/`aria-expanded`, not in the name.
+
+  This is not a testing concession. It is the same work that makes the tool
+  keyboard-navigable and legible to a screen reader, and the automation benefit
+  falls out of doing it properly. Where the two ever disagree, accessibility
+  wins — but in practice they have not.
+
+- **`data-testid` marks the structure the accessibility tree cannot name**:
+  containers, repeated regions, and displayed values. Values are exactly where
+  a11y has nothing to offer — a point total is not a control, has no role, and
+  should not be given a fake one to make it findable.
+
+**Locator policy: scope by test id, locate by role or label within it.** Test ids
+mark a comp tile, a hull row, the search results; inside one you find things the
+way a person would. This keeps assertions phrased in user-facing terms while
+making ambiguity structurally impossible, which matters here because a comp
+legitimately holds several copies of the same hull and will name each of them
+identically.
+
+Rules for the ids themselves:
+
+| | |
+|---|---|
+| Format | `<area>-<thing>` or `<area>-<thing>-<part>`, kebab-case, lowercase |
+| Areas | `app`, `user`, `team`, `grant`, `comp`, `ship-search`, `ruleset` |
+| Repeated items | every item in a list shares one id; disambiguate by position within the scope, or by accessible content |
+| Variants | a distinct kind gets a distinct id (`comp-row` vs `comp-row-empty`), so selecting by position is never ambiguous across kinds |
+| Values | the element wrapping the value, not its container — `comp-row-cost`, not the row |
+| Never | add an id merely because an element exists; ids mark what a driver needs to reach |
+
+**Test ids are a published contract.** Renaming one breaks whatever drives it, so
+it is a deliberate change rather than a refactor.
+
+**They ship in production.** No build-time stripping: one set of selectors then
+works against the dev server, CI, and a real deployment, which is what a smoke
+test against a running environment needs.
+
+**Async state must be observable, not guessed at.** Anything a driver would
+otherwise sleep through — a debounced save, a screen still loading, an error —
+exposes it: `role="status"` for progress, `role="alert"` for failure. A fixed
+sleep is the most common source of flake in a browser suite, and the fix is for
+the UI to say what it is doing, which a person benefits from too.
+
+**Enforcement** is `oxlint`'s `jsx-a11y` plugin in the existing `npm run lint`,
+plus the per-phase design-stance and definition-of-done gates in each
+`docs/PHASE-*-HANDOFF.md`. No linter can check a testid convention or detect two
+elements sharing an accessible name, so those stay a review concern.
+
+**An automated end-to-end suite is deliberately deferred.** This section exists
+so that adding one later is a matter of writing tests rather than re-plumbing the
+UI. `README.md` documents how to drive the app in the meantime.
+
 ## 7. Proposed architecture (starting point, to refine)
 
 Deliberately lighter than BurnSun (no simulation engine needed), but reusing its
@@ -872,8 +939,12 @@ owner. What remains open are design calls, not facts.
   configurable icon-URL helper).
 - Mock / solo pick-ban: single-party rehearsal of the ban phase (§4.6).
 - Single-service Docker deploy + Railway config + `.env.example`.
+- **A drivable front end** (§6.8): accessible roles and names on every control,
+  stable `data-testid` anchors, and observable async state. Cheap while the
+  surface is small and expensive to retrofit later, so it holds from day one.
 
 **Later:**
+- **An automated end-to-end suite** driving the app through §6.8's contract.
 - Automated point-data sync worker + change notifications.
 - Advanced comparison analytics (role/coverage/DPS-bar heuristics), richer export
   (EFT/in-game), comp status workflow.

@@ -53,9 +53,12 @@ h3 {
   color: var(--text-2);
   font-weight: 300;
 }
+/* The page's h1. Sized here rather than left to the browser's heading default — it is a
+   quiet label in the corner, and only its role in the document is large. */
 .product-label {
-  margin-left: auto;
+  margin: 0 0 0 auto;
   font-size: 10px;
+  font-weight: 500;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -68,9 +71,13 @@ h3 {
   border: 1px solid var(--line-1);
   border-radius: 11px;
 }
+/* A heading element, so the document has real structure — but sized here rather than left
+   to the browser's default, which is what the div these replaced was inheriting. */
 .card-title {
   font-family: var(--font-brand);
   font-weight: 500;
+  font-size: 13px;
+  margin: 0;
 }
 .card-body {
   margin-top: 8px;

@@ -151,9 +151,16 @@
   height: 13px;
 }
 
+/* A real list, so the scaffold reads as ten slots rather than ten anonymous boxes. The
+   marker and indent are the only things the semantics cost, and both go here.
+   Nothing sets `display` on the items: a filled row carries .trow and needs its grid,
+   and a rule matching the li would outrank that class and quietly flatten the row. */
 .rows {
   display: flex;
   flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 .trow {
   display: grid;
@@ -333,12 +340,27 @@
   width: 13px;
   height: 13px;
 }
+.vlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
 .vitem {
   display: flex;
   gap: 8px;
+  width: 100%;
   padding: 7px 0;
+  border: 0;
   border-top: 0.5px solid var(--line-1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
   text-align: left;
+  cursor: pointer;
+}
+.vitem:hover .vt b,
+.vitem:focus-visible .vt b {
+  color: var(--danger);
 }
 .vitem .vd {
   width: 6px;

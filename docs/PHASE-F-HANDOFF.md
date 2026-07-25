@@ -76,6 +76,14 @@ cookie — there is deliberately no dev backdoor route; the one-liner is in
   from a comp that does not exist.
 - **Clean-room, zero pyfa.** Brand strings only in `brandConfig.ts`; colours only in
   `tokens.css`; comments explain what and why, never ticket numbers.
+- **Every control has a role and an accessible name; every region has a `data-testid`.**
+  See `REQUIREMENTS.md` §6.8. This is the phase where the convention either holds or goes
+  immediately into arrears — the board, the tabs, the rail and the ghost tile are roughly
+  triple the interactive surface of everything that exists today. Scope by test id, locate
+  by role or label within it; name a control for what it does, not for what it sits next
+  to; put state in `aria-pressed`/`aria-expanded` rather than in the name; and announce
+  anything a driver would otherwise have to sleep through. `npm run lint` runs the
+  `jsx-a11y` pass, so the accessibility half fails CI on its own.
 
 ## The traps
 
@@ -140,6 +148,9 @@ Phase G paragraph in `docs/IMPLEMENTATION-PLAN.md` before choosing the URL shape
   one adds it to the board.
 - Closing the app and returning restores the tabs, the open comps and their order.
 - Typing in one tile does not re-render or re-judge the others.
+- **The whole walkthrough above is scriptable without a single CSS selector** — every new
+  control reachable by role and name, every new region by `data-testid` (§6.8). A locator
+  that has to reach for a class name is a missing id, not an acceptable selector.
 - `alembic check` clean; `ruff` + `pytest` + frontend `lint`/`test`/`build` green.
 
 ## Not in Phase F (deferred)

@@ -4,7 +4,7 @@ import { ApiError, request } from './api'
 import { brand } from './brand/brandConfig'
 import CompScreen from './comps/CompScreen'
 import type { Session } from './session'
-import { fetchSession, signIn } from './session'
+import { fetchSession } from './session'
 import TeamList from './teams/TeamList'
 import TeamScreen from './teams/TeamScreen'
 import { readThemePref, resolveTheme, toggleTheme } from './theme'
@@ -71,29 +71,43 @@ export default function App() {
   }, [])
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
+    // header and footer sit outside main deliberately: nested inside it they are generic
+    // elements rather than the banner and contentinfo landmarks, so nothing could navigate
+    // to them.
+    <div className="app-shell" data-testid="app-shell">
+      <header className="app-header" data-testid="app-header">
         <span className="wordmark">{brand.wordmark.primary}</span>
         <span className="wordmark-suffix">{brand.wordmark.suffix}</span>
-        <span className="product-label">{brand.productLabel}</span>
+        <h1 className="product-label">{brand.productLabel}</h1>
         <span className="header-actions">
           {session && <UserChip session={session} onChanged={reloadSession} />}
         </span>
       </header>
 
-      {session?.character ? renderScreen(screen, setScreen) : <SignedOut session={session} />}
+      <main>
+        {session?.character ? renderScreen(screen, setScreen) : <SignedOut session={session} />}
+      </main>
 
-      <footer className="app-footer">
-        <span className="health">
+      <footer className="app-footer" data-testid="app-footer">
+        <span className="health" data-testid="app-health" role="status">
           {health.kind === 'loading' && 'checking…'}
           {health.kind === 'ok' && <span className="ok">api {health.status}</span>}
           {health.kind === 'error' && <span className="err">{health.message}</span>}
         </span>
-        <button className="theme-toggle" type="button" onClick={() => setTheme(toggleTheme())}>
+        <button
+          className="theme-toggle"
+          data-testid="theme-toggle"
+          type="button"
+          // The state belongs in aria-pressed, not baked into the name — a name that
+          // changes with state cannot be matched exactly by anything.
+          aria-pressed={theme === 'dark'}
+          aria-label="Dark theme"
+          onClick={() => setTheme(toggleTheme())}
+        >
           Theme: {theme}
         </button>
       </footer>
-    </main>
+    </div>
   )
 }
 
@@ -117,10 +131,18 @@ function renderScreen(screen: Screen, go: (screen: Screen) => void) {
 }
 
 function SignedOut({ session }: { session: Session | null }) {
-  if (session === null) return <section className="card">Loading…</section>
+  if (session === null) {
+    return (
+      <section className="card" data-testid="session-loading" role="status">
+        Loading…
+      </section>
+    )
+  }
   return (
-    <section className="card">
-      <div className="card-title">Sign in</div>
+    <section className="card" data-testid="sign-in-card" aria-labelledby="sign-in-title">
+      <h2 className="card-title" id="sign-in-title">
+        Sign in
+      </h2>
       <div className="card-body">
         {session.ssoEnabled ? (
           <>
@@ -128,9 +150,9 @@ function SignedOut({ session }: { session: Session | null }) {
               Teams and comps belong to an EVE character. Sign in to see the teams you own or
               have been added to.
             </p>
-            <button className="btn primary" type="button" onClick={() => signIn()}>
-              Sign in with EVE
-            </button>
+            {/* No button here: UserChip already renders one in the header for exactly this
+                state, and two identical "Sign in with EVE" controls on one screen are
+                indistinguishable to anything that goes looking for one. */}
           </>
         ) : (
           <p>

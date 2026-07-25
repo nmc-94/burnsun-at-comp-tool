@@ -107,6 +107,14 @@ ramp `--text-1..5`, `--accent`, semantic `--success/--danger/--info`. Inter for 
 density; 10–12px card radius, 4–6px control radius. **No gradients/blur/glow/shadows in
 app UI** (shadows only on the popover overlay). Support light + dark from day one.
 
+**The tile's atoms are also its automation vocabulary** (§6.8). The parts named above
+each carry a stable `data-testid` — `comp-tile`, `comp-points-delta`, `comp-issue-flag`,
+`comp-violations`, `comp-chips` for the reserved band, `comp-rows` and one `comp-row` /
+`comp-row-empty` per slot, with `comp-row-name`, `comp-row-surcharge`, `comp-row-cost`
+and `comp-row-flagship` inside a row. The scaffold is a real list and each row is one
+entry in it, so a row is addressable whether it is filled, empty, or open for a swap.
+Class names are presentation only; nothing outside the stylesheet may select on them.
+
 ## Data & correctness
 
 - **Ship reference (SDE):** name → `type_id`, group, hull size. In this mockup, resolved

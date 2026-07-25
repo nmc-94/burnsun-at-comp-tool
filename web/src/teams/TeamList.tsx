@@ -43,22 +43,29 @@ export default function TeamList({ onOpen }: Props) {
   }
 
   return (
-    <section className="card">
-      <div className="card-title">
+    <section className="card" data-testid="team-list-screen" aria-labelledby="team-list-title">
+      <h2 className="card-title" id="team-list-title">
         Your teams
         <button
           className="btn subtle right"
+          data-testid="team-show-archived"
           type="button"
+          aria-pressed={showArchived}
+          aria-label="Show archived teams"
           onClick={() => setShowArchived((on) => !on)}
         >
           {showArchived ? 'show active' : 'show archived'}
         </button>
-      </div>
+      </h2>
 
       <div className="card-body">
-        {teams === null && !error && 'Loading…'}
+        {teams === null && !error && (
+          <p data-testid="team-list-loading" role="status">
+            Loading…
+          </p>
+        )}
         {teams !== null && teams.length === 0 && (
-          <p className="empty">
+          <p className="empty" data-testid="team-list-empty">
             {showArchived
               ? 'Nothing archived.'
               : // A character with no grant anywhere sees this, not somebody else's teams.
@@ -66,13 +73,20 @@ export default function TeamList({ onOpen }: Props) {
           </p>
         )}
         {teams !== null && teams.length > 0 && (
-          <ul className="team-list">
+          <ul className="team-list" data-testid="team-list" aria-label="Your teams">
             {teams.map((team) => (
-              <li key={team.id}>
-                <button className="link" type="button" onClick={() => onOpen(team.id)}>
+              <li key={team.id} data-testid="team-list-item">
+                <button
+                  className="link"
+                  data-testid="team-open"
+                  type="button"
+                  onClick={() => onOpen(team.id)}
+                >
                   {team.name}
                 </button>
-                <span className="level">{team.yourLevel}</span>
+                <span className="level" data-testid="team-level">
+                  {team.yourLevel}
+                </span>
                 {team.archived && <span className="badge">archived</span>}
               </li>
             ))}
@@ -80,21 +94,31 @@ export default function TeamList({ onOpen }: Props) {
         )}
 
         {!showArchived && (
-          <form className="row" onSubmit={submit}>
+          <form className="row" data-testid="team-create-form" onSubmit={submit}>
             <input
+              data-testid="team-create-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="New team name"
               maxLength={200}
               aria-label="New team name"
             />
-            <button className="btn primary" type="submit" disabled={!name.trim()}>
+            <button
+              className="btn primary"
+              data-testid="team-create-submit"
+              type="submit"
+              disabled={!name.trim()}
+            >
               Create
             </button>
           </form>
         )}
 
-        {error && <p className="err">{error}</p>}
+        {error && (
+          <p className="err" data-testid="team-list-error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </section>
   )

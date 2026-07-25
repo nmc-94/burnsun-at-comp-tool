@@ -318,6 +318,13 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
   carries stale
   figures**: it was baked before the surcharge was settled as retroactive, so the
   engine is right and that one panel is not.
+- **Front-end automation:** the UI walkthrough above is scriptable rather than manual,
+  because every control carries a role and an accessible name and every region a stable
+  `data-testid` (§6.8). A driver reaching for a CSS class is a gap in that vocabulary,
+  not a selector to keep. `oxlint`'s `jsx-a11y` plugin runs in `npm run lint`, so the
+  accessibility half is gated in CI; the testid half is a review concern, reinforced by
+  the jsdom tile tests, which use the same locators a browser driver would. An automated
+  end-to-end suite is deferred — this is what makes adding one cheap.
 
 ## Decisions & open questions
 
@@ -336,5 +343,11 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
 - **Enforcement-toggle scope — resolved by removal (Phase E).** There is no toggle:
   rules are reported and never enforced, so there is no scope to decide and no column
   to add. Marking a comp "final" is likewise not gated on legality.
+- **Front-end drivability is a requirement, not an afterthought (§6.8).** Added between
+  Phases E and F, after driving the Phase E builder showed two thirds of the locators
+  ending up bound to CSS class names. Controls carry roles and accessible names, regions
+  carry `data-testid`, async state is announced rather than slept through, and ids ship
+  in production. Retrofitting five phases of UI cost an afternoon; retrofitting after the
+  workspace, the rail and the pick-ban tool would not have.
 
 **Still open (do not block the plan):**

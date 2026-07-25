@@ -65,17 +65,23 @@ describe('scaffold', () => {
 
 describe('deltaPill', () => {
   it('reads ±0 at the cap', () => {
-    // Five Vindicators at 50 base: four copies of surcharge apiece takes them well past
-    // the cap, so build the exact case out of the cheap hull instead.
     const summary = { pointsUsed: 200, pointCap: 200 } as never
 
-    expect(deltaPill(summary)).toEqual({ text: '±0', tone: 'exact' })
+    expect(deltaPill(summary)).toEqual({
+      text: '±0',
+      tone: 'exact',
+      label: 'Exactly at the 200 point cap',
+    })
   })
 
   it('reads a minus sign, not a hyphen, when under budget', () => {
     const pill = deltaPill({ pointsUsed: 198, pointCap: 200 } as never)
 
-    expect(pill).toEqual({ text: '−2', tone: 'under' })
+    expect(pill).toEqual({
+      text: '−2',
+      tone: 'under',
+      label: '2 points under the 200 point cap',
+    })
     expect(pill.text.charCodeAt(0)).toBe(0x2212)
   })
 
@@ -83,7 +89,17 @@ describe('deltaPill', () => {
     expect(deltaPill({ pointsUsed: 224, pointCap: 200 } as never)).toEqual({
       text: '+24',
       tone: 'over',
+      label: '24 points over the 200 point cap',
     })
+  })
+
+  it('says the same thing in words as it shows in symbols', () => {
+    // The two must agree: the pill once announced the total while displaying the delta,
+    // so a screen reader and the screen disagreed about the same element.
+    const under = deltaPill({ pointsUsed: 150, pointCap: 200 } as never)
+
+    expect(under.text).toBe('−50')
+    expect(under.label).toContain('50 points under')
   })
 
   it('agrees with what the engine says a real comp costs', () => {
@@ -91,7 +107,7 @@ describe('deltaPill', () => {
 
     // Two Abaddons: 40 base, inflation 4, so 44 each and 88 in total.
     expect(result.summary.pointsUsed).toBe(88)
-    expect(deltaPill(result.summary)).toEqual({ text: '−112', tone: 'under' })
+    expect(deltaPill(result.summary).text).toBe('−112')
   })
 })
 

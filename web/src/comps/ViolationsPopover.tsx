@@ -1,10 +1,14 @@
-// The issue flag and the popover behind it.
+// The issue flag and the panel behind it.
 //
 // Every string a violation shows is the engine's. It already phrases each problem and its
 // one-line fix, in an order chosen so the most actionable comes first; re-authoring any of
 // that here would mean two sets of words for one rule, drifting apart.
+//
+// The panel is a disclosure, not a dialog. It does not trap focus, move focus in, or
+// restore it on close, so announcing it as a dialog would promise containment that is not
+// there. The trigger owns the relationship instead, via aria-expanded and aria-controls.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 
 import type { Violation } from '../engine'
 
@@ -35,6 +39,7 @@ export default function ViolationsPopover({
   onHighlight,
 }: Props) {
   const anchor = useRef<HTMLSpanElement>(null)
+  const panelId = useId()
 
   useEffect(() => {
     if (!open) return
@@ -61,9 +66,11 @@ export default function ViolationsPopover({
     <span className="vanchor" ref={anchor}>
       <button
         className="vtrig"
+        data-testid="comp-issue-flag"
         type="button"
         onClick={onToggle}
         aria-expanded={open}
+        aria-controls={panelId}
         aria-label={`${count} rule violation${count > 1 ? 's' : ''}`}
       >
         {/* A count only when there is more than one; a lone "1×" is noise. */}
@@ -72,28 +79,40 @@ export default function ViolationsPopover({
       </button>
 
       {open && (
-        <div className="vpop" role="dialog" aria-label="Rule violations">
+        <div className="vpop" id={panelId} data-testid="comp-violations">
           <div className="vh">
             <WarningGlyph />
             {count} rule violation{count > 1 ? 's' : ''}
           </div>
-          {violations.map((violation) => (
-            <div
-              className="vitem"
-              key={violation.code}
-              onMouseEnter={() => onHighlight(violation.slotIndexes)}
-              onMouseLeave={() => onHighlight([])}
-              onFocus={() => onHighlight(violation.slotIndexes)}
-              onBlur={() => onHighlight([])}
-              tabIndex={0}
-            >
-              <span className="vd" />
-              <span className="vt">
-                <b>{violation.message}</b>
-                <span className="fix">{violation.fix}</span>
-              </span>
-            </div>
-          ))}
+          <ul className="vlist" aria-label="Rule violations">
+            {violations.map((violation, index) => (
+              // Keyed on position, not on code: the engine emits one hull-size-cap per
+              // oversized hull size and one unlisted-hull per offending slot, so a code is
+              // not unique within a result.
+              <li key={`${violation.code}-${index}`} data-testid="comp-violation-item">
+                <button
+                  className="vitem"
+                  type="button"
+                  // Named explicitly: the visible content is a decorative dot plus two
+                  // nested spans, which is text a person can read but not a name a control
+                  // can be found by.
+                  aria-label={`${violation.message}. ${violation.fix}`}
+                  // It highlights the rows it blames, so it is a control and gets to be one
+                  // rather than a div made focusable with tabIndex.
+                  onMouseEnter={() => onHighlight(violation.slotIndexes)}
+                  onMouseLeave={() => onHighlight([])}
+                  onFocus={() => onHighlight(violation.slotIndexes)}
+                  onBlur={() => onHighlight([])}
+                >
+                  <span className="vd" />
+                  <span className="vt">
+                    <b>{violation.message}</b>
+                    <span className="fix">{violation.fix}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </span>
