@@ -197,7 +197,8 @@ await tile.getByRole('checkbox', { name: 'Select Abaddon in slot 1' }).check()
 await tile.getByRole('checkbox', { name: 'Select Vindicator in slot 2' }).check()
 await expect(tile.getByTestId('comp-selection-status')).toHaveText('2 hulls selected')
 
-// Out into a comp of their own — one POST and one PUT, and the new tile lands on the board.
+// Out into a comp of their own. One POST to /fork: the server takes those rows out of its own
+// copy, so the new comp keeps this one's ruleset version and records it as its parent.
 await tile.getByRole('button', { name: 'Port to a new comp' }).click()
 await expect(page.getByTestId('board-grid')).toHaveAttribute('data-comp-count', '2')
 
@@ -219,8 +220,66 @@ The copy always lands. If it breaks a rule the target says so through its own
 `comp-issue-flag`, and a hull the target's ruleset version never listed arrives as
 `Unknown hull <typeId>` with an `unlisted-hull` violation rather than being refused.
 
+**Forking a whole comp** is the same mechanism with no rows named, from the fork control in
+the tile's foot. The new comp keeps the parent's ruleset version — a fork exists to be
+compared against what it came from — and says where it came from, whether or not the parent
+is still there.
+
+```javascript
+await tile.getByRole('button', { name: 'Fork Angel Shield Kite' }).click()
+const fork = page.getByTestId('board-tile').filter({ has: page.getByLabel('Angel Shield Kite (fork)') })
+await expect(fork.getByTestId('comp-lineage')).toContainText('Angel Shield Kite')
+// The parent's version, not whatever has published since.
+await expect(fork.getByTestId('comp-ruleset-version')).toHaveText('v2026-07-23')
+```
+
+**Archetype and tags** fill the chip band the tile has kept open since Phase E. Two boxes,
+because the two namespaces never cross-suggest; typing a value the team has not used yet
+offers to create it, and the value is spelled the way the team already spells it.
+
+```javascript
+await tile.getByRole('button', { name: 'Edit tags on Angel Shield Kite' }).click()
+await tile.getByLabel('Archetype').fill('Kite')
+await tile.getByTestId('comp-tag-create').click()          // "Create archetype “Kite”"
+await expect(tile.getByTestId('comp-archetype-chip')).toHaveText('Kite')
+
+await tile.getByLabel('Tags').fill('shield ')              // wrong case, trailing space
+await tile.getByTestId('comp-tag-create').click()
+await tile.getByRole('button', { name: 'Done' }).click()
+
+// The rail regroups, and the value is now offered to every other comp on the team.
+const rail = page.getByTestId('library-rail')
+await expect(rail.getByRole('button', { name: 'Kite' })).toHaveAttribute('aria-expanded', 'true')
+await rail.getByLabel('Filter by archetype').selectOption('Kite')
+await rail.getByRole('button', { name: 'Filter by Shield' }).click()
+await expect(rail.getByTestId('library-results-status')).toContainText('of')
+```
+
+**Comments** open from the tile's foot and are fetched only when opened, so a board of twenty
+tiles makes no thread requests until one is asked for. A viewer can post; only an author can
+edit their own; an owner can delete anybody's.
+
+```javascript
+await tile.getByRole('button', { name: 'Comments on Angel Shield Kite' }).click()
+const thread = tile.getByTestId('comment-thread')
+await expect(thread.getByTestId('comment-status')).toHaveAttribute('data-thread-state', 'idle')
+
+await thread.getByLabel('New comment').fill('This wants a third logi.')
+await thread.getByTestId('comment-post').click()
+await expect(thread.getByTestId('comment-status')).toHaveText('1 comment')
+
+// Editing says so, and does not move when the comment was said.
+await thread.getByRole('button', { name: 'Edit comment by Kadir' }).click()
+await thread.getByTestId('comment-edit-input').fill('This wants one more logi.')
+await thread.getByTestId('comment-save').click()
+await expect(thread.getByTestId('comment-edited')).toBeVisible()
+```
+
 Deep links work, so a board is addressable directly: `/teams/:teamId/boards/:boardId`, and
-`/comps/:compId` opens that comp on whichever board was last in front.
+`/comps/:compId` opens that comp on whichever board was last in front — which is also what a
+fork's lineage link goes to. The rail's search box and its two filters are **component
+state**, deliberately not in the URL: a history entry per keystroke, or per chip toggled, is
+not a location anybody wants to navigate back out of.
 
 Over plain http the minted cookie must be presented without the `Secure` flag, as above;
 see `COMPTOOL_SESSION_COOKIE_SECURE` under [Sign-in](#sign-in-eve-sso). **A locator that

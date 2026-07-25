@@ -14,7 +14,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
 import type { CompSlot, Violation } from '../engine'
+import CommentThread from './CommentThread'
 import CompTile from './CompTile'
+import type { Lineage } from './CompTile'
+import TagEditor from './TagEditor'
+import { EMPTY_VOCABULARY } from './tag-model'
+import type { TagVocabulary } from './tag-model'
+import { hrefFor } from '../router/route'
 import { getCard, publishCard, subscribeCard } from '../workspace/comp-cards'
 import {
   getDragged,
@@ -27,6 +33,7 @@ import {
 } from '../workspace/hull-transfer'
 import type { HullOffer } from '../workspace/hull-transfer'
 import { introducedBy, previewHulls, withHullsAdded } from './tile-model'
+import type { CompDetail } from './types'
 import { useCompDocument } from './useCompDocument'
 
 /** A comp this one's hulls can be copied into: its id, and the name the board loaded it with. */
@@ -45,8 +52,14 @@ interface Props {
    * Optional, all of them. A cell rendered with nothing but an id and a way to close it is
    * still a whole tile — it simply offers no way to move hulls out of it.
    */
-  readonly onPort?: (compId: string, rows: readonly CompSlot[]) => void
+  readonly onPort?: (compId: string, positions: readonly number[]) => void
   readonly copyTargets?: readonly CopyTarget[]
+  /** Fork the whole comp. What happens to the new comp is the board's business. */
+  readonly onFork?: (compId: string) => void
+  /** The team's two tag vocabularies, derived once by the board from its comp listing. */
+  readonly vocabulary?: TagVocabulary
+  /** Told when a write in here changes something the rail draws. */
+  readonly onCompChanged?: (comp: CompDetail) => void
 }
 
 export default function CompTileHost({
@@ -55,11 +68,31 @@ export default function CompTileHost({
   autoFocusName,
   onPort,
   copyTargets,
+  onFork,
+  vocabulary,
+  onCompChanged,
 }: Props) {
-  const { comp, ruleset, slots, result, saveState, error, editable, change, rename } =
-    useCompDocument(compId)
+  const {
+    comp,
+    ruleset,
+    slots,
+    result,
+    saveState,
+    error,
+    editable,
+    change,
+    rename,
+    saveTags,
+    flush,
+  } = useCompDocument(compId, onCompChanged)
   const [carried, setCarried] = useState<readonly CompSlot[] | null>(null)
   const [sent, setSent] = useState<string | null>(null)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [tagsOpen, setTagsOpen] = useState(false)
+  // The thread's own count, once it has loaded one. The listing's number is a snapshot from
+  // when the board opened, and posting a comment should move the figure beside the control
+  // that opened the panel rather than only the panel.
+  const [threadCount, setThreadCount] = useState<number | null>(null)
   const proposedTo = useRef<string | null>(null)
   const anchor = useRef<HTMLDivElement>(null)
 
@@ -185,6 +218,24 @@ export default function CompTileHost({
 
   const destinations = (copyTargets ?? []).filter((target) => target.id !== compId)
 
+  /**
+   * Where this comp came from, if it came from anywhere.
+   *
+   * Built here rather than in the tile because it is the one thing on screen that names another
+   * comp, and the tile is not allowed to know that other comps exist. `hrefFor` is a pure
+   * function over the URL grammar, so the tile still receives a string and no router.
+   */
+  const lineage = useMemo<Lineage | null>(() => {
+    if (!comp?.forkedFromName) return null
+    return {
+      name: comp.forkedFromName,
+      href: comp.forkedFromCompId
+        ? hrefFor({ kind: 'comp', compId: comp.forkedFromCompId })
+        : null,
+      partial: comp.forkKind === 'partial',
+    }
+  }, [comp])
+
   return (
     // The cell is a drop target, which is what the four handlers below are for and what the
     // rule objects to. The objection is answered rather than waived: every one of them is a
@@ -243,12 +294,24 @@ export default function CompTileHost({
             result={result}
             createdByName={comp.createdByName}
             versionLabel={ruleset.versionLabel}
+            archetype={comp.archetype}
+            tags={comp.tags}
+            commentCount={threadCount ?? comp.commentCount}
+            forkCount={comp.forkCount}
+            lineage={lineage}
             editable={editable}
             saveState={saveState}
             onChange={change}
             onRename={rename}
             autoFocusName={autoFocusName}
-            onPortRows={onPort ? (rows) => onPort(compId, rows) : undefined}
+            // Flushed first, and this is the one place that has to be. A port is a fork, and a
+            // fork reads the comp's rows on the *server* — so a port taken inside the 600 ms
+            // debounce would copy the comp as it was before the last edit.
+            onPortRows={
+              onPort
+                ? (positions) => void flush().then(() => onPort(compId, positions))
+                : undefined
+            }
             onCopyRows={
               destinations.length > 0
                 ? (rows) => {
@@ -259,7 +322,36 @@ export default function CompTileHost({
             }
             onDragRows={(rows) => setDragged(offerOf(rows))}
             onDragRowsEnd={() => setDragged(null)}
+            onEditTags={editable ? () => setTagsOpen((open) => !open) : undefined}
+            // Reading a thread is not editing, so a viewer gets this — they can comment even
+            // where they cannot build.
+            onToggleComments={() => setCommentsOpen((open) => !open)}
+            commentsOpen={commentsOpen}
+            onFork={
+              onFork && editable ? () => void flush().then(() => onFork(compId)) : undefined
+            }
           />
+
+          {/* Both panels are rendered out here rather than inside the tile, the way the copy
+              destinations already are: the control is part of the locked tile design and what
+              it opens is the cell's, which is what keeps fetching out of the tile. */}
+          {tagsOpen && editable && (
+            <TagEditor
+              archetype={comp.archetype}
+              tags={comp.tags}
+              vocabulary={vocabulary ?? EMPTY_VOCABULARY}
+              onSave={saveTags}
+              onClose={() => setTagsOpen(false)}
+            />
+          )}
+
+          {commentsOpen && (
+            <CommentThread
+              compId={compId}
+              yourLevel={comp.yourLevel}
+              onCountChange={setThreadCount}
+            />
+          )}
           {!editable && (
             <p className="hint" data-testid="comp-read-only">
               You have read access to this comp, so it cannot be edited here.

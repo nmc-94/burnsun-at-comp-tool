@@ -3,12 +3,14 @@
  * Ported from docs/comp-tool-mockup.html, which is the locked design. Colours come from
  * tokens.css and nothing here introduces one; no gradients, blur, glow or shadow, per §6.4.
  *
- * Three parts of the mockup are deliberately NOT here. The accordion (.acc/.acc-head/.chev)
- * has nothing to group by until archetype arrives in Phase H, and the rail is a flat list
- * until it does. The shared-tab styling (.ftab.shared) belongs with the shared tab itself,
- * which is §4.7. And .enf-toggle was dead before it was written — rules are reported, never
- * enforced. Dead CSS ported "for later" is what the handoff complained about; none of it is
- * here.
+ * The accordion (.acc/.acc-head/.chev) arrived in Phase H with the thing it groups by. It was
+ * held back until then on purpose: grouping on something that merely exists — the ruleset
+ * version, say — would have produced one group per team and called itself an accordion.
+ *
+ * Two parts of the mockup are still deliberately NOT here. The shared-tab styling
+ * (.ftab.shared) belongs with the shared tab itself, which is §4.7. And .enf-toggle was dead
+ * before it was written — rules are reported, never enforced. Dead CSS ported "for later" is
+ * what the handoff complained about; none of it is here.
  */
 
 /* The workspace is the one screen that wants the whole window rather than the centred
@@ -242,11 +244,123 @@
   color: var(--text-4);
 }
 
+/* Filtering the library, above the groups it filters. */
+.lib-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px 8px;
+}
+
+.lib-filter-arch,
+.lib-filter-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lib-filter-arch select {
+  width: 100%;
+  height: 24px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-1);
+  background: var(--bg-soft);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+}
+
+/* A tag filter is a chip that can be pressed. Unpressed it is drawn faint, so the set that is
+ * actually filtering reads at a glance rather than needing to be counted. */
+.chip-toggle {
+  cursor: pointer;
+  opacity: 0.55;
+  font-family: inherit;
+}
+
+.chip-toggle:hover,
+.chip-toggle.on {
+  opacity: 1;
+}
+
+.lib-filter-clear {
+  align-self: flex-start;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--text-3);
+  background: none;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.lib-filter-clear:hover {
+  background: var(--bg-soft);
+  color: var(--text-2);
+}
+
+/* The accordion, ported from the mockup now that archetype exists to group by. */
+.acc {
+  padding: 2px 8px 12px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.acc-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.acc-head:hover {
+  background: var(--bg-soft);
+}
+
+.acc-head span:not(.tree-count) {
+  flex: 1 1 auto;
+}
+
+.chev {
+  width: 10px;
+  height: 10px;
+  color: var(--text-3);
+  flex: 0 0 auto;
+  transition: transform 0.12s;
+}
+
+.chev.open {
+  transform: rotate(90deg);
+}
+
+.acc-body {
+  margin-left: 13px;
+  padding-left: 7px;
+  border-left: 1px solid color-mix(in srgb, var(--line-1) 85%, transparent);
+}
+
 .lib-list {
   list-style: none;
   margin: 0;
-  padding: 2px 8px 12px;
-  flex: 1 1 auto;
+  padding: 2px 0 6px;
+}
+
+/* The list inside a group scrolls with the accordion rather than on its own. */
+.acc-body.lib-list {
+  flex: none;
 }
 
 .tree-count {

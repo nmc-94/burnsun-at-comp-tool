@@ -8,9 +8,10 @@
 
 import { useEffect, useRef } from 'react'
 
-import type { CompSlot } from '../engine'
 import CompTileHost from '../comps/CompTileHost'
 import type { CopyTarget } from '../comps/CompTileHost'
+import type { TagVocabulary } from '../comps/tag-model'
+import type { CompDetail } from '../comps/types'
 import GhostTile from './GhostTile'
 
 interface Props {
@@ -27,8 +28,11 @@ interface Props {
    * it simply offers no way to move hulls out of one, which is what keeps a bare
    * `<BoardGrid>` a complete board.
    */
-  readonly onPort?: (compId: string, rows: readonly CompSlot[]) => void
+  readonly onPort?: (compId: string, positions: readonly number[]) => void
   readonly copyTargets?: readonly CopyTarget[]
+  readonly onFork?: (compId: string) => void
+  readonly vocabulary?: TagVocabulary
+  readonly onCompChanged?: (comp: CompDetail) => void
 }
 
 export default function BoardGrid({
@@ -41,6 +45,9 @@ export default function BoardGrid({
   onCreate,
   onPort,
   copyTargets,
+  onFork,
+  vocabulary,
+  onCompChanged,
 }: Props) {
   const grid = useRef<HTMLElement>(null)
 
@@ -67,6 +74,9 @@ export default function BoardGrid({
           autoFocusName={compId === newCompId}
           onPort={onPort}
           copyTargets={copyTargets}
+          onFork={onFork}
+          vocabulary={vocabulary}
+          onCompChanged={onCompChanged}
         />
       ))}
 

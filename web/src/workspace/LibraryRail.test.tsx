@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-// The rail: every comp on the team, one click from the board.
+// The rail: every comp on the team, grouped by archetype, one click from the board.
 //
-// Flat, not grouped. `archetype` is Phase H, and the accordion is not built against a column
-// that does not exist. What is here instead is the part that has to be live — a legality dot
-// and a point total that keep up with whatever a tile is doing.
+// Two halves. The part that has to be **live** — a legality dot and a point total that keep up
+// with whatever a tile is doing, through the card store. And the part that has to be **complete**
+// — the grouping and the filters, which read the comp listing rather than that store, because a
+// comp whose pinned ruleset failed to load has no card and must still be listed.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { act } from 'react'
@@ -14,7 +15,12 @@ import type { CompDetail } from '../comps/types'
 import { publishCard, resetCompCards, seedCards } from './comp-cards'
 import LibraryRail from './LibraryRail'
 
-function comp(id: string, name: string): CompDetail {
+function comp(
+  id: string,
+  name: string,
+  archetype: string | null = null,
+  tags: string[] = [],
+): CompDetail {
   return {
     id,
     teamId: 't1',
@@ -26,11 +32,31 @@ function comp(id: string, name: string): CompDetail {
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: '2026-07-01T00:00:00Z',
     yourLevel: 'owner',
+    archetype,
+    tags,
+    forkedFromCompId: null,
+    forkedFromName: null,
+    forkKind: null,
+    commentCount: 0,
+    forkCount: 0,
     slots: [],
   }
 }
 
 const COMPS = [comp('a', 'Angel Shield Kite'), comp('b', 'Armor Brawl'), comp('c', 'Zenith Rush')]
+
+/** The same three, said about: two archetypes, one comp left unclassified. */
+const CLASSIFIED = [
+  comp('a', 'Angel Shield Kite', 'Kite', ['Shield', 'Angel']),
+  comp('b', 'Armor Brawl', 'Brawl', ['Armor']),
+  comp('c', 'Zenith Rush', null, ['Shield']),
+]
+
+const groupNames = () =>
+  screen.getAllByTestId('library-group-toggle').map((head) => head.getAttribute('aria-label'))
+
+const compNames = () =>
+  screen.queryAllByTestId('library-comp').map((row) => within(row).getByRole('button').textContent)
 
 function rail(overrides: Partial<Parameters<typeof LibraryRail>[0]> = {}) {
   return render(
@@ -56,13 +82,11 @@ afterEach(() => {
 })
 
 describe('the library rail', () => {
-  it('lists every comp flat, with the count in the header', () => {
+  it('lists every comp, with the count in the header', () => {
     rail()
 
     expect(screen.getAllByTestId('library-comp').length).toBe(3)
     expect(screen.getByTestId('library-count').textContent).toBe('3')
-    // No accordion until there is something real to group by.
-    expect(screen.queryByRole('group')).toBeNull()
   })
 
   it('names each open control for the comp it opens', () => {
@@ -165,5 +189,152 @@ describe('the library rail', () => {
     expect(toggle.getAttribute('aria-label')).toBe('Team comps')
     fireEvent.click(toggle)
     expect(onToggle).toHaveBeenCalled()
+  })
+})
+
+describe('grouping by archetype', () => {
+  it('puts each archetype in its own group, with the unclassified last', () => {
+    rail({ comps: CLASSIFIED })
+
+    // Archetypes alphabetically, then the ones that say nothing — which are still findable,
+    // rather than dropped for want of a heading.
+    expect(groupNames()).toEqual(['Brawl', 'Kite', 'No archetype'])
+    expect(compNames()).toEqual(['Armor Brawl', 'Angel Shield Kite', 'Zenith Rush'])
+  })
+
+  it('counts each group beside its name rather than inside it', () => {
+    // A name that moves with what it contains cannot be matched by anything looking for it.
+    rail({ comps: [...CLASSIFIED, comp('d', 'Second Kite', 'Kite')] })
+
+    const kite = screen
+      .getAllByTestId('library-group')
+      .find((group) => within(group).getByTestId('library-group-toggle').getAttribute('aria-label') === 'Kite')!
+    expect(within(kite).getByTestId('library-group-count').textContent).toBe('2')
+    expect(within(kite).getByTestId('library-group-toggle').getAttribute('aria-label')).toBe('Kite')
+  })
+
+  it('is one group when nothing has been classified yet', () => {
+    rail()
+
+    expect(groupNames()).toEqual(['No archetype'])
+  })
+
+  it('collapses a group and leaves the rest alone', () => {
+    rail({ comps: CLASSIFIED })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Kite' }))
+
+    expect(screen.getByRole('button', { name: 'Kite' }).getAttribute('aria-expanded')).toBe('false')
+    expect(compNames()).toEqual(['Armor Brawl', 'Zenith Rush'])
+    // The heading stays, so what was hidden is plainly still there.
+    expect(groupNames()).toEqual(['Brawl', 'Kite', 'No archetype'])
+  })
+
+  it('reopens a group that was collapsed', () => {
+    rail({ comps: CLASSIFIED })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Kite' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Kite' }))
+
+    expect(screen.getByRole('button', { name: 'Kite' }).getAttribute('aria-expanded')).toBe('true')
+    expect(compNames()).toContain('Angel Shield Kite')
+  })
+})
+
+describe('filtering', () => {
+  it('narrows to one archetype and says how much it kept', () => {
+    rail({ comps: CLASSIFIED })
+
+    fireEvent.change(screen.getByTestId('library-filter-archetype'), { target: { value: 'Kite' } })
+
+    expect(compNames()).toEqual(['Angel Shield Kite'])
+    expect(groupNames()).toEqual(['Kite'])
+    expect(screen.getByTestId('library-results-status').textContent).toBe('1 of 3 comps')
+  })
+
+  it('offers only the archetypes actually in use', () => {
+    rail({ comps: CLASSIFIED })
+
+    const options = within(screen.getByTestId('library-filter-archetype'))
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(options).toEqual(['All archetypes', 'Brawl', 'Kite'])
+  })
+
+  it('narrows by a tag, with the pressed state out of the control’s name', () => {
+    rail({ comps: CLASSIFIED })
+
+    const shield = screen.getByRole('button', { name: 'Filter by Shield' })
+    expect(shield.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(shield)
+
+    expect(shield.getAttribute('aria-pressed')).toBe('true')
+    expect(compNames()).toEqual(['Angel Shield Kite', 'Zenith Rush'])
+  })
+
+  it('narrows rather than widens when a second tag is picked', () => {
+    // Every selected tag, not any — otherwise a second click makes the list longer, which is
+    // not what anybody means by narrowing a library down.
+    rail({ comps: CLASSIFIED })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filter by Shield' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Filter by Angel' }))
+
+    expect(compNames()).toEqual(['Angel Shield Kite'])
+  })
+
+  it('combines an archetype, a tag and the search box', () => {
+    rail({ comps: [...CLASSIFIED, comp('d', 'Kite Two', 'Kite', ['Shield'])] })
+
+    fireEvent.change(screen.getByTestId('library-filter-archetype'), { target: { value: 'Kite' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Filter by Shield' }))
+    fireEvent.change(screen.getByTestId('library-search'), { target: { value: 'two' } })
+
+    expect(compNames()).toEqual(['Kite Two'])
+  })
+
+  it('says so rather than showing nothing when a filter matches none', () => {
+    rail({ comps: CLASSIFIED })
+
+    fireEvent.change(screen.getByTestId('library-filter-archetype'), { target: { value: 'Brawl' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Filter by Shield' }))
+
+    expect(compNames()).toEqual([])
+    expect(screen.getByTestId('library-results-status').textContent).toBe('No comps match')
+  })
+
+  it('clears the filters without clearing the search box', () => {
+    // Two different gestures. Clearing a filter should not throw away what somebody typed.
+    rail({ comps: CLASSIFIED })
+    fireEvent.change(screen.getByTestId('library-search'), { target: { value: 'a' } })
+    fireEvent.change(screen.getByTestId('library-filter-archetype'), { target: { value: 'Kite' } })
+
+    fireEvent.click(screen.getByTestId('library-filter-clear'))
+
+    expect(screen.getByTestId('library-filter-archetype')).toHaveProperty('value', '')
+    expect(screen.getByTestId('library-search')).toHaveProperty('value', 'a')
+    expect(compNames()).toEqual(['Armor Brawl', 'Angel Shield Kite'])
+  })
+
+  it('offers nothing to clear until something is filtering', () => {
+    rail({ comps: CLASSIFIED })
+
+    expect(screen.queryByTestId('library-filter-clear')).toBeNull()
+  })
+
+  it('offers no tag band on a team that has used no tags', () => {
+    rail({ comps: [comp('a', 'Angel Shield Kite', 'Kite')] })
+
+    expect(screen.queryAllByTestId('library-filter-tag').length).toBe(0)
+  })
+
+  it('still lists a comp the card store never heard of', () => {
+    // The grouping reads the listing, not the store: a comp whose pinned ruleset payload failed
+    // to load has no card, and dropping it out of the rail would lose it entirely.
+    seedCards([{ id: 'a', name: 'Angel Shield Kite', pointsUsed: 200, legal: true, leadTypeId: null }])
+    rail({ comps: CLASSIFIED })
+
+    expect(compNames()).toEqual(['Armor Brawl', 'Angel Shield Kite', 'Zenith Rush'])
+    expect(leaf('Zenith Rush')!.getAttribute('data-legality')).toBe('unknown')
   })
 })

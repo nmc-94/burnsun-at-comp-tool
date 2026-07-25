@@ -283,7 +283,9 @@ h3 {
   background: var(--bg-soft);
 }
 
-/* Archetype/Tags chip template (seeded now; the hue per chip is set via --h). */
+/* Archetype/Tags chips. The hue per chip comes from the value itself, via --h set inline by
+   `comps/tag-model.ts` — so one tag is one colour everywhere it appears. `.arch` is dashed and
+   dotless, which is what tells an archetype from a tag in the locked design. */
 .chip {
   display: inline-flex;
   align-items: center;

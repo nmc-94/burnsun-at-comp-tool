@@ -16,24 +16,41 @@ not a way to learn which teams there are.
 The collection hangs off a team, because creating a comp means saying which team it joins.
 The item is addressed on its own, because a comp is a thing people open, and its team is
 already written on it.
+
+Forking is the one exception, and it proves the rule: ``POST /comps/{id}/fork`` creates a
+comp from *another comp* rather than from a team, so it is addressed by the thing it copies.
+That is also what lets it read the parent's ruleset version off the row instead of taking one
+from the request — see :func:`fork_comp`.
+
+What a comp *says about itself* — its archetype and its tags — is content like everything
+else here, and no more the engine's business than a name is.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic.alias_generators import to_camel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .access import Access, authorize, live
+from .access import authorize, live, reach_comp
 from .auth.dependencies import current_viewer
 from .db import get_session
-from .models import AccessLevel, Comp, CompSlot, Ruleset, RulesetVersion
+from .models import (
+    AccessLevel,
+    Comp,
+    CompComment,
+    CompSlot,
+    CompTag,
+    Ruleset,
+    RulesetVersion,
+)
 from .permissions import Viewer
 
 team_router = APIRouter(prefix="/api/v1/teams", tags=["comps"])
@@ -45,6 +62,16 @@ router = APIRouter(prefix="/api/v1/comps", tags=["comps"])
 #: field is a rule, the ruleset owns it, and a comp over that limit is something this
 #: server stores and the client flags.
 MAX_SLOTS = 100
+
+#: The same kind of ceiling for labels. Well past any useful number of tags on one comp; it
+#: exists so a client with a loop bug cannot store an unbounded list, not to tell anybody
+#: how to organize their library.
+MAX_TAGS = 20
+
+#: What a fork took from its parent. ``partial`` is §4.1c's "partial derivation" — a fork
+#: seeded from a chosen subset of the parent's rows rather than all of them.
+FORK_FULL = "full"
+FORK_PARTIAL = "partial"
 
 
 class _Response(BaseModel):
@@ -58,6 +85,10 @@ class _Request(_Response):
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Slug = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+#: One archetype or tag as it arrives. Trimmed and bounded here; the rest of §3.3's
+#: normalization — collapsing internal whitespace, and adopting the spelling the team
+#: already uses — happens in ``_canonical``, which needs the team to do its job.
+TagValue = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
 
 _LEVEL_NAMES = {
     AccessLevel.NONE: "none",
@@ -98,6 +129,21 @@ class CompDetail(_Response):
     #: What the requesting character holds on the owning team. The SPA gates its controls
     #: on this rather than guessing.
     your_level: str
+    #: The comp's shape, from the team's Archetype namespace. At most one.
+    archetype: str | None
+    #: Its labels, from the separate Tags namespace. Sorted, so no client has to.
+    tags: list[str]
+    #: Where the comp came from, if it was forked. The id is null once the parent has been
+    #: deleted; the name is the record and outlives it, so a fork still says where it came
+    #: from even when there is no longer anywhere to follow.
+    forked_from_comp_id: uuid.UUID | None
+    forked_from_name: str | None
+    #: ``full`` or ``partial`` — see :data:`FORK_FULL`. Null when this comp is not a fork.
+    fork_kind: str | None
+    #: How long the thread is, and how many comps were forked from this one. Counted rather
+    #: than loaded: a fifty-comp listing has no business dragging every comment body with it.
+    comment_count: int
+    fork_count: int
     #: Always present, the listing included. The library rail draws a legality dot and a
     #: point total per comp, legality is the client's to compute, and a comp without its
     #: slots is a comp the client cannot judge. The listing already loads them to count
@@ -129,7 +175,75 @@ class SlotsReplace(_Request):
     slots: Annotated[list[SlotWrite], Field(max_length=MAX_SLOTS)]
 
 
-def _detail(comp: Comp, level: AccessLevel) -> CompDetail:
+class TagsReplace(_Request):
+    """Everything the team says about this comp, in one shape.
+
+    Replaced wholesale for the same reason the slots are: the editor holds all of it anyway,
+    and "here is what it says now" cannot express a removal it forgot to mention. Both
+    namespaces travel together because they are edited together, and they stay named apart
+    because §3.3 says they never mix.
+    """
+
+    #: Null clears it. A comp with no archetype is the ordinary state of a new comp, not an
+    #: error, so there is nothing here to refuse.
+    archetype: TagValue | None = None
+    tags: Annotated[list[TagValue], Field(default_factory=list, max_length=MAX_TAGS)]
+
+
+class CompFork(_Request):
+    """A new comp seeded from an existing one.
+
+    ``positions`` is what makes this one route rather than two. §4.1c calls a full fork "just
+    the all-rows case" of the partial one, so omitting the field means the whole comp and
+    naming rows means a partial derivation — one gesture, one lineage record, one place where
+    the parent's version is read.
+
+    No version field, deliberately, exactly as ``CompCreate`` has none: the fork's binding is
+    the parent's, read off the parent row on the server. A client that could name a version
+    could pin a fork to the wrong one, and a fork's whole value is being comparable to what
+    it came from.
+    """
+
+    name: Name
+    #: Row numbers from the parent, as ``SlotDetail.position`` reports them. Omitted means
+    #: every row.
+    positions: Annotated[list[int], Field(max_length=MAX_SLOTS)] | None = None
+
+
+def _tally(session: Session, comp_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, tuple[int, int]]:
+    """Comments per comp, and forks per comp, for the comps named.
+
+    Two grouped counts rather than two relationships: ``len(comp.comments)`` would pull every
+    comment body on the team into a listing that draws a number, and there is no relationship
+    to count forks through at all.
+
+    Both routes go through this — the detail route with one id — because ``CompDetail`` is
+    served by the listing *and* by the detail, and a field computed twice is a field that will
+    eventually disagree with itself.
+    """
+    if not comp_ids:
+        return {}
+    comments = dict(
+        session.execute(
+            select(CompComment.comp_id, func.count())
+            .where(CompComment.comp_id.in_(comp_ids))
+            .group_by(CompComment.comp_id)
+        ).all()
+    )
+    forks = dict(
+        session.execute(
+            select(Comp.forked_from_comp_id, func.count())
+            .where(Comp.forked_from_comp_id.in_(comp_ids))
+            .group_by(Comp.forked_from_comp_id)
+        ).all()
+    )
+    return {
+        comp_id: (comments.get(comp_id, 0), forks.get(comp_id, 0)) for comp_id in comp_ids
+    }
+
+
+def _detail(comp: Comp, level: AccessLevel, tally: tuple[int, int] = (0, 0)) -> CompDetail:
+    comment_count, fork_count = tally
     return CompDetail(
         id=comp.id,
         team_id=comp.team_id,
@@ -143,6 +257,14 @@ def _detail(comp: Comp, level: AccessLevel) -> CompDetail:
         created_at=comp.created_at,
         updated_at=comp.updated_at,
         your_level=_LEVEL_NAMES[level],
+        archetype=comp.archetype,
+        # The relationship is ordered by tag, so this is sorted without saying so twice.
+        tags=[row.tag for row in comp.tags],
+        forked_from_comp_id=comp.forked_from_comp_id,
+        forked_from_name=comp.forked_from_name,
+        fork_kind=comp.fork_kind,
+        comment_count=comment_count,
+        fork_count=fork_count,
         slots=[
             SlotDetail(position=slot.position, type_id=slot.type_id, is_flagship=slot.is_flagship)
             for slot in comp.slots
@@ -150,34 +272,9 @@ def _detail(comp: Comp, level: AccessLevel) -> CompDetail:
     )
 
 
-def _no_comp(comp_id: uuid.UUID) -> HTTPException:
-    # The same answer for "no such comp", "its team is not yours", and "that id belongs to
-    # another team". Distinguishing any of them would turn a comp id into a probe for
-    # which teams exist.
-    return HTTPException(status_code=404, detail=f"No comp {str(comp_id)!r}")
-
-
-def _reach(
-    session: Session, comp_id: uuid.UUID, viewer: Viewer, required: AccessLevel
-) -> tuple[Comp, Access]:
-    """The only way a route reaches a comp.
-
-    The comp is loaded first because its team is what decides, then the team gate runs.
-    Its refusal is swallowed and re-raised comp-shaped: letting ``authorize``'s "No team
-    <id>" escape from a comp route would confirm the team is real.
-    """
-    comp = session.scalar(
-        select(Comp)
-        .where(Comp.id == comp_id)
-        .options(selectinload(Comp.slots), selectinload(Comp.ruleset_version))
-    )
-    if comp is None:
-        raise _no_comp(comp_id)
-    try:
-        access = authorize(session, comp.team_id, viewer, required)
-    except HTTPException:
-        raise _no_comp(comp_id) from None
-    return comp, access
+def _one(session: Session, comp: Comp, level: AccessLevel) -> CompDetail:
+    """``_detail`` for a single comp, with its counts fetched. The item routes' answer."""
+    return _detail(comp, level, _tally(session, [comp.id]).get(comp.id, (0, 0)))
 
 
 def _latest_version(session: Session, slug: str) -> RulesetVersion:
@@ -222,6 +319,77 @@ def _apply_slots(session: Session, comp: Comp, slots: list[SlotWrite]) -> None:
         )
 
 
+def _canonical(value: str, in_use: Iterable[str]) -> str:
+    """One spelling per value per team, per §3.3's "Kiter" and "kiter " must not diverge.
+
+    Internal whitespace is collapsed — the ``TagValue`` constraint has already trimmed the
+    ends — and then the value adopts the spelling the team already uses, if it has one.
+
+    Storing the *team's* casing rather than a folded one is what makes this liveable: a chip
+    reading "kiter" because somebody once typed it in a hurry would be a worse answer than
+    the problem. So the first person to use a value chooses how it is written, and everyone
+    after them matches without having to know.
+
+    Matched in Python rather than by a unique index on ``lower(tag)``, and for the reason
+    ``teams.py``'s ``_refuse_duplicate`` records: an expression index reflects back from
+    Postgres with casts the drift check cannot match, and would report permanent drift.
+    """
+    collapsed = " ".join(value.split())
+    folded = collapsed.casefold()
+    for existing in in_use:
+        if existing.casefold() == folded:
+            return existing
+    return collapsed
+
+
+def _values_in_use(session: Session, team_id: uuid.UUID) -> tuple[list[str], list[str]]:
+    """Every archetype and every tag already spelled somewhere on this team.
+
+    Two queries, both scoped to the team, because a suggestion set that reached across teams
+    would leak one team's content into another's — the same class of mistake ``authorize`` and
+    ``workspace.py``'s id-dropping exist to prevent. The two are returned apart and never
+    merged: §3.3 says the namespaces do not cross-suggest, and the only honest way to promise
+    that is to never put them in one list.
+    """
+    archetypes = session.scalars(
+        select(Comp.archetype)
+        .where(Comp.team_id == team_id, Comp.archetype.is_not(None))
+        .distinct()
+    ).all()
+    tags = session.scalars(
+        select(CompTag.tag)
+        .join(Comp, Comp.id == CompTag.comp_id)
+        .where(Comp.team_id == team_id)
+        .distinct()
+    ).all()
+    return list(archetypes), list(tags)
+
+
+def _apply_tags(session: Session, comp: Comp, body: TagsReplace) -> None:
+    """Set the comp's archetype and tags, normalized against the team's own vocabulary."""
+    archetypes_in_use, tags_in_use = _values_in_use(session, comp.team_id)
+
+    comp.archetype = (
+        None if body.archetype is None else _canonical(body.archetype, archetypes_in_use)
+    )
+
+    # Canonicalized against what this request has already accepted as well as against the
+    # team, so "Kiter" and "kiter" arriving together collapse into one tag rather than
+    # colliding on the unique index.
+    kept: list[str] = []
+    for raw in body.tags:
+        tag = _canonical(raw, [*tags_in_use, *kept])
+        if tag not in kept:
+            kept.append(tag)
+
+    comp.tags.clear()
+    # Flushed for the reason ``_apply_slots`` flushes: without it the deletes and the inserts
+    # reach the database together and collide on (comp_id, tag) when a tag is being re-sent.
+    session.flush()
+    for tag in sorted(kept):
+        comp.tags.append(CompTag(tag=tag))
+
+
 @team_router.get("/{team_id}/comps", response_model=list[CompDetail])
 def list_comps(
     team_id: uuid.UUID,
@@ -240,13 +408,16 @@ def list_comps(
         .where(Comp.team_id == access.team.id)
         .options(
             selectinload(Comp.slots),
+            selectinload(Comp.tags),
             # Down to the ruleset itself: the response reads its slug, and stopping at the
             # version leaves that to a lazy load once per comp.
             selectinload(Comp.ruleset_version).selectinload(RulesetVersion.ruleset),
         )
         .order_by(Comp.name)
     ).all()
-    return [_detail(comp, access.level) for comp in comps]
+    # One pair of counting queries for the whole page, not one pair per comp.
+    tally = _tally(session, [comp.id for comp in comps])
+    return [_detail(comp, access.level, tally.get(comp.id, (0, 0))) for comp in comps]
 
 
 @team_router.post("/{team_id}/comps", response_model=CompDetail, status_code=201)
@@ -270,7 +441,7 @@ def create_comp(
     )
     session.add(comp)
     session.commit()
-    return _detail(comp, access.level)
+    return _one(session, comp, access.level)
 
 
 @router.get("/{comp_id}", response_model=CompDetail)
@@ -279,8 +450,8 @@ def comp_detail(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> CompDetail:
-    comp, access = _reach(session, comp_id, viewer, AccessLevel.VIEWER)
-    return _detail(comp, access.level)
+    comp, access = reach_comp(session, comp_id, viewer, AccessLevel.VIEWER)
+    return _one(session, comp, access.level)
 
 
 @router.patch("/{comp_id}", response_model=CompDetail)
@@ -290,11 +461,11 @@ def rename_comp(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> CompDetail:
-    comp, access = _reach(session, comp_id, viewer, AccessLevel.EDITOR)
+    comp, access = reach_comp(session, comp_id, viewer, AccessLevel.EDITOR)
     live(access)
     comp.name = body.name
     session.commit()
-    return _detail(comp, access.level)
+    return _one(session, comp, access.level)
 
 
 @router.put("/{comp_id}/slots", response_model=CompDetail)
@@ -310,11 +481,104 @@ def replace_slots(
     budget saves exactly like a legal one; the builder is already showing its owner what
     is wrong with it.
     """
-    comp, access = _reach(session, comp_id, viewer, AccessLevel.EDITOR)
+    comp, access = reach_comp(session, comp_id, viewer, AccessLevel.EDITOR)
     live(access)
     _apply_slots(session, comp, body.slots)
     session.commit()
-    return _detail(comp, access.level)
+    return _one(session, comp, access.level)
+
+
+@router.put("/{comp_id}/tags", response_model=CompDetail)
+def replace_tags(
+    comp_id: uuid.UUID,
+    body: TagsReplace,
+    session: Session = Depends(get_session),
+    viewer: Viewer = Depends(current_viewer),
+) -> CompDetail:
+    """Say what this comp is: one archetype, any number of tags.
+
+    Content, not rules. An archetype is a captain's word for a shape and a tag is a label
+    somebody found useful; neither reaches the legality engine, and no route here asks whether
+    a "Kite" comp actually kites.
+    """
+    comp, access = reach_comp(session, comp_id, viewer, AccessLevel.EDITOR)
+    live(access)
+    _apply_tags(session, comp, body)
+    session.commit()
+    return _one(session, comp, access.level)
+
+
+@router.post("/{comp_id}/fork", response_model=CompDetail, status_code=201)
+def fork_comp(
+    comp_id: uuid.UUID,
+    body: CompFork,
+    session: Session = Depends(get_session),
+    viewer: Viewer = Depends(current_viewer),
+) -> CompDetail:
+    """Copy a comp into a new, independent one that remembers where it came from.
+
+    **The fork keeps the parent's ruleset version**, and that is the decision this route
+    exists to hold. A fork is taken to be compared against its parent — the same comp with one
+    hull changed, the same comp without the flagship — and a fork priced by August against a
+    parent priced by June is not a comparison, it is a confound. The version is read off the
+    parent row here, so the rule that a client may never name a version survives intact;
+    moving a comp onto newer rules stays §4.2's re-validation, which is an explicit act.
+
+    Editor, because a fork is a new comp on the team and adding one has always needed editor.
+    Nothing asks whether either comp is legal: a fork of an illegal comp is an illegal comp,
+    and it lands.
+    """
+    parent, access = reach_comp(session, comp_id, viewer, AccessLevel.EDITOR)
+    team = live(access)
+
+    if body.positions is None:
+        taken = list(parent.slots)
+        kind = FORK_FULL
+    else:
+        # Dropped rather than refused, the way ``workspace.py`` drops comp ids that no longer
+        # resolve: a position that is not in the comp is a client working from a view that has
+        # moved on, and refusing the whole fork over it would lose the rows that are still
+        # good. Read in the parent's order, not the request's — the rows are a subset of an
+        # ordered list, and the caller's ordering of row numbers is not information.
+        wanted = set(body.positions)
+        taken = [slot for slot in parent.slots if slot.position in wanted]
+        kind = FORK_PARTIAL
+
+    fork = Comp(
+        team_id=team.id,
+        # The parent's, deliberately. See the docstring.
+        ruleset_version_id=parent.ruleset_version_id,
+        name=body.name,
+        # The forking character, not the parent's creator — §4.1a's one remaining clause.
+        created_by_character_id=viewer.character_id,
+        created_by_name=viewer.character_name,
+        archetype=parent.archetype,
+        forked_from_comp_id=parent.id,
+        # Snapshotted, so deleting the parent costs the fork its link but not its history.
+        forked_from_name=parent.name,
+        fork_kind=kind,
+    )
+    for tag in parent.tags:
+        fork.tags.append(CompTag(tag=tag.tag))
+    session.add(fork)
+    # Flushed before the slots go on, because ``_apply_slots`` flushes a clear of a list that
+    # does not exist yet unless the comp has a row to hang them off.
+    session.flush()
+
+    # The flagship carries. A comp holds at most one, so a whole comp brings at most one and
+    # any subset of it brings at most one — the designation is always still valid here, unlike
+    # a copy *into* an existing comp, which is what §9.3's "flagship drops" was written about.
+    _apply_slots(
+        session,
+        fork,
+        [SlotWrite(type_id=slot.type_id, is_flagship=slot.is_flagship) for slot in taken],
+    )
+    session.commit()
+    # Reloaded through the gate so the response is built from the same shape every other comp
+    # response is: ``fork.ruleset_version`` is otherwise a lazy load of a relationship the new
+    # object never had populated.
+    made, _ = reach_comp(session, fork.id, viewer, AccessLevel.VIEWER)
+    return _one(session, made, access.level)
 
 
 @router.delete("/{comp_id}", status_code=204)
@@ -328,8 +592,13 @@ def delete_comp(
     Unlike a team, a comp really is deleted. A team is a season's record and other
     people's work; a comp is one draft among many, and a builder who cannot throw one away
     accumulates clutter they have to read past every time.
+
+    A comp forked from this one survives it. The child's ``forked_from_comp_id`` is set null
+    by the database and its ``forked_from_name`` stays, so the fork still says where it came
+    from — which is why the constraint is SET NULL and not RESTRICT: a parent nobody can
+    delete would make lineage a trap rather than a record.
     """
-    comp, access = _reach(session, comp_id, viewer, AccessLevel.EDITOR)
+    comp, access = reach_comp(session, comp_id, viewer, AccessLevel.EDITOR)
     live(access)
     session.delete(comp)
     session.commit()

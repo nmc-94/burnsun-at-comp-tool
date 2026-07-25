@@ -20,18 +20,32 @@ const COMPS = [
   { id: 'c', name: 'Gamma', typeIds: [SHIP.rifter] },
 ]
 
-function compBody(id: string, name: string, typeIds: number[]) {
+interface Says {
+  readonly archetype?: string | null
+  readonly tags?: string[]
+  readonly forkedFrom?: { id: string; name: string; kind: 'full' | 'partial' }
+  readonly versionLabel?: string
+}
+
+function compBody(id: string, name: string, typeIds: number[], says: Says = {}) {
   return {
     id,
     teamId: 't1',
     name,
     rulesetSlug: 'atxxii',
-    rulesetVersionLabel: 'v2026-07-23',
+    rulesetVersionLabel: says.versionLabel ?? 'v2026-07-23',
     shipCount: typeIds.length,
     createdByName: 'Kadir',
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: '2026-07-01T00:00:00Z',
     yourLevel: 'owner',
+    archetype: says.archetype ?? null,
+    tags: says.tags ?? [],
+    forkedFromCompId: says.forkedFrom?.id ?? null,
+    forkedFromName: says.forkedFrom?.name ?? null,
+    forkKind: says.forkedFrom?.kind ?? null,
+    commentCount: 0,
+    forkCount: 0,
     slots: typeIds.map((typeId, position) => ({ position, typeId, isFlagship: false })),
   }
 }
@@ -41,10 +55,33 @@ interface Recorded {
   init: RequestInit
 }
 
-/** A server whose saved layout is whatever was last PUT to it. */
+/**
+ * A server whose saved layout is whatever was last PUT to it, and which remembers the comps it
+ * makes.
+ *
+ * The remembering matters: a tile fetches its own comp on mount, so a fork whose lineage lived
+ * only in the POST response would lose it the moment the new tile loaded — which is exactly the
+ * bug a stateless stub would hide.
+ */
 function stubServer(saved: unknown = { boards: [], activeBoardId: null, updatedAt: null }) {
   const calls: Recorded[] = []
   let layout = saved
+  const stored = new Map<string, ReturnType<typeof compBody>>()
+
+  const remember = (comp: ReturnType<typeof compBody>) => {
+    stored.set(comp.id, comp)
+    return comp
+  }
+
+  /** The comp as this server now holds it: what was written, else the fixture, else empty. */
+  const state = (id: string): ReturnType<typeof compBody> => {
+    const held = stored.get(id)
+    if (held) return held
+    const fixture = COMPS.find((comp) => comp.id === id)
+    return fixture
+      ? compBody(fixture.id, fixture.name, fixture.typeIds)
+      : compBody(id, 'Untitled comp', [])
+  }
   const fetchMock = vi.fn(async (url: string, init: RequestInit = {}) => {
     calls.push({ url, init })
     let body: unknown
@@ -55,25 +92,48 @@ function stubServer(saved: unknown = { boards: [], activeBoardId: null, updatedA
       body = layout
     } else if (url.endsWith('/comps') && init.method === 'POST') {
       const sent = JSON.parse(String(init.body)) as { name: string }
-      body = compBody('made', sent.name, [])
+      body = remember(compBody('made', sent.name, []))
+    } else if (url.endsWith('/fork') && init.method === 'POST') {
+      // The fork route, as the server implements it: the rows come out of the *parent's* copy,
+      // the new comp keeps the parent's ruleset version, and lineage is recorded either way.
+      const sourceId = url.split('/').at(-2) ?? ''
+      const source = COMPS.find((comp) => comp.id === sourceId)
+      const sent = JSON.parse(String(init.body)) as { name: string; positions?: number[] }
+      const rows = (source?.typeIds ?? []).filter(
+        (_, position) => sent.positions === undefined || sent.positions.includes(position),
+      )
+      body = remember(
+        compBody('made', sent.name, rows, {
+          forkedFrom: {
+            id: sourceId,
+            name: source?.name ?? 'unknown',
+            kind: sent.positions === undefined ? 'full' : 'partial',
+          },
+          // Pinned to the parent's. The fixtures share one label; the backend test is where two
+          // published versions are what proves the pinning.
+          versionLabel: 'v2026-07-23',
+        }),
+      )
     } else if (url.endsWith('/slots') && init.method === 'PUT') {
-      // Echoed, because a comp created empty and then filled is only a comp with hulls in
-      // it from this response onwards.
+      // Echoed, because a tile's autosave answers with the comp as it now stands.
       const id = url.split('/').at(-2) ?? 'made'
       const sent = JSON.parse(String(init.body)) as { slots: { typeId: number }[] }
-      const known = COMPS.find((comp) => comp.id === id)
-      body = compBody(
-        id,
-        known?.name ?? 'Alpha (partial)',
-        sent.slots.map((slot) => slot.typeId),
-      )
+      body = remember({ ...state(id), slots: sent.slots.map((slot, position) => ({ position, typeId: slot.typeId, isFlagship: false })) })
+    } else if (url.endsWith('/tags') && init.method === 'PUT') {
+      const id = url.split('/').at(-2) ?? ''
+      const sent = JSON.parse(String(init.body)) as { archetype: string | null; tags: string[] }
+      body = remember({
+        ...state(id),
+        archetype: sent.archetype,
+        // Sorted, the way the server sorts them, so the rail and the chips read in one order.
+        tags: [...sent.tags].sort(),
+      })
     } else if (url.endsWith('/comps')) {
-      body = COMPS.map((comp) => compBody(comp.id, comp.name, comp.typeIds))
+      body = COMPS.map((comp) => state(comp.id))
     } else if (url.includes('/rulesets/')) {
       body = { slug: 'atxxii', versionLabel: 'v2026-07-23', payload: atxxiiRuleset }
     } else {
-      const found = COMPS.find((comp) => url === `/api/v1/comps/${comp.id}`)
-      body = found ? compBody(found.id, found.name, found.typeIds) : compBody('made', 'Untitled comp', [])
+      body = state(url.split('/').at(-1) ?? 'made')
     }
     return {
       ok: true,
@@ -304,7 +364,10 @@ describe('porting rows into a new comp', () => {
     )
   }
 
-  it('creates the comp, fills it, and puts it on the board', async () => {
+  it('forks the chosen rows in one request, and puts the new comp on the board', async () => {
+    // Phase G did this as a POST to /comps then a PUT to /slots, which recorded no parent and
+    // landed the rows on whatever version had published since. §4.1c makes a partial fork the
+    // same mechanism as a full one, so both go through /fork.
     const server = stubServer({
       boards: [{ id: 'b1', name: 'Angel doctrines', tiles: [{ compId: 'a' }] }],
       activeBoardId: 'b1',
@@ -316,21 +379,33 @@ describe('porting rows into a new comp', () => {
     port()
 
     await waitFor(() => expect(tileNames()).toEqual(['a', 'made']))
-    const created = server.calls.find(
-      (call) => call.url.endsWith('/comps') && call.init.method === 'POST',
-    )
-    const filled = server.calls.find(
-      (call) => call.url.endsWith('/slots') && call.init.method === 'PUT',
-    )
-    // One POST and one PUT. A subset of a legal comp is legal, so there is nothing to gate.
-    expect(JSON.parse(String(created?.init.body)).name).toBe('Alpha (partial)')
-    // The source comp's ruleset, not the team's commonest: those are the point values the
-    // rows were picked under.
-    expect(JSON.parse(String(created?.init.body)).rulesetSlug).toBe('atxxii')
-    expect(filled?.url).toBe('/api/v1/comps/made/slots')
-    expect(JSON.parse(String(filled?.init.body))).toEqual({
-      slots: [{ typeId: SHIP.abaddon, isFlagship: false }],
+    const forked = server.calls.filter((call) => call.init.method === 'POST' && call.url.endsWith('/fork'))
+    expect(forked.length).toBe(1)
+    expect(forked[0]!.url).toBe('/api/v1/comps/a/fork')
+    // Row numbers, not hulls: the server takes the rows out of its own copy, which is what lets
+    // the fork be pinned to the parent's ruleset version.
+    expect(JSON.parse(String(forked[0]!.init.body))).toEqual({
+      name: 'Alpha (partial)',
+      positions: [0],
     })
+    // And no comp was created the old way.
+    expect(
+      server.calls.some((call) => call.url.endsWith('/comps') && call.init.method === 'POST'),
+    ).toBe(false)
+  })
+
+  it('records the parent on the new comp, so the fork says where it came from', async () => {
+    await openWithAlpha()
+
+    port()
+
+    // The tile fetches its own comp, so the lineage has to survive that round trip and not
+    // merely be in the fork's response.
+    const made = await waitFor(() => screen.getByLabelText('Alpha (partial)'))
+    const lineage = within(made).getByTestId('comp-lineage')
+    expect(lineage.textContent).toContain('Alpha')
+    // Flagged as a partial derivation, because only some of the parent's rows were taken.
+    expect(lineage.textContent).toContain('part')
   })
 
   it('leaves the comp the rows came out of exactly as it was', async () => {
@@ -365,5 +440,111 @@ describe('porting rows into a new comp', () => {
       { compId: 'a' },
       { compId: 'made' },
     ])
+  })
+})
+
+describe('forking a whole comp', () => {
+  async function openWithAlpha() {
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Angel doctrines', tiles: [{ compId: 'a' }] }],
+      activeBoardId: 'b1',
+      updatedAt: '2026-07-24T00:00:00Z',
+    })
+    await open()
+    await waitFor(() => expect(screen.getByLabelText('Alpha')).toBeTruthy())
+    return server
+  }
+
+  it('names no rows, which is what makes it the all-rows case of one mechanism', async () => {
+    const server = await openWithAlpha()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fork Alpha' }))
+
+    await waitFor(() => expect(tileNames()).toEqual(['a', 'made']))
+    const forked = server.calls.find((call) => call.url.endsWith('/fork'))
+    expect(JSON.parse(String(forked?.init.body))).toEqual({ name: 'Alpha (fork)' })
+  })
+
+  it('opens the fork on the board, saying where it came from and holding the parent’s hulls', async () => {
+    await openWithAlpha()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fork Alpha' }))
+
+    const made = await waitFor(() => screen.getByLabelText('Alpha (fork)'))
+    expect(within(made).getAllByTestId('comp-row-name').map((row) => row.textContent)).toEqual([
+      'Abaddon',
+    ])
+    expect(within(made).getByTestId('comp-lineage').textContent).toContain('Alpha')
+    // A full fork, so nothing calls it partial.
+    expect(within(made).getByTestId('comp-lineage').textContent).not.toContain('part')
+  })
+
+  it('leaves the comp it was forked from alone', async () => {
+    await openWithAlpha()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fork Alpha' }))
+
+    await waitFor(() => expect(tileNames()).toContain('made'))
+    const alpha = screen.getByLabelText('Alpha')
+    expect(within(alpha).queryByTestId('comp-lineage')).toBeNull()
+    expect(within(alpha).getByTestId('comp-save-state').dataset.saveState).toBe('idle')
+  })
+})
+
+describe('tagging a comp from its tile', () => {
+  async function openWithAlpha() {
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Angel doctrines', tiles: [{ compId: 'a' }] }],
+      activeBoardId: 'b1',
+      updatedAt: '2026-07-24T00:00:00Z',
+    })
+    await open()
+    await waitFor(() => expect(screen.getByLabelText('Alpha')).toBeTruthy())
+    return server
+  }
+
+  it('stores the archetype and puts the chip on the tile', async () => {
+    const server = await openWithAlpha()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags on Alpha' }))
+    fireEvent.change(screen.getByLabelText('Archetype'), { target: { value: 'Kite' } })
+    fireEvent.click(screen.getByTestId('comp-tag-create'))
+
+    await waitFor(() => expect(screen.getByTestId('comp-archetype-chip').textContent).toBe('Kite'))
+    const written = server.calls.find((call) => call.url.endsWith('/tags'))
+    expect(written?.url).toBe('/api/v1/comps/a/tags')
+    expect(JSON.parse(String(written?.init.body))).toEqual({ archetype: 'Kite', tags: [] })
+  })
+
+  it('regroups the rail, because the comp now belongs under a different heading', async () => {
+    // The one comp write that changes something outside the tile. Before it, every comp is
+    // unclassified and the rail is one group.
+    await openWithAlpha()
+    expect(
+      screen.getAllByTestId('library-group-toggle').map((head) => head.getAttribute('aria-label')),
+    ).toEqual(['No archetype'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags on Alpha' }))
+    fireEvent.change(screen.getByLabelText('Archetype'), { target: { value: 'Kite' } })
+    fireEvent.click(screen.getByTestId('comp-tag-create'))
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByTestId('library-group-toggle').map((head) => head.getAttribute('aria-label')),
+      ).toEqual(['Kite', 'No archetype']),
+    )
+  })
+
+  it('offers the value it just created to the next comp’s editor', async () => {
+    // §3.3's suggestion set is "values already in use on that team's comps", and it comes out of
+    // the listing this screen already holds — so storing one is what makes it available.
+    await openWithAlpha()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags on Alpha' }))
+    fireEvent.change(screen.getByLabelText('Tags'), { target: { value: 'Shield' } })
+    fireEvent.click(screen.getByTestId('comp-tag-create'))
+    await waitFor(() => expect(screen.getByTestId('comp-tag-chip').textContent).toBe('Shield'))
+
+    // And the rail can now filter by it, which is the same set seen from the other side.
+    expect(screen.getByRole('button', { name: 'Filter by Shield' })).toBeTruthy()
   })
 })

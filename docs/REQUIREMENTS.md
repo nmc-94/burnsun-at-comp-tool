@@ -200,10 +200,9 @@ box; matching existing values are suggested as you type; if what you typed is
 new, a "create" option appears; applied values render as removable chips):
 
 - **Archetype** — a categorization of the comp's overall strategy/shape. Pick an
-  existing archetype from the team's set or type a new one to create it. *(Open
-  question: Archetype is likely a single value per comp given the wording "an
-  Archetype"; Tags are multi-valued. Confirm — see §9. The mechanism is
-  otherwise identical.)*
+  existing archetype from the team's set or type a new one to create it.
+  **Single-valued: a comp has at most one archetype** *(settled in Phase H; §9.3)*.
+  Tags are multi-valued. The mechanism is otherwise identical.
 - **Tags** — general-purpose labels, multi-valued, same UX, separate namespace
   and separate label ("Tags", not "Archetype").
 
@@ -212,6 +211,23 @@ that team's comps (a "workspace tags" style list), and a newly typed value simpl
 becomes available for reuse once saved. Values are normalized (trim/case) the
 same way BurnSun normalizes fit tags so "Kiter" and "kiter " don't diverge.
 Archetype and Tags are separate sets and never cross-suggest.
+
+> **How the three sentences above were built (Phase H).** Single-valued archetype is a
+> **column** on `comp` and multi-valued tags are **rows** in `comp_tag`, so "never
+> cross-suggest" is a property of the schema rather than a rule in a query: there is no
+> row that could be mistaken for an archetype and no column that could hold a second tag.
+> Normalization happens **once, server-side, on write** (`comps.py`'s `_canonical`): the
+> value is trimmed, its internal whitespace collapsed, and then it **adopts the spelling
+> the team already uses** for a case-insensitive match — so `"kiter "` is stored as
+> `"Kiter"` where `"Kiter"` exists. Not a case fold: a chip reading "kiter" because
+> somebody typed in a hurry is a worse answer than the problem, so the first person to use
+> a value chooses how it is written and everyone after them matches. Matched in Python
+> rather than by an index on `lower(tag)`, for the reason `teams.py` already records — an
+> expression index reflects back from Postgres with casts the drift check cannot match.
+> And there is **no suggestions endpoint**: the comp listing already carries every comp on
+> the team, through the same team gate as everything else, so the two sets are derived from
+> it in the browser (`comps/tag-model.ts`) and cannot contain anything the caller could not
+> already list for themselves.
 
 ## 4. Functional requirements
 
@@ -355,10 +371,23 @@ be re-applied). Exact carry-over rules are a refinement to confirm (§9.3).
 
 ### 4.1b Comments
 
-- Any team member with access to a comp can **add comments** to it.
-- Comments show author (character) and timestamp, ordered chronologically.
+- Any team member with access to a comp can **add comments** to it — **including a
+  viewer**. This is the one write path in the application open below editor, and
+  deliberately so: reviewing somebody else's comp is the case comments exist for. It is
+  still refused on an archived team, because archiving puts a season away rather than
+  opening it up for annotation.
+- Comments show author (character) and timestamp, ordered chronologically. An **edited**
+  comment says so and carries the time of the edit; `created_at` never moves.
 - Authors can edit/delete their own comments; owners can moderate. (Simple
   per-comp thread for MVP; per-slot commenting is a later enhancement.)
+  - Moderating means **removing**, not rewriting: an owner can delete anybody's comment and
+    can edit nobody's, because an owner who could edit could put different words in
+    somebody's mouth.
+  - Refusing somebody else's comment answers **403, not 404**. The comment is plainly there
+    in a thread the caller can already read, so hiding it would be a lie — the 404 rule
+    exists to stop an id revealing which *teams* exist, and nothing here does.
+  - A comment with **no recorded author** (`author_character_id` is nullable) is editable by
+    nobody and removable only by an owner. A null author is nobody, not everybody.
 
 ### 4.1c Fork / copy
 
@@ -372,7 +401,20 @@ be re-applied). Exact carry-over rules are a refinement to confirm (§9.3).
   → new-comp action in §4.1) rather than the whole comp. It records the same
   `forked_from_comp_id` lineage, flagged as a partial derivation. A full fork is
   just the all-rows case.
-- Forking works within a team; cross-team forking is out of scope for MVP.
+- **A fork keeps its parent's ruleset version** *(settled in Phase H)*. A fork exists to
+  be compared against what it came from, and a fork priced by August against a parent
+  priced by June is not a comparison — it is a confound. `POST /api/v1/comps/{id}/fork`
+  reads the version off the parent row server-side, so the rule that a client may never
+  name a version survives intact. Moving a comp onto newer rules stays §4.2's
+  re-validation, which is a deliberate act rather than a side effect of copying.
+- Forking works within a team; cross-team forking is out of scope for MVP. The fork route
+  cannot express it: the new comp is created on the parent's team, and there is no
+  parameter that says otherwise.
+- **Provenance survives the parent's deletion.** `forked_from_comp_id` is `ON DELETE SET
+  NULL` and a `forked_from_name` snapshot sits beside it, the way `created_by_name` sits
+  beside `created_by_character_id`. A parent nobody could delete because somebody forked it
+  would make lineage a trap; a fork that forgot its origin the moment the original was
+  tidied away would make it worthless.
 
 ### 4.1d Tagging
 
@@ -385,7 +427,10 @@ be re-applied). Exact carry-over rules are a refinement to confirm (§9.3).
 - Display which ruleset version a comp is validated against and when it was
   published.
 - **Re-validate** an existing comp against a newer ruleset and surface what
-  changed (e.g., "Ship X went from 12 → 15 pts; comp now 3 pts over").
+  changed (e.g., "Ship X went from 12 → 15 pts; comp now 3 pts over"). Since Phase H
+  this is the **only** thing that moves a comp onto a different version: creating a comp
+  pins to the newest published, forking keeps the parent's (§4.1c), and nothing else
+  reassigns the binding.
 - Ship point table, ban list, and budget are **read from ingested ruleset data**;
   none are compiled into the application.
 
@@ -747,7 +792,7 @@ Rules for the ids themselves:
 | | |
 |---|---|
 | Format | `<area>-<thing>` or `<area>-<thing>-<part>`, kebab-case, lowercase |
-| Areas | `app`, `user`, `team`, `grant`, `comp`, `ship-search`, `ruleset`, `workspace`, `board`, `library` |
+| Areas | `app`, `user`, `team`, `grant`, `comp`, `comment`, `ship-search`, `ruleset`, `workspace`, `board`, `library` |
 | Repeated items | every item in a list shares one id; disambiguate by position within the scope, or by accessible content |
 | Variants | a distinct kind gets a distinct id (`comp-row` vs `comp-row-empty`), so selecting by position is never ambiguous across kinds |
 | Values | the element wrapping the value, not its container — `comp-row-cost`, not the row |
@@ -915,11 +960,20 @@ owner. What remains open are design calls, not facts.
   exactly one team. The per-team **shared** board is not this: it is the shared tab
   of §4.7, a different object with a different writer model, and it arrives with
   real-time collaboration.
-- **Copy/port carry-over rules:** when porting rows into a new comp or dragging a
-  hull between comps, the hull always carries; whether **pilot assignment, notes,
-  and flagship status** carry over (where still valid) vs. reset is a refinement
-  to confirm. Assumed: hull + notes carry; pilot carries if unambiguous; flagship
-  designation drops on copy (a comp holds only one).
+- **Copy/port carry-over rules:** *Resolved (Phase H)*, and the two gestures differ
+  because they are different things.
+  - **Porting rows into a new comp** is a fork (§4.1c), so the hull **and its flagship
+    designation** carry. That is always valid: a comp holds at most one flagship, so a
+    whole comp brings at most one and any subset of it brings at most one. A full fork
+    additionally carries the source's **archetype and tags**, and gets its **own comment
+    thread**.
+  - **Dragging a hull into an existing comp** is an edit of that comp, so only the hull
+    carries. A flagship designation would collide with one the target may already hold, so
+    it drops and can be re-applied — which is what the earlier draft of this bullet was
+    about.
+  - There is nothing else to carry: **per-slot notes and pilot assignment do not exist**.
+    An earlier version of this bullet said "hull + notes carry", which was wrong twice over
+    — there are no per-slot notes, and comments are per-comp and a fork starts with none.
 - **Rule-enforcement toggle — scope.** *Resolved by removal:* there is no
   toggle. Rules are reported and never enforced (§4.1), which settles the scope
   question — per-user versus per-comp — by leaving nothing to scope. Marking a
@@ -927,10 +981,17 @@ owner. What remains open are design calls, not facts.
   statement about the team's intent, not about the rules.
 - **Multiple concurrent tournaments/rulesets:** assume one active ruleset at a
   time, but keep the data model version-aware from day one.
-- **Archetype cardinality:** single archetype per comp (assumed) vs. multiple —
-  the wording "an Archetype" suggests one; confirm.
-- **Comment granularity:** per-comp thread (assumed for MVP) vs. per-slot /
-  threaded replies later.
+- **Archetype cardinality:** *Resolved (Phase H)* — **single**. A comp has at most one
+  archetype, stored as a column on `comp`; tags are multi-valued rows. §3.3 says so
+  directly now rather than pointing back here.
+- **Comment granularity:** per-comp thread, built in Phase H. Per-slot comments and
+  threaded replies remain later enhancements (§4.1b), and `comptool/comments.py` is where
+  they would land.
+- **What an edited comment says about itself:** *Resolved (Phase H)* — `comp_comment`
+  gained a nullable `updated_at` and an edited comment renders "edited"; `created_at` never
+  moves. Deletion is a **real delete** for both an author removing their own and an owner
+  moderating, matching `delete_comp`'s existing stance — no tombstone, because a thread
+  carrying "removed" placeholders keeps showing you the thing somebody asked to have gone.
 - **App identity:** *Resolved* — ships under the **BurnSun brand** (§6.4), with
   brand assets kept in one configurable place so self-hosters can swap them.
 

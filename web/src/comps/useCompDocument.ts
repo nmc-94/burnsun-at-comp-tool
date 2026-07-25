@@ -23,11 +23,11 @@ import { evaluate } from '../engine'
 import type { CompSlot, LegalityResult } from '../engine'
 import { loadRulesetVersion } from '../rulesets/cache'
 import type { RulesetVersionDetail } from '../rulesets/types'
-import { getComp, renameComp, replaceSlots } from './api'
+import { getComp, renameComp, replaceSlots, replaceTags } from './api'
 import type { SaveState } from './CompTile'
 import { trackWrite, whenWritesSettle } from './in-flight'
 import { toEngineComp } from './tile-model'
-import type { CompDetail } from './types'
+import type { CompDetail, CompTagsWrite } from './types'
 
 /** How long to let edits settle before writing them. Long enough to cover a burst of
  *  clicks, short enough that closing the tab straight after an edit is still unusual. */
@@ -44,9 +44,22 @@ export interface CompDocument {
   readonly editable: boolean
   readonly change: (next: CompSlot[]) => void
   readonly rename: (name: string) => void
+  /** Store what the comp says it is. Wholesale, because that is the shape of the route. */
+  readonly saveTags: (next: CompTagsWrite) => void
+  /**
+   * Get the server caught up with what is on screen, now, and wait for it.
+   *
+   * For the one gesture that asks the *server* to read this comp's slots: a fork takes the rows
+   * out of the stored copy, so a fork taken inside the debounce would otherwise copy the comp
+   * as it was a moment ago. Everything else here is happy to let the debounce run.
+   */
+  readonly flush: () => Promise<void>
 }
 
-export function useCompDocument(compId: string): CompDocument {
+/** Told when a write here changes something the *board* draws — the rail's grouping. */
+type OnChanged = (comp: CompDetail) => void
+
+export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocument {
   const [comp, setComp] = useState<CompDetail | null>(null)
   const [ruleset, setRuleset] = useState<RulesetVersionDetail | null>(null)
   const [slots, setSlots] = useState<CompSlot[]>([])
@@ -145,6 +158,11 @@ export function useCompDocument(compId: string): CompDocument {
     setSaveState('pending')
   }, [])
 
+  // Held in a ref so a caller's inline arrow does not have to appear in a dependency list and
+  // rebuild the callbacks below on every render of the board.
+  const changed = useRef(onChanged)
+  changed.current = onChanged
+
   const rename = useCallback(
     (name: string) => {
       renameComp(compId, name)
@@ -157,6 +175,37 @@ export function useCompDocument(compId: string): CompDocument {
     [compId],
   )
 
+  /**
+   * Written straight through rather than debounced like the slots.
+   *
+   * A chip is one deliberate click, not a burst of keystrokes, so there is no burst to settle
+   * — and unlike a hull, it is not applied locally first: the *server* decides how a value is
+   * spelled ("kiter " on a team that already says "Kiter" is stored as "Kiter"), so showing the
+   * typed spelling first would flicker it to the team's a moment later.
+   */
+  const saveTags = useCallback(
+    (next: CompTagsWrite) => {
+      replaceTags(compId, next)
+        .then((updated) => {
+          setComp(updated)
+          setError(null)
+          // The rail groups by archetype and filters by tag, so this is the one comp write
+          // that changes something outside the tile.
+          changed.current?.(updated)
+        })
+        .catch((problem: unknown) => setError(messageFor(problem)))
+    },
+    [compId],
+  )
+
+  const flush = useCallback(async () => {
+    const outstanding = pending.current
+    if (outstanding && JSON.stringify(outstanding) !== persisted.current) await save(outstanding)
+    // And wait on anything already in the air, the way the read path does — a write that has
+    // been issued but not answered leaves the server holding the older comp just as surely.
+    await whenWritesSettle(compId)
+  }, [compId, save])
+
   return {
     comp,
     ruleset,
@@ -167,6 +216,8 @@ export function useCompDocument(compId: string): CompDocument {
     editable: comp?.yourLevel === 'editor' || comp?.yourLevel === 'owner',
     change,
     rename,
+    saveTags,
+    flush,
   }
 }
 

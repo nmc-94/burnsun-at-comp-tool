@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from . import __version__
 from .auth.routes import router as auth_router
+from .comments import router as comments_router
 from .comps import router as comps_router
 from .comps import team_router as team_comps_router
 from .db import dispose_db, get_engine, init_db
@@ -73,6 +74,10 @@ app.include_router(teams_router)
 # list and create, and on their own id thereafter.
 app.include_router(team_comps_router)
 app.include_router(comps_router)
+# A third comp-shaped router, nested one level further. Comments are what a team says about a
+# comp rather than what the comp contains, which is why they are not in comps.py — but they
+# are reached through the same gate, so a comment on an invisible comp is invisible too.
+app.include_router(comments_router)
 # The workspace hangs off a team for the same reason the comp listing does — a board is a
 # view onto one team's comps — but it belongs to the character rather than to the team,
 # which is why it is in neither teams.py nor comps.py.

@@ -6,7 +6,7 @@
 // already written on it.
 
 import { request } from '../api'
-import type { CompDetail, CompSlotWrite } from './types'
+import type { CommentDetail, CompDetail, CompSlotWrite, CompTagsWrite } from './types'
 
 /** Every comp on the team, slots included — the rail judges each one itself. */
 export function listComps(teamId: string): Promise<CompDetail[]> {
@@ -39,6 +39,60 @@ export function replaceSlots(compId: string, slots: CompSlotWrite[]): Promise<Co
   })
 }
 
+/** Store the comp's archetype and tags as they now stand. Wholesale, like the slots. */
+export function replaceTags(compId: string, tags: CompTagsWrite): Promise<CompDetail> {
+  return request<CompDetail>(`/api/v1/comps/${compId}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify(tags),
+  })
+}
+
+/**
+ * Copy a comp into a new, independent one that records where it came from.
+ *
+ * `positions` names rows from the source and makes it a partial derivation; omitting it forks
+ * the whole comp. No ruleset argument, deliberately: the fork keeps the *parent's* version, so
+ * the two are priced by the same point table and comparing them is a comparison. The server
+ * reads that off the parent row — a client still cannot name a version.
+ */
+export function forkComp(
+  compId: string,
+  name: string,
+  positions?: readonly number[],
+): Promise<CompDetail> {
+  return request<CompDetail>(`/api/v1/comps/${compId}/fork`, {
+    method: 'POST',
+    body: JSON.stringify(positions ? { name, positions } : { name }),
+  })
+}
+
 export function deleteComp(compId: string): Promise<void> {
   return request<void>(`/api/v1/comps/${compId}`, { method: 'DELETE' })
+}
+
+/** The whole thread, oldest first. */
+export function listComments(compId: string): Promise<CommentDetail[]> {
+  return request<CommentDetail[]>(`/api/v1/comps/${compId}/comments`)
+}
+
+export function postComment(compId: string, body: string): Promise<CommentDetail> {
+  return request<CommentDetail>(`/api/v1/comps/${compId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  })
+}
+
+export function editComment(
+  compId: string,
+  commentId: string,
+  body: string,
+): Promise<CommentDetail> {
+  return request<CommentDetail>(`/api/v1/comps/${compId}/comments/${commentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ body }),
+  })
+}
+
+export function deleteComment(compId: string, commentId: string): Promise<void> {
+  return request<void>(`/api/v1/comps/${compId}/comments/${commentId}`, { method: 'DELETE' })
 }

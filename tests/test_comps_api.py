@@ -402,7 +402,224 @@ def test_every_comp_route_needs_a_session(client, publish):
         client.get(f"/api/v1/comps/{comp_id}"),
         client.patch(f"/api/v1/comps/{comp_id}", json={"name": "x"}),
         client.put(f"/api/v1/comps/{comp_id}/slots", json=slots(RIFTER)),
+        client.put(f"/api/v1/comps/{comp_id}/tags", json={"archetype": "Kite", "tags": []}),
+        client.post(f"/api/v1/comps/{comp_id}/fork", json={"name": "x"}),
         client.delete(f"/api/v1/comps/{comp_id}"),
     ]
 
-    assert [answer.status_code for answer in answers] == [401] * 6
+    assert [answer.status_code for answer in answers] == [401] * 8
+
+
+# --- Forking, and the version a fork lands on ----------------------------------------------
+
+
+def fork(client, comp: dict, name: str = "Angel Shield Kite (fork)", **body) -> dict:
+    response = client.post(f"/api/v1/comps/{comp['id']}/fork", json={"name": name, **body})
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_a_fork_stays_on_the_ruleset_version_its_parent_was_priced_by(client, sign_in, publish):
+    """The decision this route exists to hold.
+
+    A fork is taken to be compared against its parent. Landing it on whatever version has
+    published since would mean the two comps on screen are priced by different point tables,
+    and the difference a captain reads as "this variant costs three more" would partly be the
+    ruleset moving underneath them.
+    """
+    publish("2026-07-23")
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{parent['id']}/slots", json=slots(ABADDON, RIFTER))
+    # A newer version publishes between the parent being built and the fork being taken.
+    publish("2026-08-01")
+
+    forked = fork(client, parent)
+
+    assert forked["rulesetVersionLabel"] == "2026-07-23"
+    assert forked["rulesetVersionLabel"] == parent["rulesetVersionLabel"]
+    # And a brand new comp still lands on the newest, so nothing about the fork route changed
+    # what creating a comp means.
+    assert make_comp(client, {"id": parent["teamId"]}, "Fresh")["rulesetVersionLabel"] == (
+        "2026-08-01"
+    )
+
+
+def test_a_fork_is_a_full_copy_that_records_where_it_came_from(client, sign_in, publish):
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{parent['id']}/slots", json=slots(ABADDON, VINDICATOR, RIFTER))
+
+    forked = fork(client, parent)
+
+    assert forked["id"] != parent["id"]
+    assert [slot["typeId"] for slot in forked["slots"]] == [ABADDON, VINDICATOR, RIFTER]
+    assert forked["forkedFromCompId"] == parent["id"]
+    assert forked["forkedFromName"] == parent["name"]
+    assert forked["forkKind"] == "full"
+    # The parent is untouched, which is what makes the fork independent — and it is nobody's
+    # fork itself, so nothing wrote lineage backwards.
+    after = client.get(f"/api/v1/comps/{parent['id']}").json()
+    assert [slot["typeId"] for slot in after["slots"]] == [ABADDON, VINDICATOR, RIFTER]
+    assert after["forkedFromCompId"] is None
+    assert after["forkKind"] is None
+
+
+def test_a_fork_of_chosen_rows_is_flagged_as_a_partial_derivation(client, sign_in, publish):
+    """§4.1c's partial fork: the same mechanism, seeded from a subset."""
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{parent['id']}/slots", json=slots(ABADDON, VINDICATOR, RIFTER))
+
+    forked = fork(client, parent, positions=[0, 2])
+
+    assert [slot["typeId"] for slot in forked["slots"]] == [ABADDON, RIFTER]
+    assert [slot["position"] for slot in forked["slots"]] == [0, 1]
+    assert forked["forkKind"] == "partial"
+    assert forked["forkedFromCompId"] == parent["id"]
+
+
+def test_a_partial_fork_takes_the_rows_in_the_parents_order(client, sign_in, publish):
+    """The caller's ordering of row numbers is not information; the comp's order is."""
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{parent['id']}/slots", json=slots(ABADDON, VINDICATOR, RIFTER))
+
+    forked = fork(client, parent, positions=[2, 0])
+
+    assert [slot["typeId"] for slot in forked["slots"]] == [ABADDON, RIFTER]
+
+
+def test_a_fork_quietly_drops_a_row_number_the_comp_does_not_have(client, sign_in, publish):
+    """A stale client, not an attack. Refusing the whole fork would lose the good rows too."""
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{parent['id']}/slots", json=slots(ABADDON, RIFTER))
+
+    forked = fork(client, parent, positions=[0, 9])
+
+    assert [slot["typeId"] for slot in forked["slots"]] == [ABADDON]
+
+
+def test_a_fork_records_its_own_creator_rather_than_its_parents(
+    client, sign_in, publish, resolver
+):
+    """§4.1a's one remaining clause: authorship is captured at creation, and a fork is created."""
+    publish()
+    resolver.knows("Sorren", EDITOR)
+    sign_in(OWNER, "Vex")
+    team = make_team(client)
+    grant_to(client, team, "Sorren", "editor")
+    parent = make_comp(client, team)
+
+    sign_in(EDITOR, "Sorren")
+    forked = fork(client, parent)
+
+    assert parent["createdByName"] == "Vex"
+    assert forked["createdByName"] == "Sorren"
+
+
+def test_a_fork_carries_the_archetype_the_tags_and_the_flagship(client, sign_in, publish):
+    """A fork starts as its parent — §4.1c — and every one of these is still valid in a copy.
+
+    The flagship in particular: a comp holds at most one, so a whole comp brings at most one
+    and so does any subset of it. §9.3's "flagship drops on copy" is about copying *into* an
+    existing comp, where a second designation would collide.
+    """
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{parent['id']}/slots", json=slots(ABADDON, VINDICATOR, flagship=1))
+    client.put(
+        f"/api/v1/comps/{parent['id']}/tags",
+        json={"archetype": "Kite", "tags": ["Shield", "Angel"]},
+    )
+
+    forked = fork(client, parent)
+
+    assert forked["archetype"] == "Kite"
+    assert forked["tags"] == ["Angel", "Shield"]
+    assert [slot["isFlagship"] for slot in forked["slots"]] == [False, True]
+
+
+def test_a_fork_of_an_illegal_comp_lands(client, sign_in, publish):
+    """Rules are reported, never enforced — a fork of an illegal comp is an illegal comp."""
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{parent['id']}/slots", json=slots(*([ABADDON] * 11)))
+
+    forked = fork(client, parent)
+
+    assert forked["shipCount"] == 11
+
+
+def test_deleting_a_parent_leaves_the_fork_saying_where_it_came_from(client, sign_in, publish):
+    """SET NULL, not RESTRICT: the link goes and the record stays.
+
+    A parent nobody could delete because somebody forked it would make lineage a trap. A fork
+    that forgot its origin the moment the original was tidied away would make it worthless.
+    """
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client), "Angel Shield Kite")
+    forked = fork(client, parent)
+
+    assert client.delete(f"/api/v1/comps/{parent['id']}").status_code == 204
+
+    after = client.get(f"/api/v1/comps/{forked['id']}").json()
+    assert after["forkedFromCompId"] is None
+    assert after["forkedFromName"] == "Angel Shield Kite"
+    assert after["forkKind"] == "full"
+
+
+def test_a_team_holding_a_comp_and_its_fork_still_archives_and_restores(client, sign_in, publish):
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    parent = make_comp(client, team)
+    fork(client, parent)
+
+    client.post(f"/api/v1/teams/{team['id']}/archive")
+    blocked = client.post(f"/api/v1/comps/{parent['id']}/fork", json={"name": "No"})
+    client.post(f"/api/v1/teams/{team['id']}/restore")
+
+    assert blocked.status_code == 409
+    assert len(client.get(f"/api/v1/teams/{team['id']}/comps").json()) == 2
+
+
+def test_a_viewer_may_not_fork_because_a_fork_is_a_new_comp_on_the_team(
+    client, sign_in, publish, resolver
+):
+    publish()
+    resolver.knows("Wren", VIEWER)
+    sign_in(OWNER)
+    team = make_team(client)
+    grant_to(client, team, "Wren", "viewer")
+    parent = make_comp(client, team)
+
+    sign_in(VIEWER, "Wren")
+    refused = client.post(f"/api/v1/comps/{parent['id']}/fork", json={"name": "Mine now"})
+
+    assert refused.status_code == 404
+    assert refused.json()["detail"].startswith("No comp ")
+
+
+def test_a_comp_counts_the_forks_taken_from_it_and_the_comments_on_it(client, sign_in, publish):
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+    fork(client, comp, "One")
+    fork(client, comp, "Two")
+    client.post(f"/api/v1/comps/{comp['id']}/comments", json={"body": "Needs more logi"})
+
+    detail = client.get(f"/api/v1/comps/{comp['id']}").json()
+
+    assert detail["forkCount"] == 2
+    assert detail["commentCount"] == 1
+    # And a fork of its own has neither yet.
+    assert detail["forkKind"] is None

@@ -1,17 +1,29 @@
-// The library rail: every comp the team has, searchable, each one a click from the board.
+// The library rail: every comp the team has, searchable, filterable, grouped, each one a click
+// from the board.
 //
-// Flat, with no archetype grouping. `Comp` has no archetype column — that is Phase H, with
-// its own editor, namespace and team-scoped suggestions — and grouping by something that
-// merely exists (the ruleset version, say) would produce one group per team and call itself
-// an accordion. The rail's job here is find-and-open, and a list does that.
+// Grouped by **archetype**, which is what the accordion in the mockup was always for. It was
+// left unported through Phase F because there was nothing to group by — grouping on something
+// that merely exists (the ruleset version, say) would have produced one group per team and
+// called itself an accordion. Now there is.
 //
-// The search box stays out of the URL. A filter is component state; putting it in the
-// location would mean a history entry per keystroke.
+// **All of the finding state is component state**, and that is a decision rather than an
+// oversight. The search box was kept out of the URL because a filter is not a location and
+// putting it there would mean a history entry per keystroke; the archetype and tag filters are
+// the same kind of thing one gesture up, and `route.ts` stays untouched.
+//
+// The grouping reads the `comps` prop rather than the live card store. That is deliberate too:
+// the store holds only comps whose pinned ruleset payload loaded, so a comp the rail must still
+// list could be missing from it — and the store exists so a *keystroke* re-renders one leaf,
+// which a rail-wide subscription would undo.
 
 import { useMemo, useState } from 'react'
 
-import RailComp from './RailComp'
+import { hueFor, vocabularyOf } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
+import RailComp from './RailComp'
+
+/** The group a comp with no archetype falls into. Last, and named for what it is. */
+const UNGROUPED = 'No archetype'
 
 interface Props {
   readonly comps: readonly CompDetail[]
@@ -24,6 +36,11 @@ interface Props {
   readonly creating: boolean
 }
 
+interface Group {
+  readonly name: string
+  readonly comps: readonly CompDetail[]
+}
+
 export default function LibraryRail({
   comps,
   openCompIds,
@@ -34,12 +51,29 @@ export default function LibraryRail({
   creating,
 }: Props) {
   const [query, setQuery] = useState('')
+  const [archetype, setArchetype] = useState<string | null>(null)
+  const [tags, setTags] = useState<readonly string[]>([])
+  // Which groups are shut. Collapsed rather than expanded state, so a group that appears
+  // because somebody just tagged a comp arrives open.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+
+  // The same two vocabularies the tag editor offers, from the same place: what is in use.
+  const vocabulary = useMemo(() => vocabularyOf(comps), [comps])
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    if (!needle) return comps
-    return comps.filter((comp) => comp.name.toLowerCase().includes(needle))
-  }, [comps, query])
+    return comps.filter((comp) => {
+      if (needle && !comp.name.toLowerCase().includes(needle)) return false
+      if (archetype !== null && comp.archetype !== archetype) return false
+      // Every selected tag, not any: picking two narrows rather than widens, which is what
+      // makes a second click on a tag useful at all.
+      return tags.every((tag) => comp.tags.includes(tag))
+    })
+  }, [comps, query, archetype, tags])
+
+  const groups = useMemo(() => groupByArchetype(matches), [matches])
+  const filtered = archetype !== null || tags.length > 0
+  const narrowed = filtered || query.trim() !== ''
 
   return (
     <aside
@@ -65,23 +99,134 @@ export default function LibraryRail({
         />
       </div>
 
+      <div className="lib-filters" data-testid="library-filters">
+        {/* A select for the archetype, because there is at most one and they are mutually
+            exclusive — which is a select's whole meaning.
+
+            Named "Filter by archetype" rather than wrapped in a <label> reading "Archetype".
+            The tag editor's own input is called "Archetype", and two controls on one screen
+            answering to one name is one control nobody can address — the §6.8 failure a linter
+            cannot catch. The visible heading stays; only the name says what this one does. */}
+        <div className="lib-filter-arch">
+          <span className="section-label" aria-hidden="true">
+            Archetype
+          </span>
+          <select
+            data-testid="library-filter-archetype"
+            aria-label="Filter by archetype"
+            value={archetype ?? ''}
+            onChange={(event) => setArchetype(event.target.value === '' ? null : event.target.value)}
+          >
+            <option value="">All archetypes</option>
+            {vocabulary.archetypes.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Toggle chips for tags, because a comp has any number and so may a filter. Pressed
+            state lives in aria-pressed rather than in the name, so each control is findable by
+            one name whichever way it is set. */}
+        {vocabulary.tags.length > 0 && (
+          <div className="lib-filter-tags">
+            <span className="section-label">Tags</span>
+            <div className="chips">
+              {vocabulary.tags.map((tag) => {
+                const on = tags.includes(tag)
+                return (
+                  <button
+                    className={`chip chip-toggle${on ? ' on' : ''}`}
+                    key={tag}
+                    data-testid="library-filter-tag"
+                    type="button"
+                    aria-pressed={on}
+                    aria-label={`Filter by ${tag}`}
+                    style={{ '--h': hueFor(tag) } as React.CSSProperties}
+                    onClick={() =>
+                      setTags((current) =>
+                        current.includes(tag)
+                          ? current.filter((each) => each !== tag)
+                          : [...current, tag],
+                      )
+                    }
+                  >
+                    <span className="cdot" />
+                    {tag}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {filtered && (
+          <button
+            className="lib-filter-clear"
+            data-testid="library-filter-clear"
+            type="button"
+            onClick={() => {
+              setArchetype(null)
+              setTags([])
+            }}
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {/* Announced, so filtering says how much it found rather than leaving a driver — or
           anyone not looking directly at the list — to count rows. */}
       <p className="lib-status" data-testid="library-results-status" role="status">
-        {resultsLabel(matches.length, comps.length, query)}
+        {resultsLabel(matches.length, comps.length, narrowed)}
       </p>
 
-      <ul className="lib-list" data-testid="library-list" aria-label="Team comps">
-        {matches.map((comp) => (
-          <RailComp
-            key={comp.id}
-            compId={comp.id}
-            fallbackName={comp.name}
-            open={openCompIds.has(comp.id)}
-            onOpen={onOpenComp}
-          />
-        ))}
-      </ul>
+      <div className="acc" data-testid="library-list" aria-label="Team comps">
+        {groups.map((group) => {
+          const shut = collapsed.has(group.name)
+          return (
+            <div className="acc-group" key={group.name} data-testid="library-group">
+              <button
+                className="acc-head"
+                data-testid="library-group-toggle"
+                type="button"
+                aria-expanded={!shut}
+                // The archetype alone. The count is a sibling below, because a name that moves
+                // with what it contains cannot be matched by anything looking for the control.
+                aria-label={group.name}
+                onClick={() =>
+                  setCollapsed((current) => {
+                    const next = new Set(current)
+                    if (!next.delete(group.name)) next.add(group.name)
+                    return next
+                  })
+                }
+              >
+                <Chevron open={!shut} />
+                <span>{group.name}</span>
+                <span className="tree-count" data-testid="library-group-count">
+                  {group.comps.length}
+                </span>
+              </button>
+
+              {!shut && (
+                <ul className="acc-body lib-list" aria-label={`${group.name} comps`}>
+                  {group.comps.map((comp) => (
+                    <RailComp
+                      key={comp.id}
+                      compId={comp.id}
+                      fallbackName={comp.name}
+                      open={openCompIds.has(comp.id)}
+                      onOpen={onOpenComp}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
 
       <button
         className="lib-new"
@@ -110,8 +255,46 @@ export default function LibraryRail({
   )
 }
 
-function resultsLabel(shown: number, total: number, query: string): string {
-  if (!query.trim()) return `${total} ${total === 1 ? 'comp' : 'comps'}`
+/**
+ * The comps in archetype groups, archetypes first and the unclassified last.
+ *
+ * An empty group is never produced: the groups come out of the comps that survived the filter,
+ * so a heading always has something under it.
+ */
+function groupByArchetype(comps: readonly CompDetail[]): readonly Group[] {
+  const byName = new Map<string, CompDetail[]>()
+  for (const comp of comps) {
+    const key = comp.archetype ?? UNGROUPED
+    const held = byName.get(key)
+    if (held) held.push(comp)
+    else byName.set(key, [comp])
+  }
+
+  const named = [...byName.keys()]
+    .filter((name) => name !== UNGROUPED)
+    .sort((left, right) => left.toLowerCase().localeCompare(right.toLowerCase()))
+  if (byName.has(UNGROUPED)) named.push(UNGROUPED)
+
+  return named.map((name) => ({ name, comps: byName.get(name) ?? [] }))
+}
+
+function Chevron({ open }: { readonly open: boolean }) {
+  return (
+    <svg
+      className={`chev${open ? ' open' : ''}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      aria-hidden="true"
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  )
+}
+
+function resultsLabel(shown: number, total: number, narrowed: boolean): string {
+  if (!narrowed) return `${total} ${total === 1 ? 'comp' : 'comps'}`
   if (shown === 0) return 'No comps match'
   return `${shown} of ${total} comps`
 }

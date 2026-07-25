@@ -11,11 +11,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { messageFor } from '../api'
-import { createComp, listComps, replaceSlots } from '../comps/api'
+import { createComp, forkComp, listComps } from '../comps/api'
 import type { CopyTarget } from '../comps/CompTileHost'
+import { vocabularyOf } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import { evaluate } from '../engine'
-import type { CompSlot } from '../engine'
 import { toEngineComp } from '../comps/tile-model'
 import { listRulesets } from '../rulesets/api'
 import { loadRulesetVersion } from '../rulesets/cache'
@@ -252,39 +252,36 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
   )
 
   /**
-   * A new comp holding the rows somebody picked out of an existing one.
+   * A fork: a new comp seeded from an existing one, whole or in part, put on the board.
    *
-   * One POST and one PUT: the comp API has no way to create a comp with slots, and it does
-   * not need one — a subset of a legal comp is legal, so there is nothing here to gate.
+   * One request, and it is the *same* request for both gestures. Phase G's "port these rows to
+   * a new comp" was a POST-then-PUT through `createComp`, which recorded no parent and — worse
+   * — landed the rows on whatever version had published since, so hulls chosen under June's
+   * point values arrived priced by August's. §4.1c calls a full fork "just the all-rows case"
+   * of the partial one, so both now go through `forkComp`, which pins to the parent's version
+   * and records `forkedFromCompId` either way.
    *
-   * The ruleset comes from the comp the rows were taken out of rather than from the team's
-   * commonest, because those are the point values they were picked under. The *version*
-   * cannot be carried: `createComp` names only a slug and the server pins to the newest
-   * published, deliberately. So rows taken out of a comp pinned to an older version land in
-   * one pinned to the newest, and the new tile reports what the newest says — which is the
-   * binding working, and visible in the version the tile prints in its foot.
+   * `positions` omitted forks the whole comp; naming rows makes it a partial derivation. They
+   * are row numbers rather than hulls because the server takes the rows out of its own copy —
+   * which is what lets one route pin both kinds of fork to the parent's version.
    */
-  const port = useCallback(
-    async (sourceCompId: string, rows: readonly CompSlot[]) => {
-      if (!layout || !board || creating || rows.length === 0) return
+  const fork = useCallback(
+    async (sourceCompId: string, positions?: readonly number[]) => {
+      if (!layout || !board || creating) return
+      if (positions && positions.length === 0) return
       const source = (comps ?? []).find((candidate) => candidate.id === sourceCompId)
       if (!source) return
       setCreating(true)
       try {
-        const made = await createComp(
-          teamId,
-          `${source.name} (partial)`.slice(0, 200),
-          source.rulesetSlug,
+        const suffix = positions ? ' (partial)' : ' (fork)'
+        const made = await forkComp(
+          sourceCompId,
+          `${source.name}${suffix}`.slice(0, 200),
+          positions,
         )
-        const filled = await replaceSlots(
-          made.id,
-          rows.map((row) => ({ typeId: row.typeId, isFlagship: row.isFlagship ?? false })),
-        )
-        // The filled comp, not the empty one: it carries the slots, so the seeding effect
-        // above judges it instead of drawing a comp that looks like it holds nothing.
-        setComps((current) => [...(current ?? []), filled])
-        setNewCompId(filled.id)
-        arrange(withCompOpened(layout, board.id, filled.id))
+        setComps((current) => [...(current ?? []), made])
+        setNewCompId(made.id)
+        arrange(withCompOpened(layout, board.id, made.id))
         setError(null)
       } catch (problem: unknown) {
         setError(messageFor(problem))
@@ -292,8 +289,28 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
         setCreating(false)
       }
     },
-    [layout, board, creating, comps, teamId, arrange],
+    // No teamId: a fork is addressed by the comp it comes from, and the server puts it on that
+    // comp's team — which is also why cross-team forking is not something this could express.
+    [layout, board, creating, comps, arrange],
   )
+
+  /**
+   * One comp's listing entry, replaced by a fresher one from its own tile.
+   *
+   * Only tags do this today, and only because the rail groups and filters by them: a comp whose
+   * archetype just changed belongs under a different heading, and the rail reads this list. It
+   * re-renders the hosts and it does not re-judge anything — each tile's `useMemo` keys on its
+   * slots and its ruleset, neither of which moved — which is the same trade `create` and `fork`
+   * already make.
+   */
+  const recordChange = useCallback((changed: CompDetail) => {
+    setComps((current) =>
+      (current ?? []).map((comp) => (comp.id === changed.id ? changed : comp)),
+    )
+  }, [])
+
+  /** The team's tag vocabularies, derived once here and shared by every open editor. */
+  const vocabulary = useMemo(() => vocabularyOf(comps ?? []), [comps])
 
   const create = useCallback(async () => {
     if (!layout || !board || creating) return
@@ -368,8 +385,11 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
           newCompId={newCompId}
           onClose={closeComp}
           onCreate={() => void create()}
-          onPort={(compId, rows) => void port(compId, rows)}
+          onPort={(compId, positions) => void fork(compId, positions)}
           copyTargets={copyTargets}
+          onFork={(compId) => void fork(compId)}
+          vocabulary={vocabulary}
+          onCompChanged={recordChange}
         />
 
         {/* What a driver waits on instead of sleeping through the layout debounce, and the

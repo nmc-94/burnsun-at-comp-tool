@@ -323,23 +323,55 @@ whatever it breaks.
 **Phase H — Team content.** Per-comp **comments**, **fork/copy with lineage**, and
 **Archetype (single) + Tags (multi)** with team-scoped suggestions and filter/browse.
 
-> **Re-scoped after Phase G, because a third of it is already built and another
-> third has a gesture waiting for it.** **Creator tracking is done** — `Comp` has
-> carried `created_by_character_id`/`created_by_name` since `0002`, they are written
-> once and never reassigned, and the tile has drawn `comp-author` since Phase E. All
-> §4.1a still wants of this phase is that a *fork* records its own creator. **The
-> comments table exists too** (`comp_comment`, `0002`, with its `(comp_id, created_at)`
-> index and a cascade relationship), so comments are routes and a thread UI, not a
-> schema — but §4.1b's edit-your-own needs an `updated_at` the table does not have.
-> **Lineage is a retro-fit, not a new gesture**: Phase G shipped the partial fork
-> ("Port to a new comp") recording no parent, and §4.1c says a partial fork carries
-> the same `forked_from_comp_id` flagged as a partial derivation — so the column
-> arrives *under* something already on screen, and the full fork is the new part.
-> **Tagging is the only piece starting from nothing in the schema**, and it is the one
-> with its UI seams pre-built: the tile's `comp-chips` band is held open, `.chip`
-> styles are seeded in `base.css`, and the rail's accordion was deliberately left
-> unported because there was nothing to group by until archetype arrived. See
-> `docs/PHASE-H-HANDOFF.md`.
+> **Done, with five decisions taken and one thing declined.** Migration `0005` carries
+> `comp.archetype`, the `comp_tag` table, `comp.forked_from_comp_id` +
+> `forked_from_name` + `fork_kind`, and `comp_comment.updated_at`; head is `0005`.
+>
+> **A fork keeps its parent's ruleset version**, which is the decision the phase turned on.
+> A fork is taken to be compared against what it came from, so a fork priced by August
+> against a parent priced by June is a confound rather than a comparison. `POST
+> /comps/{id}/fork` reads the version off the parent row, so "a client may never name a
+> version" survives; §4.2's re-validation stays the only thing that moves a binding.
+> **Phase G's partial port now goes through that same route** — one request instead of a
+> POST-then-PUT, which is what retro-fits lineage under a shipped gesture and incidentally
+> fixes the re-pricing the Phase G brief had recorded as a wart. `onPortRows` therefore
+> hands over **row numbers** rather than hulls, and the cell flushes its debounce first,
+> because the server now reads the rows out of its own copy.
+>
+> **Comments got `updated_at` and a real delete.** An edited comment says "edited" and
+> keeps its original `created_at`; author-delete and owner-moderation both remove the row,
+> matching `delete_comp`. No tombstone. They live in **`comptool/comments.py`** — a thread
+> is people talking, not what a comp contains — reached through `_reach`, which was
+> promoted to `access.py` as **`reach_comp`** exactly as `_authorize` became `authorize` in
+> Phase E. Posting is open to a **viewer**, the first write path below editor, because
+> reviewing somebody else's comp is what comments are for; refusing somebody else's comment
+> is **403**, since it is plainly visible in a thread the caller can read.
+>
+> **Tagging is a column plus a table**, not two tables and not a namespace column:
+> single-valued archetype on `comp`, multi-valued rows in `comp_tag`, so §3.3's "never
+> cross-suggest" is structural. **There is no suggestions endpoint** — the comp listing
+> already carries every comp on the team through the same gate, so both vocabularies are
+> derived from it client-side in `comps/tag-model.ts`, which answers the brief's
+> authorization worry by construction. Normalization is server-side and once, in
+> `_canonical`: trim, collapse, then adopt the team's existing spelling.
+>
+> **Library filtering is component state**, like the search box — `route.ts` is untouched
+> and `Route.selection`/`Route.view` stay unoverloaded. The rail's accordion is ported from
+> the mockup and groups by archetype, with a trailing "No archetype".
+>
+> **What was declined: widening `comp-cards.ts`.** The brief expected it; the mockup's rail
+> leaf shows icon, dot, name and points, with the archetype as the *group heading* and chips
+> on the *tile*, so no leaf needs a chip. Grouping reads the comp listing instead, which —
+> unlike the card store — covers a comp whose pinned ruleset payload failed to load.
+> `CompCard`, `publishCard`'s equality check and the test counting its announcements are
+> untouched, and so are `BoardGrid`'s two independence tests.
+>
+> Two §6.8 findings a linter cannot catch turned up and were fixed: the tag editor's chips
+> and the tile's band were answering to one test id, and the rail's archetype filter and the
+> editor's archetype input were answering to one accessible name. One new area: `comment`.
+> **Optimistic concurrency on slot writes was deferred a fourth time** and `slots_version`
+> deliberately kept out of `0005` — a column nothing reads is dead schema. See
+> `docs/PHASE-H-HANDOFF.md` for the brief this was planned from.
 
 **Phase I — Mock/solo pick-ban & share-slug export.** Single-party rehearsal of the
 ban phase (4 bans/captain, the Red/Blue sequence, ban caps 3/hull + 2/logi, flagship
@@ -415,8 +447,25 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
 - **The compare view is deferred (Phase G).** Cut by the owner during planning rather
   than for want of time. The URL grammar stays parsed, formatted and tested so the screen
   remains a screen to write; nothing renders `Route.view` or `Route.selection` today.
-- **Optimistic concurrency on slot writes — designed, not built (Phase G).** Deferred a
-  third time, but on corrected grounds: the Phase G brief claimed a cross-tile drag writes
+- **A fork keeps its parent's ruleset version (Phase H).** Creating a comp pins to the
+  newest published; forking pins to the parent's, read server-side off the parent row so no
+  client ever names a version. A fork exists to be compared against what it came from, and
+  re-pricing it on the way would make that comparison partly a measurement of the ruleset
+  moving. This also settles what Phase G recorded as a wart — a port out of a June comp
+  landing in an August-priced one — because the partial port now goes through the fork route.
+- **Archetype is single-valued, and tagging has no suggestions endpoint (Phase H).** A
+  column for the archetype and a table for the tags, so the two namespaces cannot
+  cross-suggest; the vocabularies are derived in the browser from the comp listing the
+  workspace already fetches, which is authorized through the same team gate. Normalization
+  is server-side and once, and adopts the team's existing spelling rather than case-folding.
+- **Library filter state is component state (Phase H).** Filter-by-archetype and
+  filter-by-tag live in `LibraryRail`, like the search box. `route.ts` was not touched, so
+  `?sel=` and `/compare` remain spoken for by the deferred compare view alone.
+- **Optimistic concurrency on slot writes — designed, not built (Phases G and H).** Deferred
+  a fourth time in Phase H, with `slots_version` deliberately kept out of migration `0005`
+  even though a migration was being written anyway: a column no route reads is dead schema,
+  and this repo's own stance against shipping things "for later" is recorded in
+  `workspace.css`'s head comment. The grounds below are unchanged. the Phase G brief claimed a cross-tile drag writes
   two comps, and it does not — the copy leaves the source alone and an extraction writes a
   comp nobody else holds, so the window is exactly Phase F's. The design is recorded in
   `docs/PHASE-G-HANDOFF.md` with the two findings that cost the most to rediscover:

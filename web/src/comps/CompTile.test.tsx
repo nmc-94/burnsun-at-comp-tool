@@ -23,12 +23,26 @@ import { toEngineComp } from './tile-model'
 
 afterEach(cleanup)
 
+/** Whatever the tile says about itself, over and above its hulls. */
+interface Says {
+  readonly archetype?: string | null
+  readonly tags?: readonly string[]
+  readonly commentCount?: number
+  readonly forkCount?: number
+  readonly lineage?: React.ComponentProps<typeof CompTile>['lineage']
+  /** Set to hand the tile the three Phase H handlers; left off, their controls do not appear. */
+  readonly interactive?: boolean
+}
+
 /** Render the tile over `slots`, re-judging on every change the way CompScreen does. */
-function mount(slots: CompSlot[], editable = true) {
+function mount(slots: CompSlot[], editable = true, says: Says = {}) {
   const onChange = vi.fn()
   const onPortRows = vi.fn()
   const onCopyRows = vi.fn()
   const onDragRows = vi.fn()
+  const onEditTags = vi.fn()
+  const onToggleComments = vi.fn()
+  const onFork = vi.fn()
   const tile = (next: CompSlot[]) => (
     <CompTile
       name="Angel Shield Kite"
@@ -37,6 +51,11 @@ function mount(slots: CompSlot[], editable = true) {
       result={evaluate(toEngineComp(next), atxxiiRuleset)}
       createdByName="Kadir"
       versionLabel="2026-07-23"
+      archetype={says.archetype ?? null}
+      tags={says.tags ?? []}
+      commentCount={says.commentCount ?? 0}
+      forkCount={says.forkCount ?? 0}
+      lineage={says.lineage ?? null}
       editable={editable}
       saveState="idle"
       onChange={onChange}
@@ -44,6 +63,9 @@ function mount(slots: CompSlot[], editable = true) {
       onPortRows={onPortRows}
       onCopyRows={onCopyRows}
       onDragRows={onDragRows}
+      onEditTags={says.interactive ? onEditTags : undefined}
+      onToggleComments={says.interactive ? onToggleComments : undefined}
+      onFork={says.interactive ? onFork : undefined}
     />
   )
   const view = render(tile(slots))
@@ -52,6 +74,9 @@ function mount(slots: CompSlot[], editable = true) {
     onPortRows,
     onCopyRows,
     onDragRows,
+    onEditTags,
+    onToggleComments,
+    onFork,
     rerenderWith: (next: CompSlot[]) => view.rerender(tile(next)),
   }
 }
@@ -116,6 +141,99 @@ describe('the scaffold', () => {
     mount(slots())
 
     expect(screen.getByTestId('comp-chips')).toBeTruthy()
+  })
+})
+
+describe('what the comp says it is', () => {
+  it('draws the archetype and every tag in the band that was held open for them', () => {
+    mount(slots(SHIP.abaddon), true, { archetype: 'Kite', tags: ['Shield', 'Angel'] })
+
+    const band = screen.getByTestId('comp-chips')
+    expect(screen.getByTestId('comp-archetype-chip').textContent).toBe('Kite')
+    expect(screen.getAllByTestId('comp-tag-chip').map((chip) => chip.textContent)).toEqual([
+      'Shield',
+      'Angel',
+    ])
+    // Filled, so it is no longer the reserved spacer and no longer hidden from the a11y tree.
+    expect(band.getAttribute('aria-hidden')).toBeNull()
+  })
+
+  it('stays a hidden spacer on a comp that says nothing and offers no editor', () => {
+    mount(slots(SHIP.abaddon), false)
+
+    const band = screen.getByTestId('comp-chips')
+    expect(band.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.queryByTestId('comp-archetype-chip')).toBeNull()
+    expect(screen.queryByTestId('comp-tags-edit')).toBeNull()
+  })
+
+  it('offers the tag editor by a name that says which comp it edits', () => {
+    // A board of twenty otherwise offers twenty controls called "Edit tags".
+    const { onEditTags } = mount(slots(), true, { interactive: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags on Angel Shield Kite' }))
+
+    expect(onEditTags).toHaveBeenCalled()
+  })
+
+  it('gives a viewer no way to change what it says', () => {
+    mount(slots(SHIP.abaddon), false, { archetype: 'Kite', tags: ['Shield'] })
+
+    expect(screen.getByTestId('comp-archetype-chip')).toBeTruthy()
+    expect(screen.queryByTestId('comp-tags-edit')).toBeNull()
+  })
+})
+
+describe('the foot', () => {
+  it('opens the thread from a control whose name does not carry the count', () => {
+    const { onToggleComments } = mount(slots(), true, { interactive: true, commentCount: 4 })
+
+    const trigger = screen.getByRole('button', { name: 'Comments on Angel Shield Kite' })
+    expect(trigger.textContent).toContain('4')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(trigger)
+
+    expect(onToggleComments).toHaveBeenCalled()
+  })
+
+  it('forks from a control named for the comp, beside the count of its forks', () => {
+    const { onFork } = mount(slots(SHIP.abaddon), true, { interactive: true, forkCount: 2 })
+
+    const trigger = screen.getByRole('button', { name: 'Fork Angel Shield Kite' })
+    expect(trigger.textContent).toContain('2')
+    fireEvent.click(trigger)
+
+    expect(onFork).toHaveBeenCalled()
+  })
+
+  it('says where a fork came from, and links to it while the parent is still there', () => {
+    mount(slots(SHIP.abaddon), true, {
+      lineage: { name: 'Angel Shield Kite', href: '/comps/parent-id', partial: false },
+    })
+
+    const link = within(screen.getByTestId('comp-lineage')).getByRole('link')
+    expect(link.getAttribute('href')).toBe('/comps/parent-id')
+    expect(link.textContent).toBe('Angel Shield Kite')
+  })
+
+  it('still names the parent once it has been deleted, without a link to nothing', () => {
+    // `forkedFromName` is a snapshot and outlives the comp, which is the whole reason the
+    // column exists — but a link to a comp that is gone is worse than no link.
+    mount(slots(SHIP.abaddon), true, {
+      lineage: { name: 'Angel Shield Kite', href: null, partial: true },
+    })
+
+    const lineage = screen.getByTestId('comp-lineage')
+    expect(lineage.textContent).toContain('Angel Shield Kite')
+    expect(within(lineage).queryByRole('link')).toBeNull()
+  })
+
+  it('shows no comment, fork or lineage affordance on a tile wired for none', () => {
+    mount(slots(SHIP.abaddon))
+
+    expect(screen.queryByTestId('comp-comment-count')).toBeNull()
+    expect(screen.queryByTestId('comp-fork')).toBeNull()
+    expect(screen.queryByTestId('comp-lineage')).toBeNull()
   })
 })
 
@@ -303,17 +421,17 @@ describe('a hull the ruleset does not price', () => {
 })
 
 describe('picking rows out', () => {
-  it('ports the picked rows, in row order, whatever order they were picked in', () => {
+  it('ports the picked rows as row numbers, in row order, however they were picked', () => {
+    // Row numbers rather than hulls, because a port is a fork and the server takes the rows out
+    // of its own copy — which is what lets the new comp keep the parent's ruleset version. The
+    // numbers are the positions the slots were stored at: dense, from zero.
     const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
     fireEvent.click(tick('Select Orthrus in slot 3'))
     fireEvent.click(tick('Select Abaddon in slot 1'))
     fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
 
-    expect(onPortRows).toHaveBeenCalledWith([
-      { typeId: SHIP.abaddon, isFlagship: false },
-      { typeId: SHIP.orthrus, isFlagship: false },
-    ])
+    expect(onPortRows).toHaveBeenCalledWith([0, 2])
   })
 
   it('extends a range when shift is held', () => {
@@ -330,18 +448,20 @@ describe('picking rows out', () => {
     ])
   })
 
-  it('carries the flagship out with it, because a subset holds at most one', () => {
+  it('carries the flagship out on a copy, because a subset holds at most one', () => {
+    // Copying still hands over hulls: it is an edit of another comp, and only what the rows
+    // *are* means anything at the far end. Porting is the one that hands over row numbers.
     const three: CompSlot[] = [
       { typeId: SHIP.vindicator, isFlagship: true },
       { typeId: SHIP.abaddon, isFlagship: false },
       { typeId: SHIP.rifter, isFlagship: false },
     ]
-    const { onPortRows } = mount(three)
+    const { onCopyRows } = mount(three)
 
     fireEvent.click(tick('Select Vindicator in slot 1'))
-    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy to another comp' }))
 
-    expect(onPortRows).toHaveBeenCalledWith([{ typeId: SHIP.vindicator, isFlagship: true }])
+    expect(onCopyRows).toHaveBeenCalledWith([{ typeId: SHIP.vindicator, isFlagship: true }])
   })
 
   it('forgets the selection when the rows change underneath it', () => {
@@ -426,6 +546,10 @@ describe('the save state', () => {
         result={evaluate(toEngineComp(slots(SHIP.abaddon)), atxxiiRuleset)}
         createdByName="Kadir"
         versionLabel="2026-07-23"
+        archetype={null}
+        tags={[]}
+        commentCount={0}
+        forkCount={0}
         editable
         saveState="saving"
         onChange={vi.fn()}

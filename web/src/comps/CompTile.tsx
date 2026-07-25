@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CompSlot, LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
 import ShipSearch from './ShipSearch'
+import { hueFor } from './tag-model'
 import {
   deltaPill,
   EMPTY_SELECTION,
@@ -30,6 +31,15 @@ import ViolationsPopover from './ViolationsPopover'
  */
 export type SaveState = 'idle' | 'pending' | 'saving' | 'error'
 
+/** Where a fork came from: what to call it, and where to go to see it. */
+export interface Lineage {
+  readonly name: string
+  /** Null once the parent has been deleted — the name outlives the link. */
+  readonly href: string | null
+  /** True when only some of the parent's rows were taken (§4.1c's partial derivation). */
+  readonly partial: boolean
+}
+
 interface Props {
   name: string
   slots: readonly CompSlot[]
@@ -37,6 +47,14 @@ interface Props {
   result: LegalityResult
   createdByName: string | null
   versionLabel: string
+  /** What the comp says it is. One archetype at most, and any number of tags. */
+  archetype: string | null
+  tags: readonly string[]
+  /** How long the thread is and how many comps were forked from this one, for the foot. */
+  commentCount: number
+  forkCount: number
+  /** Where this comp came from, when it is a fork. Null for a comp that is nobody's copy. */
+  lineage?: Lineage | null
   /** False for a viewer, who sees the same tile without any way to change it. */
   editable: boolean
   saveState: SaveState
@@ -49,11 +67,23 @@ interface Props {
    * What to do with the rows somebody has picked out. All optional, and each control appears
    * only when its handler does: the tile knows nothing about boards or comp ids, so where
    * the hulls go is the cell's business, not this component's.
+   *
+   * Porting hands over **row numbers** rather than hulls, unlike copying. A port is a fork, and
+   * the server takes the rows out of its own copy of the comp so that the new one can be pinned
+   * to the same ruleset version and record its parent; a copy is an edit of another comp, and
+   * only the hulls mean anything there.
    */
-  onPortRows?: (rows: CompSlot[]) => void
+  onPortRows?: (positions: number[]) => void
   onCopyRows?: (rows: CompSlot[]) => void
   onDragRows?: (rows: CompSlot[]) => void
   onDragRowsEnd?: () => void
+  /** Open the tag editor. Absent for a viewer, and for a tile nobody wired one to. */
+  onEditTags?: () => void
+  /** Show or hide the thread. The panel itself is the cell's to render — see CompTileHost. */
+  onToggleComments?: () => void
+  commentsOpen?: boolean
+  /** Fork the whole comp. Where the new comp goes is the board's business, not the tile's. */
+  onFork?: () => void
 }
 
 export default function CompTile({
@@ -63,6 +93,11 @@ export default function CompTile({
   result,
   createdByName,
   versionLabel,
+  archetype,
+  tags,
+  commentCount,
+  forkCount,
+  lineage,
   editable,
   saveState,
   onChange,
@@ -72,6 +107,10 @@ export default function CompTile({
   onCopyRows,
   onDragRows,
   onDragRowsEnd,
+  onEditTags,
+  onToggleComments,
+  commentsOpen,
+  onFork,
 }: Props) {
   const [openRow, setOpenRow] = useState<number | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -108,6 +147,8 @@ export default function CompTile({
   const pill = deltaPill(result.summary)
   const highlightedRows = new Set(highlighted)
   const picked = new Set(selectedRows.rows)
+  // Filled when there is anything in it at all — a chip, or the control that puts one there.
+  const chipsBand = { filled: archetype !== null || tags.length > 0 || onEditTags !== undefined }
 
   function pick(index: number, typeId: number) {
     onChange(withRow(slots, index, typeId))
@@ -157,9 +198,50 @@ export default function CompTile({
       </div>
 
       <div className="tbody">
-        {/* Archetype and tag chips land here in a later phase. The band is held open now
-            so adding them is not also a relayout of the tile. */}
-        <div className="chipsrow chipsrow-reserved" data-testid="comp-chips" aria-hidden="true" />
+        {/* What the comp says it is. The band was held open through Phases E–G so filling it
+            now is a change of content rather than a relayout of the tile — and it stays a
+            reserved spacer, aria-hidden, on a comp that says nothing and offers no editor. */}
+        <div
+          className={chipsBand.filled ? 'chips chipsrow' : 'chipsrow chipsrow-reserved'}
+          data-testid="comp-chips"
+          aria-hidden={chipsBand.filled ? undefined : true}
+        >
+          {archetype && (
+            <span
+              className="chip arch"
+              data-testid="comp-archetype-chip"
+              style={{ '--h': hueFor(archetype) } as React.CSSProperties}
+            >
+              {/* No dot on the archetype: the dashed border is what tells it from a tag in
+                  the locked design. */}
+              {archetype}
+            </span>
+          )}
+          {tags.map((tag) => (
+            <span
+              className="chip"
+              key={tag}
+              data-testid="comp-tag-chip"
+              style={{ '--h': hueFor(tag) } as React.CSSProperties}
+            >
+              <span className="cdot" />
+              {tag}
+            </span>
+          ))}
+          {onEditTags && (
+            <button
+              className="chips-edit"
+              data-testid="comp-tags-edit"
+              type="button"
+              // Named for the comp: a board of twenty otherwise offers twenty controls called
+              // "Edit tags", which is one control nobody can address.
+              aria-label={`Edit tags on ${name}`}
+              onClick={onEditTags}
+            >
+              {archetype || tags.length > 0 ? 'Edit tags' : '+ Tags'}
+            </button>
+          )}
+        </div>
 
         {/* A list, because that is what it is: one entry per slot the format allows. The
             three branches below render different controls but each is one <li>, so a row
@@ -357,7 +439,10 @@ export default function CompTile({
               <button
                 className="rowsel-act"
                 type="button"
-                onClick={() => onPortRows(slotsAt(slots, selectedRows.rows))}
+                // The row numbers, which are the positions the server stored them at: the
+                // scaffold numbers rows from zero over a dense list, exactly as `_apply_slots`
+                // does.
+                onClick={() => onPortRows([...selectedRows.rows])}
               >
                 Port to a new comp
               </button>
@@ -386,6 +471,60 @@ export default function CompTile({
         <span className="fa" data-testid="comp-author">
           by {createdByName ?? 'unknown'}
         </span>
+
+        {/* The mockup's two footer glyphs, as real controls rather than decoration: the count
+            is what tells you whether there is a conversation to open, and the fork count is
+            beside the control that adds to it. */}
+        {onToggleComments && (
+          <button
+            className="fa fa-act"
+            data-testid="comp-comment-count"
+            type="button"
+            aria-expanded={commentsOpen ?? false}
+            // The count stays out of the name. A name that moves with state cannot be matched
+            // by anything, and a driver should not have to know how many comments there are to
+            // find the control that shows them.
+            aria-label={`Comments on ${name}`}
+            onClick={onToggleComments}
+          >
+            <ChatGlyph />
+            {commentCount}
+          </button>
+        )}
+
+        {onFork && (
+          <button
+            className="fa fa-act"
+            data-testid="comp-fork"
+            type="button"
+            aria-label={`Fork ${name}`}
+            onClick={onFork}
+          >
+            <ForkGlyph />
+            {forkCount}
+          </button>
+        )}
+
+        {lineage && (
+          <span className="fa" data-testid="comp-lineage">
+            <ForkGlyph />
+            {/* A link while the parent is still there, plain text once it is gone: the name is
+                a record and outlives the comp, but a link to nothing is worse than no link. */}
+            {lineage.href ? (
+              <a
+                className="link"
+                href={lineage.href}
+                aria-label={`Open ${lineage.name}, which ${name} was forked from`}
+              >
+                {lineage.name}
+              </a>
+            ) : (
+              <span>{lineage.name}</span>
+            )}
+            {lineage.partial && <span className="faint"> (part)</span>}
+          </span>
+        )}
+
         <span className="spacer" />
         {/* Stated, because an autosave nobody is told about is indistinguishable from no
             autosave — and it is what lets a driver wait for a write instead of sleeping
@@ -410,6 +549,27 @@ export default function CompTile({
         </span>
       </div>
     </div>
+  )
+}
+
+// The mockup's two footer glyphs. Decorative — every control they sit inside carries its own
+// accessible name — so they are hidden from the accessibility tree rather than described twice.
+function ChatGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+function ForkGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="6" cy="18" r="2.5" />
+      <circle cx="18" cy="8" r="2.5" />
+      <path d="M6 8.5v7M18 10.5c0 4-6 2-12 5" />
+    </svg>
   )
 }
 

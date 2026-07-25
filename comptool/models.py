@@ -227,6 +227,25 @@ class Comp(Base):
     # Captured at creation and never reassigned, so authorship survives edits.
     created_by_character_id: Mapped[int | None] = mapped_column(BigInteger)
     created_by_name: Mapped[str | None] = mapped_column(String(200))
+    # The comp's overall shape, from the team's Archetype namespace. A column rather than a
+    # row because a comp has at most one, and because a column and a table cannot be
+    # confused for one another — which is how "Archetype and Tags never cross-suggest"
+    # (REQUIREMENTS §3.3) becomes a property of the schema instead of a rule in a query.
+    archetype: Mapped[str | None] = mapped_column(String(64))
+    # Where this comp came from, if it was forked. SET NULL rather than RESTRICT: a comp
+    # really is deleted here, and a parent must not become undeletable because somebody
+    # forked it.
+    forked_from_comp_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("comp.id", ondelete="SET NULL"), index=True
+    )
+    # The parent's name as it read when the fork was taken, so provenance survives the
+    # parent's deletion — the same reason ``created_by_name`` and ``team_grant.subject_name``
+    # are kept beside their ids. The link is live only while the id is.
+    forked_from_name: Mapped[str | None] = mapped_column(String(200))
+    # ``full`` or ``partial``: whether the fork took the whole comp or a chosen subset of
+    # its rows. Null when this comp is not a fork at all. A plain scalar with the vocabulary
+    # in Python, like ``SubjectKind``.
+    fork_kind: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -239,11 +258,20 @@ class Comp(Base):
         cascade="all, delete-orphan",
         order_by="CompSlot.position",
     )
+    tags: Mapped[list[CompTag]] = relationship(
+        back_populates="comp",
+        cascade="all, delete-orphan",
+        order_by="CompTag.tag",
+    )
     comments: Mapped[list[CompComment]] = relationship(
         back_populates="comp",
         cascade="all, delete-orphan",
         order_by="CompComment.created_at",
     )
+
+    # No relationship for ``forked_from_comp_id``. The parent's name is snapshotted above,
+    # nothing walks upward from a fork, and leaving it a bare column keeps this class free
+    # of a self-referential mapping nothing would read.
 
 
 class CompSlot(Base):
@@ -274,6 +302,34 @@ class CompSlot(Base):
     comp: Mapped[Comp] = relationship(back_populates="slots")
 
 
+class CompTag(Base):
+    """One label from the team's general *Tags* namespace, applied to one comp.
+
+    A table rather than a column because a comp carries any number of these, and the
+    counterpart to ``Comp.archetype`` being a column. The two namespaces never mix, and this
+    is what makes that structural rather than a convention: there is no row here that could
+    be mistaken for an archetype, and no column there that could hold a second tag.
+
+    Values are normalized before they arrive — trimmed, internal whitespace collapsed, and
+    spelled the way the team already spells them. That happens once, in ``comptool/comps.py``,
+    because a second normalizer is a second answer to "is this the same tag?".
+    """
+
+    __tablename__ = "comp_tag"
+    __table_args__ = (
+        # One of each tag per comp. Leading with comp_id, so it also serves the lookup every
+        # read makes and the cascade below — which is why there is no separate index on
+        # comp_id, the same reasoning ``workspace_layout`` records.
+        UniqueConstraint("comp_id", "tag"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    comp_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comp.id", ondelete="CASCADE"))
+    tag: Mapped[str] = mapped_column(String(64))
+
+    comp: Mapped[Comp] = relationship(back_populates="tags")
+
+
 class CompComment(Base):
     """A note on a comp, from anyone on the team with access. One thread per comp."""
 
@@ -286,6 +342,14 @@ class CompComment(Base):
     author_name: Mapped[str | None] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
+    # When the body was last rewritten; null means never. An edited comment that still
+    # claimed its original timestamp would be a comment lying about itself, and a thread
+    # where that is invisible is worse than one that forbids editing.
+    #
+    # Deliberately without a server default — one would claim every comment was edited the
+    # moment it was posted — and without ``onupdate``, so that a later column's write cannot
+    # come to read as a body edit. The edit route sets it, and nothing else does.
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     comp: Mapped[Comp] = relationship(back_populates="comments")
 

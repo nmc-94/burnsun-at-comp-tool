@@ -54,6 +54,13 @@ function stubFetch() {
           createdAt: '2026-07-01T00:00:00Z',
           updatedAt: '2026-07-01T00:00:00Z',
           yourLevel: 'owner',
+          archetype: null,
+          tags: [],
+          forkedFromCompId: null,
+          forkedFromName: null,
+          forkKind: null,
+          commentCount: 0,
+          forkCount: 0,
           slots: comp[1].typeIds.map((typeId, position) => ({
             position,
             typeId,

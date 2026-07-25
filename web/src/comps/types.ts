@@ -28,11 +28,56 @@ export interface CompDetail {
   updatedAt: string
   /** What the signed-in character holds on the owning team. Controls are gated on this. */
   yourLevel: AccessLevel
+  /** The comp's shape, from the team's Archetype namespace. At most one. */
+  archetype: string | null
+  /** Its labels, from the separate Tags namespace. Already sorted by the server. */
+  tags: string[]
+  /**
+   * Where the comp came from, if it was forked. The id is null once the parent has been
+   * deleted; the name outlives it, so a fork still says where it came from even when there is
+   * nowhere left to follow.
+   */
+  forkedFromCompId: string | null
+  forkedFromName: string | null
+  forkKind: ForkKind | null
+  /** How long the thread is, and how many comps were forked from this one. */
+  commentCount: number
+  forkCount: number
   slots: CompSlotDetail[]
 }
+
+/** Whether a fork took the whole comp or a chosen subset of its rows (§4.1c). */
+export type ForkKind = 'full' | 'partial'
 
 /** A slot on its way to the server. Positions are the server's to assign, so it sends none. */
 export interface CompSlotWrite {
   typeId: number
   isFlagship: boolean
+}
+
+/**
+ * Everything the team says about a comp, replaced wholesale — the shape `PUT .../tags` takes.
+ *
+ * Both namespaces travel together because they are edited together, and stay named apart
+ * because §3.3 says they never mix.
+ */
+export interface CompTagsWrite {
+  archetype: string | null
+  tags: string[]
+}
+
+/** One comment in a comp's thread. */
+export interface CommentDetail {
+  id: string
+  /** Null on a comment whose author was never recorded. */
+  authorName: string | null
+  body: string
+  createdAt: string
+  /** When the body was last rewritten; null means never. The thread renders "edited" on it. */
+  updatedAt: string | null
+  /**
+   * Whether the signed-in character wrote it. The server's answer, not a comparison done
+   * here: `yourLevel` set the precedent that controls are gated on what the server says.
+   */
+  yours: boolean
 }
