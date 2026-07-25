@@ -84,6 +84,11 @@ interface Props {
   commentsOpen?: boolean
   /** Fork the whole comp. Where the new comp goes is the board's business, not the tile's. */
   onFork?: () => void
+  /** Opens the share panel. Absent when there is nothing to show and nothing to make. */
+  onToggleShare?: () => void
+  shareOpen?: boolean
+  shared?: boolean
+  shareStale?: boolean
 }
 
 export default function CompTile({
@@ -111,6 +116,10 @@ export default function CompTile({
   onToggleComments,
   commentsOpen,
   onFork,
+  onToggleShare,
+  shareOpen,
+  shared,
+  shareStale,
 }: Props) {
   const [openRow, setOpenRow] = useState<number | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -505,6 +514,24 @@ export default function CompTile({
           </button>
         )}
 
+        {onToggleShare && (
+          <button
+            className="fa fa-act"
+            data-testid="comp-share"
+            type="button"
+            aria-expanded={shareOpen ?? false}
+            // Whether it is shared goes in an attribute, never in the name — and it is what a
+            // driver, and a person glancing at a tile they are editing, reads to know that a
+            // link is out there.
+            data-shared={shared ? 'true' : 'false'}
+            aria-label={`Share ${name}`}
+            onClick={onToggleShare}
+          >
+            <ShareGlyph />
+            {shared ? (shareStale ? 'stale' : 'on') : ''}
+          </button>
+        )}
+
         {lineage && (
           <span className="fa" data-testid="comp-lineage">
             <ForkGlyph />
@@ -569,6 +596,18 @@ function ForkGlyph() {
       <circle cx="6" cy="18" r="2.5" />
       <circle cx="18" cy="8" r="2.5" />
       <path d="M6 8.5v7M18 10.5c0 4-6 2-12 5" />
+    </svg>
+  )
+}
+
+/** The mockup's share mark: three nodes, two links. */
+function ShareGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <circle cx="18" cy="5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="19" r="2.5" />
+      <path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4" />
     </svg>
   )
 }

@@ -43,6 +43,13 @@ export interface CompDetail {
   /** How long the thread is, and how many comps were forked from this one. */
   commentCount: number
   forkCount: number
+  /** The live share link's slug, or null when this comp is not shared. */
+  shareSlug: string | null
+  /**
+   * Whether the comp has changed since the share was captured. A share is a snapshot, so
+   * without this the link would go on showing last week's comp with nobody the wiser.
+   */
+  shareStale: boolean
   slots: CompSlotDetail[]
 }
 

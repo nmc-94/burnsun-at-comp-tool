@@ -39,6 +39,8 @@ function comp(
     forkKind: null,
     commentCount: 0,
     forkCount: 0,
+    shareSlug: null,
+    shareStale: false,
     slots: [],
   }
 }

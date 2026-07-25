@@ -67,7 +67,19 @@ export default function BoardTabs({
           +
         </button>
       </nav>
+      {/* Outside the nav on purpose: a rehearsal is not a board, and putting it in the
+          landmark would make "Boards" name a list with a non-board in it. */}
+      <PickBanLink teamId={teamId} />
     </div>
+  )
+}
+
+function PickBanLink({ teamId }: { readonly teamId: string }) {
+  const link = useLinkProps({ kind: 'pick-ban', teamId })
+  return (
+    <a className="ftab-pickban" data-testid="board-pick-ban" {...link}>
+      Pick / ban
+    </a>
   )
 }
 

@@ -40,6 +40,7 @@ const HULL_SIZES: readonly HullSize[] = [
 describe('the ingested ATXXII payload', () => {
   it('carries every key the engine reads', () => {
     expect(Object.keys(ruleset).sort()).toEqual([
+      'banPhase',
       'classPoints',
       'fieldSize',
       'flagship',
@@ -63,6 +64,31 @@ describe('the ingested ATXXII payload', () => {
     })
     expect(ruleset.logisticsLimits).toEqual({ cruiser: 1, frigate: 2, exclusive: true })
     expect(ruleset.flagship).toEqual({ allowed: true, battleshipAllowance: 3 })
+  })
+
+  it('carries §8 ban phase whole, so the client never has to know the numbers', () => {
+    expect(ruleset.banPhase).toEqual({
+      sequence: [
+        { side: 'red', bans: 1, inPrelims: true },
+        { side: 'blue', bans: 2, inPrelims: true },
+        { side: 'red', bans: 2, inPrelims: true },
+        { side: 'blue', bans: 1, inPrelims: true },
+        { side: 'red', bans: 1, inPrelims: false },
+        { side: 'blue', bans: 1, inPrelims: false },
+      ],
+      caps: { perHullSize: 3, logistics: 2 },
+    })
+  })
+
+  it('caps logistics bans over exactly the hulls that carry a logistics group', () => {
+    // The cap keys off `logisticsGroup` rather than shipping its own list of eighteen hulls.
+    // That is only sound while the two describe the same set, which the ingester asserts and
+    // this re-checks from the other side of the wire.
+    const logi = Object.values(ruleset.ships).filter((ship) => ship.logisticsGroup !== null)
+    expect(logi).toHaveLength(18)
+    expect(new Set(logi.map((ship) => ship.logisticsGroup))).toEqual(
+      new Set(['cruiser', 'frigate']),
+    )
   })
 
   it('describes every ship in full', () => {

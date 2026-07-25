@@ -15,6 +15,10 @@ only what is needed to recognize a returning browser and to prove which characte
 person has arranged the first in front of the second. It holds no game data either, and
 the comp ids inside it are never trusted — see ``comptool/workspace.py``.
 
+``comp_share`` is a fifth, and the only one that leaves the building. Every other table here
+is reachable exclusively through ``access.authorize``; a share is a frozen copy of one comp
+under an unguessable name, readable with no session at all — see ``comptool/share.py``.
+
 ``app_meta`` predates the domain and stays: the health probe reads it to prove migrations
 have been applied without coupling ops to a domain table.
 """
@@ -352,6 +356,63 @@ class CompComment(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     comp: Mapped[Comp] = relationship(back_populates="comments")
+
+
+class CompShare(Base):
+    """A name a comp can be read by, without a session.
+
+    Its own table rather than a nullable column on ``comp``, because a share has its own life:
+    it is minted, it is withdrawn, and **the withdrawn ones have to stay**. A revoked row is
+    not history for its own sake — it is what makes ``slug``'s uniqueness a promise rather
+    than a coincidence. Delete it and the generator could one day mint a withdrawn slug again,
+    landing somebody's old link on a comp nobody meant to show them.
+
+    ``document`` is a *snapshot*, not a pointer: what the link shows is what the comp was when
+    the link was minted or last updated. It passes the same three tests ``workspace_layout``
+    records — nothing queries across it, it is read whole and written whole, and it leaves room
+    for fields nobody has built — and a fourth of its own: a frozen artefact must not drift
+    with ``comp_slot``'s schema, so a copy in its own shape is more honest than rows that a
+    later migration would quietly reshape.
+
+    The slug is stored **in the clear**, unlike ``auth_session.token_hash``, and the reason
+    does not generalize: a session token is never shown back to anybody, while this one is
+    displayed every time its owner opens the panel.
+
+    There is deliberately no ``Comp.shares`` relationship. ``access.reach_comp`` eager-loads
+    for every module that reaches a comp, and a fourth ``selectinload`` there would put a query
+    on every comment route to serve a field comments do not have.
+    """
+
+    __tablename__ = "comp_share"
+    __table_args__ = (
+        # At most one live share per comp — the third use of this pattern, after
+        # ``uq_team_grant_one_pending_name`` and ``uq_comp_slot_one_flagship``. The control is
+        # a switch, and a comp holding three live links has no state a switch could show.
+        Index(
+            "uq_comp_share_one_live",
+            "comp_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    # Indexed separately, unlike ``comp_tag``: the unique index above covers only *live* rows,
+    # so it cannot serve the cascade that has to find a deleted comp's revoked shares too.
+    comp_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("comp.id", ondelete="CASCADE"), index=True
+    )
+    # Plain unique, not an index on ``lower(slug)``: the generator only emits lowercase, so
+    # folding would be a second opinion — and an expression index reflects back from Postgres
+    # with casts the drift check cannot match, which ``team_grant`` records the cost of.
+    slug: Mapped[str] = mapped_column(String(64), unique=True)
+    document: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _created_at()
+    #: When the snapshot was last taken. Moves when a share is updated; ``created_at`` does not,
+    #: so the pair says both how old the link is and how old what it shows is.
+    captured_at: Mapped[datetime] = _created_at()
+    #: Null means live. Withdrawn rather than deleted — see the class docstring.
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WorkspaceLayout(Base):

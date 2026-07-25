@@ -46,6 +46,8 @@ export interface CompDocument {
   readonly rename: (name: string) => void
   /** Store what the comp says it is. Wholesale, because that is the shape of the route. */
   readonly saveTags: (next: CompTagsWrite) => void
+  /** Record a share link being minted, updated or withdrawn, without a re-fetch. */
+  readonly patchShare: (slug: string | null) => void
   /**
    * Get the server caught up with what is on screen, now, and wait for it.
    *
@@ -198,6 +200,20 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     [compId],
   )
 
+  /**
+   * Record that this comp's share link was minted, updated or withdrawn.
+   *
+   * A local patch rather than a re-fetch: the panel already holds the server's answer, and the
+   * two fields it moves are the two the tile draws. `shareStale` goes false on every one of
+   * those — a fresh link and an updated one both capture the comp as it stands, and a
+   * withdrawn one has nothing left to be stale against.
+   */
+  const patchShare = useCallback((slug: string | null) => {
+    setComp((current) =>
+      current === null ? current : { ...current, shareSlug: slug, shareStale: false },
+    )
+  }, [])
+
   const flush = useCallback(async () => {
     const outstanding = pending.current
     if (outstanding && JSON.stringify(outstanding) !== persisted.current) await save(outstanding)
@@ -217,6 +233,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     change,
     rename,
     saveTags,
+    patchShare,
     flush,
   }
 }

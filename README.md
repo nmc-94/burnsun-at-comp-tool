@@ -49,8 +49,18 @@ Ruleset reads need no sign-in — it is published tournament data, and the SPA r
 it before anyone has an identity.
 
 A version is immutable. When point values change mid-tournament, publish a new label
-rather than editing the one already there. To cut a new one, re-export the snapshot
-into `docs/sources/`, then regenerate the bundled payload and commit it:
+rather than editing the one already there.
+
+> **Idempotent means idempotent on `(slug, label)`.** If the *shape* of the bundled payload
+> grows — as it did in Phase I, when §8's ban phase was added under the existing
+> `2026-07-23` label — a database that already holds that label keeps the older row, and
+> seeding will not replace it. A fresh deployment is fine; an existing one keeps serving what
+> it was given. Clients are written to degrade rather than break (the rehearsal screen says
+> the ruleset describes no ban phase), but to actually pick the section up, drop the stored
+> version and re-seed, or recreate the volume with `docker compose down -v`.
+
+To cut a new version, re-export the snapshot into `docs/sources/`, then regenerate the
+bundled payload and commit it:
 
 ```bash
 python -m comptool.ingest emit-payload --csv docs/sources/points-atxxii-2026-07-23.csv --ships docs/sources/ships-sde-3444265.json --out comptool/data/atxxii-2026-07-23.json
@@ -275,11 +285,39 @@ await thread.getByTestId('comment-save').click()
 await expect(thread.getByTestId('comment-edited')).toBeVisible()
 ```
 
+Rehearsing a ban phase, and sharing a comp:
+
+```ts
+// §8's ban phase, one person driving both sides. A place, so it is a path segment.
+await page.goto('/teams/' + teamId + '/pick-ban')
+await expect(page.getByTestId('pick-ban-turn')).toHaveText(/Red to ban/)
+await page.getByLabel('Search hulls to ban').fill('Machariel')
+await page.getByRole('button', { name: 'Ban Machariel' }).click()
+await expect(page.getByTestId('pick-ban-turn')).toHaveText(/Blue to ban/)
+
+// A share link. The tile control opens the panel; the link itself is selectable text.
+const tile = page.getByTestId('board-tile').filter({ hasText: 'Angel Shield Kite' })
+await tile.getByRole('button', { name: 'Share Angel Shield Kite' }).click()
+await tile.getByRole('button', { name: 'Create a share link for Angel Shield Kite' }).click()
+const link = await tile.getByTestId('comp-share-link').textContent()
+
+// And it opens with no cookie at all — this is the only route in the app that does.
+const visitor = await browser.newContext()
+await visitor.newPage().goto(link)
+```
+
+A share is a **snapshot**: it shows the comp as it was when the link was made. Edit the comp
+afterwards and the tile's control reads `stale` — `comp-share-stale` says so in the panel, and
+*Update link* re-captures it under the same slug, so a link already sent keeps working.
+Withdrawing is permanent for that slug: the row stays so it can never be reissued, and
+re-sharing mints a different one.
+
 Deep links work, so a board is addressable directly: `/teams/:teamId/boards/:boardId`, and
 `/comps/:compId` opens that comp on whichever board was last in front — which is also what a
-fork's lineage link goes to. The rail's search box and its two filters are **component
-state**, deliberately not in the URL: a history entry per keystroke, or per chip toggled, is
-not a location anybody wants to navigate back out of.
+fork's lineage link goes to. `/s/:slug` is the share link, and the only route that renders
+without a session. The rail's search box and its two filters are **component state**,
+deliberately not in the URL: a history entry per keystroke, or per chip toggled, is not a
+location anybody wants to navigate back out of.
 
 Over plain http the minted cookie must be presented without the `Secure` flag, as above;
 see `COMPTOOL_SESSION_COOKIE_SECURE` under [Sign-in](#sign-in-eve-sso). **A locator that

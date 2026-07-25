@@ -101,6 +101,22 @@ def test_slots_round_trip_in_the_order_they_were_sent(client, sign_in, publish):
     assert body["shipCount"] == 3
 
 
+def test_replacing_slots_moves_the_comps_updated_at(client, sign_in, publish):
+    """Editing a comp's hulls is editing the comp.
+
+    ``onupdate`` fires only when the *comp* row is in an UPDATE, and replacing slots writes
+    ``comp_slot`` rows instead — so this went unmoved for five phases. Anything that asks
+    "has this comp changed since?" reads this field, so a stale one is not a cosmetic problem.
+    """
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+
+    after = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON)).json()
+
+    assert after["updatedAt"] > comp["updatedAt"]
+
+
 def test_replacing_slots_renumbers_from_zero(client, sign_in, publish):
     """Positions are the server's to assign, so a shorter list cannot leave a hole."""
     publish()

@@ -17,8 +17,8 @@ import { vocabularyOf } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import { evaluate } from '../engine'
 import { toEngineComp } from '../comps/tile-model'
-import { listRulesets } from '../rulesets/api'
 import { loadRulesetVersion } from '../rulesets/cache'
+import { chooseRulesetSlug } from '../rulesets/choose'
 import type { RulesetVersionDetail } from '../rulesets/types'
 import { navigate } from '../router/useRoute'
 import BoardGrid from './BoardGrid'
@@ -415,27 +415,6 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
 
 function boardRoute(teamId: string, boardId: string) {
   return { kind: 'workspace' as const, teamId, boardId, view: 'board' as const, selection: [] }
-}
-
-/**
- * Which ruleset a new comp is built against.
- *
- * The one the team's other comps use, else the newest published. There is no picker: exactly
- * one ruleset is published today, so nothing loses a choice it has. When a second publishes,
- * this is where the choice goes.
- */
-async function chooseRulesetSlug(comps: readonly CompDetail[]): Promise<string> {
-  const counts = new Map<string, number>()
-  for (const comp of comps) {
-    counts.set(comp.rulesetSlug, (counts.get(comp.rulesetSlug) ?? 0) + 1)
-  }
-  const commonest = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]
-  if (commonest) return commonest[0]
-
-  const published = (await listRulesets()).filter((ruleset) => ruleset.latestVersion !== null)
-  const first = published[0]
-  if (!first) throw new Error('No ruleset has been published, so a comp cannot be built yet.')
-  return first.slug
 }
 
 function layoutLabel(state: LayoutState): string {

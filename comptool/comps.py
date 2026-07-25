@@ -46,6 +46,7 @@ from .models import (
     AccessLevel,
     Comp,
     CompComment,
+    CompShare,
     CompSlot,
     CompTag,
     Ruleset,
@@ -144,6 +145,13 @@ class CompDetail(_Response):
     #: than loaded: a fifty-comp listing has no business dragging every comment body with it.
     comment_count: int
     fork_count: int
+    #: The live share link's slug, or null when this comp is not shared. Flat rather than a
+    #: nested object, following ``forked_from_*``: one concept, one field each.
+    share_slug: str | None
+    #: Whether the comp has moved since the share was captured. A share is a snapshot, so
+    #: without this the link would silently show last week's comp forever — the mirror of the
+    #: surprise a live view would spring. False when there is no share.
+    share_stale: bool
     #: Always present, the listing included. The library rail draws a legality dot and a
     #: point total per comp, legality is the client's to compute, and a comp without its
     #: slots is a comp the client cannot judge. The listing already loads them to count
@@ -242,7 +250,32 @@ def _tally(session: Session, comp_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, t
     }
 
 
-def _detail(comp: Comp, level: AccessLevel, tally: tuple[int, int] = (0, 0)) -> CompDetail:
+def _shares(
+    session: Session, comp_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[str, datetime]]:
+    """The live share link of each comp named, and when it was captured.
+
+    One query for the page, beside :func:`_tally` and for the same reason. Deliberately not a
+    relationship on ``Comp``: ``reach_comp`` eager-loads for every module that reaches a comp,
+    and a fourth ``selectinload`` there would put a query on every comment route to serve a
+    field comments do not have.
+    """
+    if not comp_ids:
+        return {}
+    rows = session.execute(
+        select(CompShare.comp_id, CompShare.slug, CompShare.captured_at).where(
+            CompShare.comp_id.in_(comp_ids), CompShare.revoked_at.is_(None)
+        )
+    ).all()
+    return {comp_id: (slug, captured_at) for comp_id, slug, captured_at in rows}
+
+
+def _detail(
+    comp: Comp,
+    level: AccessLevel,
+    tally: tuple[int, int] = (0, 0),
+    share: tuple[str, datetime] | None = None,
+) -> CompDetail:
     comment_count, fork_count = tally
     return CompDetail(
         id=comp.id,
@@ -265,6 +298,11 @@ def _detail(comp: Comp, level: AccessLevel, tally: tuple[int, int] = (0, 0)) -> 
         fork_kind=comp.fork_kind,
         comment_count=comment_count,
         fork_count=fork_count,
+        share_slug=share[0] if share else None,
+        # A share is a snapshot, so "the comp has moved on" is exactly this comparison. It is
+        # only meaningful because ``_apply_slots`` now touches ``updated_at`` — before that a
+        # hull change left it still, and this would have read false forever.
+        share_stale=bool(share and comp.updated_at > share[1]),
         slots=[
             SlotDetail(position=slot.position, type_id=slot.type_id, is_flagship=slot.is_flagship)
             for slot in comp.slots
@@ -274,7 +312,12 @@ def _detail(comp: Comp, level: AccessLevel, tally: tuple[int, int] = (0, 0)) -> 
 
 def _one(session: Session, comp: Comp, level: AccessLevel) -> CompDetail:
     """``_detail`` for a single comp, with its counts fetched. The item routes' answer."""
-    return _detail(comp, level, _tally(session, [comp.id]).get(comp.id, (0, 0)))
+    return _detail(
+        comp,
+        level,
+        _tally(session, [comp.id]).get(comp.id, (0, 0)),
+        _shares(session, [comp.id]).get(comp.id),
+    )
 
 
 def _latest_version(session: Session, slug: str) -> RulesetVersion:
@@ -317,6 +360,13 @@ def _apply_slots(session: Session, comp: Comp, slots: list[SlotWrite]) -> None:
         comp.slots.append(
             CompSlot(position=position, type_id=slot.type_id, is_flagship=slot.is_flagship)
         )
+
+    # Touched explicitly, because ``Comp.updated_at``'s ``onupdate`` fires only when the *comp*
+    # row is itself in an UPDATE — and everything above writes ``comp_slot`` rows instead. So
+    # until now, changing a comp's hulls did not change when the comp was last modified, which
+    # is the one thing that field exists to say. ``func.now()`` rather than a Python clock, so
+    # every timestamp in the schema still comes from the database.
+    comp.updated_at = func.now()
 
 
 def _canonical(value: str, in_use: Iterable[str]) -> str:
@@ -416,8 +466,13 @@ def list_comps(
         .order_by(Comp.name)
     ).all()
     # One pair of counting queries for the whole page, not one pair per comp.
-    tally = _tally(session, [comp.id for comp in comps])
-    return [_detail(comp, access.level, tally.get(comp.id, (0, 0))) for comp in comps]
+    comp_ids = [comp.id for comp in comps]
+    tally = _tally(session, comp_ids)
+    shares = _shares(session, comp_ids)
+    return [
+        _detail(comp, access.level, tally.get(comp.id, (0, 0)), shares.get(comp.id))
+        for comp in comps
+    ]
 
 
 @team_router.post("/{team_id}/comps", response_model=CompDetail, status_code=201)

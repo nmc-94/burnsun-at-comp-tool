@@ -26,6 +26,7 @@ HullSize = Literal[
     "Industrial",
 ]
 LogisticsGroup = Literal["cruiser", "frigate"]
+BanSide = Literal["red", "blue"]
 
 
 class _Payload(BaseModel):
@@ -56,6 +57,32 @@ class Flagship(_Payload):
     battleship_allowance: int
 
 
+class BanRound(_Payload):
+    side: BanSide
+    bans: int
+    #: Whether the preliminary tournament plays this round.
+    in_prelims: bool
+
+
+class BanCaps(_Payload):
+    #: Per side, per hull size. Logistics hulls are exempt and answer to ``logistics``.
+    per_hull_size: int
+    #: Per side, across both logistics groups.
+    logistics: int
+
+
+class BanPhase(_Payload):
+    """§8's captain ban phase: who bans when, and how much of one kind a side may take out.
+
+    Not to be confused with ``RulesetShip.banned``, which is the ruleset's own standing
+    exclusion. A captain's ban is made at the table; this is only the shape of the procedure.
+    """
+
+    #: The rounds in order. Empty for a format with no ban phase.
+    sequence: tuple[BanRound, ...]
+    caps: BanCaps
+
+
 class Ruleset(_Payload):
     version: str
     point_cap: int
@@ -65,3 +92,4 @@ class Ruleset(_Payload):
     hull_size_caps: dict[HullSize, int]
     logistics_limits: LogisticsLimits
     flagship: Flagship
+    ban_phase: BanPhase

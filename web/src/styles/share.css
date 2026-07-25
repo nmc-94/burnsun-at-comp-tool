@@ -1,0 +1,145 @@
+/* The shared-comp view, and the panel that mints its link.
+ *
+ * Colours come from tokens.css and nothing here introduces one; no gradients, blur, glow or
+ * shadow, per §6.4.
+ *
+ * This is the only screen an outsider ever sees, so it stays in the centred column and looks
+ * like the rest of the application rather than like a landing page.
+ */
+
+.sv-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sv-delta {
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+}
+.sv-exact {
+  color: var(--success);
+}
+.sv-under {
+  color: var(--text-3);
+}
+.sv-over {
+  color: var(--danger);
+}
+
+.sv-meta {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.sv-hulls {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+}
+.sv-hull {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 0 10px;
+  border-bottom: 0.5px solid var(--line-1);
+  font-size: 12px;
+}
+.sv-hull:last-child {
+  border-bottom: 0;
+}
+.sv-hull .ic {
+  display: inline-flex;
+  width: 18px;
+}
+.sv-hull .nm {
+  flex: 1;
+}
+.sv-hull .cost {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.sv-flag {
+  color: var(--accent);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The two paste-ready blocks. */
+
+.sv-export-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.sv-export-label {
+  color: var(--text-3);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.sv-export-state {
+  color: var(--success);
+  font-size: 11px;
+}
+.sv-export-text {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--bg-soft);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The mint / withdraw panel, in a comp tile's footer. */
+
+.share-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 0.5px solid var(--line-1);
+}
+.share-panel-note {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.share-panel-link {
+  padding: 4px 8px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+  color: var(--text-1);
+  font-size: 11.5px;
+  word-break: break-all;
+  user-select: all;
+}
+.share-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.share-panel-state {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.share-panel-stale {
+  color: var(--warn);
+}

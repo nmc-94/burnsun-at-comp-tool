@@ -1,0 +1,285 @@
+/* The ban-phase rehearsal.
+ *
+ * Colours come from tokens.css and nothing here introduces one; no gradients, blur, glow or
+ * shadow, per §6.4.
+ *
+ * The two captains use the fit-tag HSL pill system — §6.4 says to reuse it for chips, and it
+ * is already tuned for both themes. Deliberately NOT --danger and --info: those mean "this is
+ * wrong" and "this is a note", and a team label is neither. Two fixed hues instead, so Red
+ * reads as red and Blue as blue without borrowing a semantic colour.
+ */
+
+.pb-red {
+  --h: 2;
+}
+.pb-blue {
+  --h: 222;
+}
+
+/* The way in, from the board strip. */
+.ftab-pickban {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-right: 10px;
+  padding: 0 10px;
+  min-height: 26px;
+  border-radius: var(--radius-md);
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.ftab-pickban:hover {
+  background: var(--bg-soft);
+  color: var(--text-1);
+}
+
+.pb-title {
+  margin-left: 10px;
+}
+.pb-version {
+  margin-left: auto;
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.pb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Format */
+
+.pb-format {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+}
+.pb-format legend {
+  padding: 0 4px;
+  color: var(--text-3);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.pb-format-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* The schedule */
+
+.pb-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: pb-round;
+}
+.pb-round {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid hsl(var(--h) var(--fit-tag-border-sat) var(--fit-tag-border-light));
+  border-radius: 999px;
+  background: hsl(var(--h) var(--fit-tag-bg-sat) var(--fit-tag-bg-light));
+  color: hsl(var(--h) var(--fit-tag-text-sat) var(--fit-tag-text-light));
+  font-size: 11px;
+}
+.pb-round.is-done {
+  opacity: 0.45;
+}
+.pb-round.is-current {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.pb-round-side {
+  font-weight: 500;
+}
+.pb-round-count {
+  opacity: 0.8;
+}
+
+/* Whose turn */
+
+.pb-turn {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* The pool */
+
+.pb-pool-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pb-search {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+}
+.pb-pool {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.pb-pool > li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 0.5px solid var(--line-1);
+}
+.pb-pool > li:last-child {
+  border-bottom: 0;
+}
+.pb-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.pb-option:hover:not(:disabled) {
+  background: var(--bg-soft);
+}
+.pb-option:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.pb-option:disabled {
+  color: var(--text-4);
+  cursor: default;
+}
+.pb-option .ic {
+  display: inline-flex;
+  width: 18px;
+}
+.pb-option .nm {
+  flex: 1;
+}
+.pb-option-size {
+  color: var(--text-3);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+.pb-option-refusal,
+.pb-option-note,
+.pb-ledger-note {
+  padding-right: 8px;
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+
+/* The ledger */
+
+.pb-ledger {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.pb-ledger-side {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+}
+.pb-ledger-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pb-ledger-side.pb-red .pb-ledger-name,
+.pb-ledger-side.pb-blue .pb-ledger-name {
+  color: hsl(var(--h) var(--fit-tag-text-sat) var(--fit-tag-text-light));
+}
+.pb-ledger-count {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.pb-ledger-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pb-ledger-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+}
+.pb-ledger-item .ic {
+  display: inline-flex;
+  width: 18px;
+}
+.pb-ledger-item .nm {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-4);
+  color: var(--text-2);
+}
+
+/* Summary and actions */
+
+.pb-summary {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.pb-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .pb-ledger {
+    grid-template-columns: 1fr;
+  }
+}

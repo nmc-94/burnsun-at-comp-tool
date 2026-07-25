@@ -3,11 +3,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError, request } from './api'
 import { brand } from './brand/brandConfig'
 import CompResolver from './comps/CompResolver'
-import { hrefFor, workspaceRoute } from './router/route'
+import PickBanScreen from './pickban/PickBanScreen'
+import { hrefFor, isPublic, isWide, parseRoute, workspaceRoute } from './router/route'
 import type { Route } from './router/route'
 import { navigate, useRoute } from './router/useRoute'
 import type { Session } from './session'
 import { fetchSession } from './session'
+import ShareView from './share/ShareView'
 import TeamList from './teams/TeamList'
 import TeamScreen from './teams/TeamScreen'
 import { readThemePref, resolveTheme, toggleTheme } from './theme'
@@ -33,19 +35,39 @@ export default function App() {
     document.title = brand.appName
   }, [])
 
-  const reloadSession = useCallback(() => {
+  const loadSession = useCallback(() => {
+    fetchSession()
+      .then(setSession)
+      .catch(() => setSession({ ssoEnabled: false, character: null }))
+  }, [])
+
+  /**
+   * The same probe, plus the redirect that belongs to *signing out*.
+   *
+   * These were one function, and the redirect fired on mount too — so arriving signed-out
+   * anywhere rewrote the URL to `/` before anything rendered. That took the share link with
+   * it, and it had already been quietly breaking ordinary deep links: `signIn()` reads
+   * `window.location.pathname` back as its `next`, so the path was destroyed before the
+   * sign-in button was ever clicked. Arriving signed-out is not signing out.
+   *
+   * The route is read from `window.location` at call time rather than from `route`, which
+   * keeps the dependency list empty — closing over `route` would re-probe the session on
+   * every navigation.
+   */
+  const onSessionChanged = useCallback(() => {
     fetchSession()
       .then((found) => {
         setSession(found)
-        // Signing out should not leave a team open behind the sign-in prompt.
-        if (!found.character) navigate({ kind: 'teams' }, { replace: true })
+        if (found.character) return
+        const here = parseRoute(window.location.pathname + window.location.search)
+        if (!isPublic(here)) navigate({ kind: 'teams' }, { replace: true })
       })
       .catch(() => setSession({ ssoEnabled: false, character: null }))
   }, [])
 
   useEffect(() => {
-    reloadSession()
-  }, [reloadSession])
+    loadSession()
+  }, [loadSession])
 
   useEffect(() => {
     let cancelled = false
@@ -73,7 +95,7 @@ export default function App() {
     // column. One modifier rather than a second shell, so the header and footer landmarks
     // stay exactly where they are.
     <div
-      className={`app-shell${route.kind === 'workspace' ? ' app-shell-wide' : ''}`}
+      className={`app-shell${isWide(route) ? ' app-shell-wide' : ''}`}
       data-testid="app-shell"
     >
       <header className="app-header" data-testid="app-header">
@@ -81,11 +103,20 @@ export default function App() {
         <span className="wordmark-suffix">{brand.wordmark.suffix}</span>
         <h1 className="product-label">{brand.productLabel}</h1>
         <span className="header-actions">
-          {session && <UserChip session={session} onChanged={reloadSession} />}
+          {session && <UserChip session={session} onChanged={onSessionChanged} />}
         </span>
       </header>
 
-      <main>{session?.character ? renderRoute(route) : <SignedOut session={session} />}</main>
+      {/* A public route renders while `session` is still null, and that is the point: a share
+          view depends on no session, so it paints in parallel with the /auth/me probe rather
+          than behind it. */}
+      <main>
+        {isPublic(route) || session?.character ? (
+          renderRoute(route)
+        ) : (
+          <SignedOut session={session} />
+        )}
+      </main>
 
       <footer className="app-footer" data-testid="app-footer">
         <span className="health" data-testid="app-health" role="status">
@@ -122,6 +153,15 @@ function renderRoute(route: Route) {
       return (
         <TeamScreen teamId={route.teamId} onBack={() => navigate(workspaceRoute(route.teamId))} />
       )
+    case 'pick-ban':
+      return (
+        <PickBanScreen
+          teamId={route.teamId}
+          onBack={() => navigate(workspaceRoute(route.teamId))}
+        />
+      )
+    case 'share':
+      return <ShareView slug={route.slug} />
     case 'comp':
       return <CompResolver compId={route.compId} />
     case 'not-found':

@@ -49,11 +49,18 @@
 /* underline tabs */
 .ftabs-shell {
   flex: 0 0 auto;
+  /* A row since Phase I: the board strip, and beside it the way into a ban rehearsal, which
+     is not a board and so sits outside the nav landmark. */
+  display: flex;
+  align-items: center;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--line-1);
 }
 
 .ftabs {
+  /* Takes the space; min-width lets it scroll rather than pushing its neighbour off. */
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-wrap: nowrap;
   overflow-x: auto;

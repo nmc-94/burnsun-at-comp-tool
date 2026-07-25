@@ -15,6 +15,11 @@ names are in the points table, so a hull absent from the payload resolves to not
 engine refuses it. ``banned`` therefore stays false throughout, and the ban list survives
 here only as an assertion that this remains true.
 
+The ban *phase* is a different thing again, despite the shared word. §8's sequence and caps
+are carried in the payload because the client walks them, but nothing here flips ``banned``
+for a captain's ban: that is made at the table, and the client folds it into a ruleset of
+its own.
+
 Inflation values are read straight from the row. They are not derived from hull size, ever —
 the snapshot carries deliberate per-hull exceptions and the rule is the data, not the table
 in the article.
@@ -25,7 +30,15 @@ from __future__ import annotations
 from . import atxxii
 from .errors import IngestError
 from .points_csv import PointsSnapshot, ShipRow
-from .schema import Flagship, LogisticsLimits, Ruleset, RulesetShip
+from .schema import (
+    BanCaps,
+    BanPhase,
+    BanRound,
+    Flagship,
+    LogisticsLimits,
+    Ruleset,
+    RulesetShip,
+)
 from .sde import ShipIndex, ShipReference
 
 
@@ -102,6 +115,49 @@ def _check_not_excluded(ships: dict[int, RulesetShip]) -> None:
         )
 
 
+def _ban_phase() -> BanPhase:
+    return BanPhase(
+        sequence=tuple(BanRound(**entry) for entry in atxxii.BAN_SEQUENCE),
+        caps=BanCaps(**atxxii.BAN_CAPS),
+    )
+
+
+def _check_ban_totals(phase: BanPhase) -> None:
+    """The sequence has to hand each captain the bans the article gives them.
+
+    §8 states the count twice — once as a total per captain, once round by round — and only
+    the rounds are payload. This is where the other statement is spent: a round added,
+    dropped or mistyped otherwise produces a ban phase that runs the wrong length and looks
+    entirely well-formed doing it.
+    """
+    for tournament, expected in atxxii.BAN_TOTALS.items():
+        played = [r for r in phase.sequence if tournament == "main" or r.in_prelims]
+        for side in ("red", "blue"):
+            total = sum(r.bans for r in played if r.side == side)
+            if total != expected:
+                raise IngestError(
+                    f"the {tournament} ban sequence gives {side} {total} bans, not {expected}"
+                )
+
+
+def _check_logistics_roster(ships: dict[int, RulesetShip]) -> None:
+    """The logistics ban cap keys off ``logisticsGroup``, so it has to be the same set.
+
+    §8 names the capped category hull by hull; the snapshot marks the same hulls with a group
+    because they are exempt from the size caps (§4.4). Two reasons, one set — and the client
+    carries only the group. If a snapshot ever parts them, the cap would silently cover the
+    wrong hulls.
+    """
+    grouped = {ship.name for ship in ships.values() if ship.logistics_group is not None}
+    if grouped != set(atxxii.LOGISTICS_BANNABLE_HULLS):
+        missing = sorted(atxxii.LOGISTICS_BANNABLE_HULLS - grouped)
+        extra = sorted(grouped - atxxii.LOGISTICS_BANNABLE_HULLS)
+        raise IngestError(
+            "the hulls carrying a logistics group are no longer the ones §8 caps: "
+            f"missing {missing}, unexpected {extra}"
+        )
+
+
 def build(snapshot: PointsSnapshot, index: ShipIndex, version: str) -> dict:
     """Assemble and validate the payload for one ruleset version."""
     class_points = _class_points(snapshot)
@@ -115,6 +171,10 @@ def build(snapshot: PointsSnapshot, index: ShipIndex, version: str) -> dict:
             raise IngestError(f"{ship.name} and {ships[ship.type_id].name} share a type id")
         ships[ship.type_id] = ship
     _check_not_excluded(ships)
+    _check_logistics_roster(ships)
+
+    ban_phase = _ban_phase()
+    _check_ban_totals(ban_phase)
 
     ruleset = Ruleset(
         version=version,
@@ -125,6 +185,7 @@ def build(snapshot: PointsSnapshot, index: ShipIndex, version: str) -> dict:
         hull_size_caps=atxxii.HULL_SIZE_CAPS,
         logistics_limits=LogisticsLimits(**atxxii.LOGISTICS_LIMITS),
         flagship=Flagship(**atxxii.FLAGSHIP),
+        ban_phase=ban_phase,
     )
     return ruleset.model_dump(mode="json", by_alias=True)
 

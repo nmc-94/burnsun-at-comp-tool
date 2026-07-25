@@ -7,6 +7,7 @@
 
 import { request } from '../api'
 import type { CommentDetail, CompDetail, CompSlotWrite, CompTagsWrite } from './types'
+import type { ShareDetail } from '../share/types'
 
 /** Every comp on the team, slots included — the rail judges each one itself. */
 export function listComps(teamId: string): Promise<CompDetail[]> {
@@ -45,6 +46,26 @@ export function replaceTags(compId: string, tags: CompTagsWrite): Promise<CompDe
     method: 'PUT',
     body: JSON.stringify(tags),
   })
+}
+
+/**
+ * Share this comp, or fetch the link it already has.
+ *
+ * The server answers 201 for a new link and 200 for the existing one; both give the same
+ * shape, so nothing here has to tell them apart. A comp is shared or it is not.
+ */
+export function shareComp(compId: string): Promise<ShareDetail> {
+  return request<ShareDetail>(`/api/v1/comps/${compId}/share`, { method: 'POST' })
+}
+
+/** Re-capture the comp under the same slug, so a link already sent keeps working. */
+export function updateShare(compId: string): Promise<ShareDetail> {
+  return request<ShareDetail>(`/api/v1/comps/${compId}/share`, { method: 'PUT' })
+}
+
+/** Withdraw the link. The slug is never reissued — see comptool/models.py's CompShare. */
+export function unshareComp(compId: string): Promise<void> {
+  return request<void>(`/api/v1/comps/${compId}/share`, { method: 'DELETE' })
 }
 
 /**

@@ -5,8 +5,12 @@ Three rules shape every route here.
 **Teams are private.** A new team is visible to its owner and to nobody else, and the
 listing is "teams that are mine" — owned, or granted to me — rather than a directory of
 everything readable. ``Team.base_level`` still exists and the resolver still honours it,
-but nothing here sets it: a switch that makes a team world-readable wants a considered
-design and a way to see the state afterwards, and that arrives with share links.
+but nothing here sets it, and Phase I settled why rather than deferring it again: sharing a
+*comp* is a different feature. ``base_level`` is only reached through ``authorize``, which
+401s an anonymous caller before it is consulted — so raising it would open a team to every
+signed-in character, not to the public. That is "public within the tool", a product decision
+nobody has asked for. A share link answers the question people actually had, and it does so
+without this switch; see ``comptool/share.py``.
 
 **A team you may not see does not exist.** Existence and permission are answered together
 and reported identically, because answering them separately is precisely what turns a 404

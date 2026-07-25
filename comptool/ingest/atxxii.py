@@ -50,6 +50,62 @@ FLAGSHIP = {"allowed": True, "battleship_allowance": 3}
 #: intent reads as "any battleship you may field, except this one".
 FLAGSHIP_INELIGIBLE = frozenset({"Bhaalgorn"})
 
+#: §8 — the captain ban phase, round by round. Red opens, and the counts are the article's
+#: 1-2-2-1-1-1.
+#:
+#: Each round states whether the preliminary tournament plays it, rather than the payload
+#: carrying a count of leading rounds. "The last round of each side is excluded" happens to
+#: mean the trailing two here, and a prefix count would quietly mis-read a sequence where it
+#: did not — the schema is shared across tournaments even though this block is not.
+BAN_SEQUENCE = (
+    {"side": "red", "bans": 1, "in_prelims": True},
+    {"side": "blue", "bans": 2, "in_prelims": True},
+    {"side": "red", "bans": 2, "in_prelims": True},
+    {"side": "blue", "bans": 1, "in_prelims": True},
+    {"side": "red", "bans": 1, "in_prelims": False},
+    {"side": "blue", "bans": 1, "in_prelims": False},
+)
+
+#: §8 — bans per captain, which the sequence above has to add up to for both sides in both
+#: tournaments. An assertion rather than payload: two statements of one number can disagree,
+#: and the sequence is the one the tool actually walks.
+BAN_TOTALS = {"main": 4, "prelims": 3}
+
+#: §8 — how much of one kind a single captain may knock out. "Hull type" reads as the engine's
+#: hull *size*: a cap of 3 bites on a side holding 4 bans, whereas a cap on one named hull
+#: could never bite, since a ban applies to both teams and banning the same hull twice buys
+#: nothing. Logistics answer to their own cap of 2 instead of the size one — the same exemption
+#: §4.4 gives them on the field.
+BAN_CAPS = {"per_hull_size": 3, "logistics": 2}
+
+#: §8 — the logi the article enumerates as the capped category. Not payload: these are exactly
+#: the hulls the snapshot marks with a logistics group, so the cap keys off ``logisticsGroup``
+#: and this list survives as the assertion that the two remain one set. The two exist for
+#: different reasons — a group is non-null because logi are exempt from the size caps (§4.4) —
+#: so nothing but this check would notice them parting.
+LOGISTICS_BANNABLE_HULLS = frozenset(
+    {
+        "Augoror",
+        "Bantam",
+        "Basilisk",
+        "Burst",
+        "Deacon",
+        "Exequror",
+        "Guardian",
+        "Inquisitor",
+        "Kirin",
+        "Navitas",
+        "Oneiros",
+        "Osprey",
+        "Rodiva",
+        "Scalpel",
+        "Scimitar",
+        "Scythe",
+        "Thalia",
+        "Zarmazd",
+    }
+)
+
 #: §4.3 — the snapshot's ``Hull Type`` is not quite the engine's hull size. Logistics is
 #: expressed as a size in the data but as an exemption in the engine, so it maps to the size
 #: the hull actually is, plus the allowance it draws from.

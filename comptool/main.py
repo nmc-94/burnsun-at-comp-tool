@@ -28,6 +28,8 @@ from .logging_config import configure_logging
 from .models import AppMeta
 from .rulesets import router as rulesets_router
 from .settings import Settings, get_settings
+from .share import comp_router as share_comp_router
+from .share import router as share_router
 from .teams import router as teams_router
 from .workspace import router as workspace_router
 
@@ -68,6 +70,11 @@ app.include_router(health_router)
 # to render them before anyone signs in. Only routes that touch a *team* need an identity,
 # so authentication is attached per router and never to the /api/v1 prefix as a whole.
 app.include_router(rulesets_router)
+# The second unauthenticated router, and the first that serves *team* content: one comp,
+# frozen at the moment it was shared, behind an unguessable name. Registered here rather than
+# beside the comp routers so that the exception is visible in the list — the half of the same
+# module that mints and withdraws a link is authenticated and registers below.
+app.include_router(share_router)
 app.include_router(auth_router)
 app.include_router(teams_router)
 # Comps arrive as two routers because they are addressed two ways: nested under a team to
@@ -78,6 +85,10 @@ app.include_router(comps_router)
 # comp rather than what the comp contains, which is why they are not in comps.py — but they
 # are reached through the same gate, so a comment on an invisible comp is invisible too.
 app.include_router(comments_router)
+# Minting and withdrawing a share link: a team action on a comp, through the same gate as
+# everything else. Its public counterpart is registered above, and they share a module so the
+# two halves of one feature are read together.
+app.include_router(share_comp_router)
 # The workspace hangs off a team for the same reason the comp listing does — a board is a
 # view onto one team's comps — but it belongs to the character rather than to the team,
 # which is why it is in neither teams.py nor comps.py.

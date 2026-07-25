@@ -792,7 +792,7 @@ Rules for the ids themselves:
 | | |
 |---|---|
 | Format | `<area>-<thing>` or `<area>-<thing>-<part>`, kebab-case, lowercase |
-| Areas | `app`, `user`, `team`, `grant`, `comp`, `comment`, `ship-search`, `ruleset`, `workspace`, `board`, `library` |
+| Areas | `app`, `user`, `team`, `grant`, `comp`, `comment`, `ship-search`, `ruleset`, `workspace`, `board`, `library`, `pick-ban`, `share` |
 | Repeated items | every item in a list shares one id; disambiguate by position within the scope, or by accessible content |
 | Variants | a distinct kind gets a distinct id (`comp-row` vs `comp-row-empty`), so selecting by position is never ambiguous across kinds |
 | Values | the element wrapping the value, not its container — `comp-row-cost`, not the row |

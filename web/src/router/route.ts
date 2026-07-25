@@ -28,6 +28,14 @@ export type Route =
       readonly selection: readonly string[]
     }
   | { readonly kind: 'comp'; readonly compId: string }
+  /**
+   * A ban-phase rehearsal. A place, so it is a path segment — deliberately *not* parked in
+   * `?sel=` because that slot happens to be free: a selection annotates a board, and this is
+   * somewhere else entirely.
+   */
+  | { readonly kind: 'pick-ban'; readonly teamId: string }
+  /** One comp, frozen, behind a share slug. The only route a visitor needs no session for. */
+  | { readonly kind: 'share'; readonly slug: string }
   | { readonly kind: 'not-found'; readonly path: string }
 
 const SELECTION_PARAM = 'sel'
@@ -63,12 +71,18 @@ export function parseRoute(url: string): Route {
     return { kind: 'comp', compId: first }
   }
 
+  // Short, because the whole point of a share link is that somebody pastes it somewhere.
+  if (head === 's' && first && parts.length === 2) {
+    return { kind: 'share', slug: first }
+  }
+
   if (head === 'teams' && first) {
     if (parts.length === 2) {
       return { kind: 'workspace', teamId: first, boardId: null, view: 'board', selection }
     }
-    if (parts.length === 3 && second === 'settings') {
-      return { kind: 'team-settings', teamId: first }
+    if (parts.length === 3) {
+      if (second === 'settings') return { kind: 'team-settings', teamId: first }
+      if (second === 'pick-ban') return { kind: 'pick-ban', teamId: first }
     }
     if (second === 'boards' && third) {
       if (parts.length === 4) {
@@ -90,6 +104,10 @@ export function hrefFor(route: Route): string {
       return '/'
     case 'team-settings':
       return `/teams/${encodeURIComponent(route.teamId)}/settings`
+    case 'pick-ban':
+      return `/teams/${encodeURIComponent(route.teamId)}/pick-ban`
+    case 'share':
+      return `/s/${encodeURIComponent(route.slug)}`
     case 'comp':
       return `/comps/${encodeURIComponent(route.compId)}`
     case 'not-found':
@@ -111,4 +129,21 @@ export function hrefFor(route: Route): string {
 /** The board route for a team, which is the app's idea of "open this team". */
 export function workspaceRoute(teamId: string, boardId: string | null = null): Route {
   return { kind: 'workspace', teamId, boardId, view: 'board', selection: [] }
+}
+
+/**
+ * Whether a visitor with no session may see this place.
+ *
+ * Here rather than in `App` because "which places need an identity" is a fact about the URL
+ * grammar, and it is pure, so it can be tested beside `parseRoute` instead of through a
+ * rendered shell. There is a test asserting this is *false* for every other kind, which is
+ * what stops a future route being made public by forgetting about it.
+ */
+export function isPublic(route: Route): boolean {
+  return route.kind === 'share'
+}
+
+/** Whether a route wants the whole window rather than the centred column. */
+export function isWide(route: Route): boolean {
+  return route.kind === 'workspace'
 }

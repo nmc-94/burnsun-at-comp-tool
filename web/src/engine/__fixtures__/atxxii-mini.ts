@@ -157,6 +157,19 @@ const classPoints: Record<string, number> = {
   Frigate: 4,
 }
 
+/** §8's ban phase, carried verbatim from the ingested payload. */
+const banPhase: Ruleset['banPhase'] = {
+  sequence: [
+    { side: 'red', bans: 1, inPrelims: true },
+    { side: 'blue', bans: 2, inPrelims: true },
+    { side: 'red', bans: 2, inPrelims: true },
+    { side: 'blue', bans: 1, inPrelims: true },
+    { side: 'red', bans: 1, inPrelims: false },
+    { side: 'blue', bans: 1, inPrelims: false },
+  ],
+  caps: { perHullSize: 3, logistics: 2 },
+}
+
 /** The main-tournament ruleset. */
 export const atxxiiRuleset: Ruleset = {
   version: 'v2026-07-23',
@@ -175,9 +188,16 @@ export const atxxiiRuleset: Ruleset = {
   },
   logisticsLimits: { cruiser: 1, frigate: 2, exclusive: true },
   flagship: { allowed: true, battleshipAllowance: 3 },
+  banPhase,
 }
 
-/** The preliminary tournament, which does not permit flagships. */
+/**
+ * The preliminary tournament, which does not permit flagships.
+ *
+ * It shares the main ruleset's `banPhase`, and that is the encoding working rather than an
+ * omission: which rounds prelims plays is stated on the rounds themselves, so the prelim
+ * sequence is a filter over one payload rather than a second payload.
+ */
 export const prelimRuleset: Ruleset = {
   ...atxxiiRuleset,
   flagship: { ...atxxiiRuleset.flagship, allowed: false },

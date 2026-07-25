@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 
 import type { CompSlot, Violation } from '../engine'
 import CommentThread from './CommentThread'
+import SharePanel from './SharePanel'
 import CompTile from './CompTile'
 import type { Lineage } from './CompTile'
 import TagEditor from './TagEditor'
@@ -83,12 +84,14 @@ export default function CompTileHost({
     change,
     rename,
     saveTags,
+    patchShare,
     flush,
   } = useCompDocument(compId, onCompChanged)
   const [carried, setCarried] = useState<readonly CompSlot[] | null>(null)
   const [sent, setSent] = useState<string | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   // The thread's own count, once it has loaded one. The listing's number is a snapshot from
   // when the board opened, and posting a comment should move the figure beside the control
   // that opened the panel rather than only the panel.
@@ -330,6 +333,20 @@ export default function CompTileHost({
             onFork={
               onFork && editable ? () => void flush().then(() => onFork(compId)) : undefined
             }
+            // A viewer sees the control only once there is a link, because copying one grants
+            // no more than they already hold; an editor always sees it, because they are the
+            // one who decides whether there is a link at all.
+            onToggleShare={
+              editable || comp.shareSlug !== null
+                ? // Flushed for the same reason a port is: minting captures the comp on the
+                  // *server*, so a share taken inside the debounce would freeze the comp as it
+                  // was before the last keystroke.
+                  () => void flush().then(() => setShareOpen((open) => !open))
+                : undefined
+            }
+            shareOpen={shareOpen}
+            shared={comp.shareSlug !== null}
+            shareStale={comp.shareStale}
           />
 
           {/* Both panels are rendered out here rather than inside the tile, the way the copy
@@ -342,6 +359,17 @@ export default function CompTileHost({
               vocabulary={vocabulary ?? EMPTY_VOCABULARY}
               onSave={saveTags}
               onClose={() => setTagsOpen(false)}
+            />
+          )}
+
+          {shareOpen && (
+            <SharePanel
+              compId={compId}
+              name={comp.name}
+              slug={comp.shareSlug}
+              stale={comp.shareStale}
+              editable={editable}
+              onChanged={patchShare}
             />
           )}
 

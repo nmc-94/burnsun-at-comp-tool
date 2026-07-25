@@ -29,6 +29,8 @@ function comp(name: string, archetype: string | null, tags: string[]): CompDetai
     forkKind: null,
     commentCount: 0,
     forkCount: 0,
+    shareSlug: null,
+    shareStale: false,
     slots: [],
   }
 }

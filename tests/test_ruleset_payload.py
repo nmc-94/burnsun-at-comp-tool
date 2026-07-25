@@ -1,8 +1,9 @@
 """The assembled payload.
 
-These pin the two things the snapshot cannot state for itself: that the fallback layer holds
-only genuine buckets, and that exclusion is carried by omission rather than a flag. Both are
-easy to get subtly wrong in a way that still produces a payload that looks right.
+These pin the three things the snapshot cannot state for itself: that the fallback layer holds
+only genuine buckets, that exclusion is carried by omission rather than a flag, and that §8's
+ban phase is carried whole with its two statements of the same count still agreeing. All three
+are easy to get subtly wrong in a way that still produces a payload that looks right.
 """
 
 from __future__ import annotations
@@ -127,6 +128,67 @@ def test_every_battleship_but_the_bhaalgorn_may_be_the_flagship(payload):
     assert by_name["Bhaalgorn"]["flagshipEligible"] is False
     # A special edition the rules permit explicitly, and read as a battleship like any other.
     assert by_name["Praxis"]["flagshipEligible"] is True
+
+
+def test_carries_the_ban_phase(payload):
+    # Asserted whole rather than field by field: the sequence *is* the rule, and a round
+    # quietly gaining or losing a ban is the failure this is here to catch.
+    assert payload["banPhase"] == {
+        "sequence": [
+            {"side": "red", "bans": 1, "inPrelims": True},
+            {"side": "blue", "bans": 2, "inPrelims": True},
+            {"side": "red", "bans": 2, "inPrelims": True},
+            {"side": "blue", "bans": 1, "inPrelims": True},
+            {"side": "red", "bans": 1, "inPrelims": False},
+            {"side": "blue", "bans": 1, "inPrelims": False},
+        ],
+        "caps": {"perHullSize": 3, "logistics": 2},
+    }
+
+
+def test_the_ban_sequence_adds_up_to_what_each_captain_has(payload):
+    # The reader's half of the check the ingester makes. Distinct from it on purpose: this one
+    # runs against the shipped file, so it also catches a payload edited by hand.
+    rounds = payload["banPhase"]["sequence"]
+    for tournament, expected in (("main", 4), ("prelims", 3)):
+        played = [r for r in rounds if tournament == "main" or r["inPrelims"]]
+        for side in ("red", "blue"):
+            assert sum(r["bans"] for r in played if r["side"] == side) == expected
+
+
+def test_the_prelims_drop_the_last_round_of_each_side(payload):
+    rounds = payload["banPhase"]["sequence"]
+    dropped = [index for index, entry in enumerate(rounds) if not entry["inPrelims"]]
+
+    # §8 excludes "the last round of each side", which for this sequence is the trailing pair
+    # — the coincidence a leading-round count would have encoded as if it were the rule.
+    assert dropped == [4, 5]
+    assert [rounds[index]["side"] for index in dropped] == ["red", "blue"]
+
+
+def test_the_logistics_ban_cap_covers_exactly_the_hulls_the_article_names(payload):
+    # The cap keys off logisticsGroup rather than its own list, which is only sound while the
+    # two describe the same eighteen hulls.
+    grouped = {
+        ship["name"] for ship in payload["ships"].values() if ship["logisticsGroup"] is not None
+    }
+    assert grouped == set(atxxii.LOGISTICS_BANNABLE_HULLS)
+    assert len(grouped) == 18
+
+
+def test_stops_if_the_ban_sequence_stops_adding_up(monkeypatch, snapshot, ship_index):
+    # A dropped round still produces a well-formed phase; only the total says otherwise.
+    monkeypatch.setattr(atxxii, "BAN_SEQUENCE", atxxii.BAN_SEQUENCE[:-2])
+    with pytest.raises(IngestError, match="the main ban sequence gives red 3 bans, not 4"):
+        ruleset.build(snapshot, ship_index, VERSION_LABEL)
+
+
+def test_stops_if_the_logistics_roster_parts_from_the_group_flag(monkeypatch, snapshot, ship_index):
+    monkeypatch.setattr(
+        atxxii, "LOGISTICS_BANNABLE_HULLS", atxxii.LOGISTICS_BANNABLE_HULLS | {"Rifter"}
+    )
+    with pytest.raises(IngestError, match=r"no longer the ones .8 caps: missing \['Rifter'\]"):
+        ruleset.build(snapshot, ship_index, VERSION_LABEL)
 
 
 def test_stops_if_the_snapshot_ever_prices_a_hull_the_rules_exclude(snapshot, ship_index):

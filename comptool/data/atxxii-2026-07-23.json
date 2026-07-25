@@ -3123,5 +3123,43 @@
   "flagship": {
     "allowed": true,
     "battleshipAllowance": 3
+  },
+  "banPhase": {
+    "sequence": [
+      {
+        "side": "red",
+        "bans": 1,
+        "inPrelims": true
+      },
+      {
+        "side": "blue",
+        "bans": 2,
+        "inPrelims": true
+      },
+      {
+        "side": "red",
+        "bans": 2,
+        "inPrelims": true
+      },
+      {
+        "side": "blue",
+        "bans": 1,
+        "inPrelims": true
+      },
+      {
+        "side": "red",
+        "bans": 1,
+        "inPrelims": false
+      },
+      {
+        "side": "blue",
+        "bans": 1,
+        "inPrelims": false
+      }
+    ],
+    "caps": {
+      "perHullSize": 3,
+      "logistics": 2
+    }
   }
 }
