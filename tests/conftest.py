@@ -8,6 +8,7 @@ exact data that ships.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,32 @@ ENGINE_FIXTURE = REPO_ROOT / "web" / "src" / "engine" / "__fixtures__" / "atxxii
 
 #: The label this snapshot publishes under — its capture date, as the CLI derives it.
 VERSION_LABEL = "2026-07-23"
+
+#: The slug the bundled ruleset publishes under.
+RULESET_SLUG = "atxxii"
+
+#: A ruleset payload small enough to read, shaped like the engine's ``Ruleset``. Nothing
+#: on the server reads inside it — legality is the client's — so tests that only need a
+#: version to bind a comp to use this rather than building the real one from the CSV.
+STUB_PAYLOAD = {
+    "version": VERSION_LABEL,
+    "pointCap": 200,
+    "fieldSize": 10,
+    "ships": {
+        "11978": {
+            "typeId": 11978,
+            "name": "Scimitar",
+            "points": 32,
+            "shipClass": "Logistics Cruiser",
+            "hullSize": "Cruiser",
+            "inflationValue": 2,
+            "logisticsGroup": "cruiser",
+            "banned": False,
+            "flagshipEligible": False,
+        }
+    },
+    "classPoints": {"Logistics Cruiser": 32},
+}
 
 
 @pytest.fixture(scope="session")
@@ -145,6 +172,45 @@ def resolver(client):
         yield fake
     finally:
         app.dependency_overrides.pop(get_character_resolver, None)
+
+
+@pytest.fixture()
+def publish(database):
+    """Publish a ruleset version, the way seeding does, and hand back its label.
+
+    Comps bind to a version, so anything that creates one needs a published ruleset first.
+    Called again with a new label it adds a version to the same ruleset, which is how a
+    test shows that an existing comp stays pinned to the older one.
+    """
+    from comptool.models import Ruleset, RulesetVersion
+
+    def publish_version(version_label: str = VERSION_LABEL, *, slug: str = RULESET_SLUG) -> str:
+        opened = get_session()
+        db = next(opened)
+        try:
+            record = db.query(Ruleset).filter(Ruleset.slug == slug).one_or_none()
+            if record is None:
+                record = Ruleset(
+                    slug=slug, name="Alliance Tournament XXII", organizer="Fenris Creations"
+                )
+                db.add(record)
+            db.add(
+                RulesetVersion(
+                    ruleset=record,
+                    version_label=version_label,
+                    source_url="https://example.invalid/points.csv",
+                    # Ordering is by fetched_at, so a later label has to look later too.
+                    fetched_at=datetime(2026, 7, 23, tzinfo=UTC)
+                    + timedelta(days=len(record.versions)),
+                    payload={**STUB_PAYLOAD, "version": version_label},
+                )
+            )
+            db.commit()
+        finally:
+            opened.close()
+        return version_label
+
+    return publish_version
 
 
 @pytest.fixture()

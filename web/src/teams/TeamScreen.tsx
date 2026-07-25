@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { messageFor } from '../api'
+import { createComp, listComps } from '../comps/api'
+import type { CompSummary } from '../comps/types'
+import { listRulesets } from '../rulesets/api'
+import type { RulesetSummary } from '../rulesets/types'
 import {
   addGrant,
   archiveTeam,
@@ -17,11 +21,16 @@ import type { Grant, GrantableLevel, Resolution, Team } from './types'
 interface Props {
   teamId: string
   onBack: () => void
+  onOpenComp: (compId: string) => void
 }
 
-export default function TeamScreen({ teamId, onBack }: Props) {
+export default function TeamScreen({ teamId, onBack, onOpenComp }: Props) {
   const [team, setTeam] = useState<Team | null>(null)
   const [grants, setGrants] = useState<Grant[]>([])
+  const [comps, setComps] = useState<CompSummary[] | null>(null)
+  const [rulesets, setRulesets] = useState<RulesetSummary[]>([])
+  const [compName, setCompName] = useState('')
+  const [slug, setSlug] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [level, setLevel] = useState<GrantableLevel>('viewer')
@@ -33,13 +42,35 @@ export default function TeamScreen({ teamId, onBack }: Props) {
   const reload = useCallback(async () => {
     setError(null)
     try {
-      const [found, roster] = await Promise.all([getTeam(teamId), listGrants(teamId)])
+      const [found, roster, drafts] = await Promise.all([
+        getTeam(teamId),
+        listGrants(teamId),
+        listComps(teamId),
+      ])
       setTeam(found)
       setGrants(roster)
+      setComps(drafts)
     } catch (problem: unknown) {
       setError(messageFor(problem))
     }
   }, [teamId])
+
+  useEffect(() => {
+    let cancelled = false
+    // Published rulesets, so a new comp can name one without a slug baked into the client.
+    // A failure here is not the screen's failure: it only costs the create form.
+    listRulesets()
+      .then((found) => {
+        if (cancelled) return
+        const publishable = found.filter((ruleset) => ruleset.latestVersion !== null)
+        setRulesets(publishable)
+        setSlug((current) => current || (publishable[0]?.slug ?? ''))
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function remember(grant: Grant) {
     if (grant.resolution) setReasons((current) => ({ ...current, [grant.id]: grant.resolution! }))
@@ -55,6 +86,8 @@ export default function TeamScreen({ teamId, onBack }: Props) {
   // Everything below is gated on the level the server reported, so the controls match
   // what the API will actually allow rather than guessing from ownership.
   const owns = team.yourLevel === 'owner'
+  // Comps are an editor's business; access is the owner's.
+  const canEdit = owns || team.yourLevel === 'editor'
 
   async function act(work: () => Promise<unknown>) {
     setError(null)
@@ -64,6 +97,15 @@ export default function TeamScreen({ teamId, onBack }: Props) {
     } catch (problem: unknown) {
       setError(messageFor(problem))
     }
+  }
+
+  async function addComp(event: React.FormEvent) {
+    event.preventDefault()
+    if (!compName.trim() || !slug) return
+    await act(async () => {
+      await createComp(teamId, compName.trim(), slug)
+      setCompName('')
+    })
   }
 
   async function invite(event: React.FormEvent) {
@@ -115,6 +157,61 @@ export default function TeamScreen({ teamId, onBack }: Props) {
               {team.archived ? 'Restore' : 'Archive'}
             </button>
           </div>
+        )}
+
+        <h3 className="section-title">Comps</h3>
+        <ul className="comp-list">
+          {comps === null && <li className="empty">Loading…</li>}
+          {comps?.length === 0 && <li className="empty">No comps in this team yet.</li>}
+          {comps?.map((comp) => (
+            <li key={comp.id}>
+              <button className="link comp-name" type="button" onClick={() => onOpenComp(comp.id)}>
+                {comp.name}
+              </button>
+              <span className="hint">
+                {comp.shipCount} {comp.shipCount === 1 ? 'hull' : 'hulls'} · v
+                {comp.rulesetVersionLabel}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        {canEdit && (
+          <form className="row" onSubmit={(event) => void addComp(event)}>
+            <input
+              value={compName}
+              onChange={(event) => setCompName(event.target.value)}
+              placeholder="New comp name"
+              maxLength={200}
+              disabled={team.archived}
+              aria-label="New comp name"
+            />
+            {/* Which ruleset a comp is built against is a choice, not a constant. With one
+                published there is nothing to choose, so the select stays out of the way. */}
+            {rulesets.length > 1 && (
+              <select
+                value={slug}
+                onChange={(event) => setSlug(event.target.value)}
+                aria-label="Ruleset"
+              >
+                {rulesets.map((ruleset) => (
+                  <option key={ruleset.slug} value={ruleset.slug}>
+                    {ruleset.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              className="btn primary"
+              type="submit"
+              disabled={!compName.trim() || !slug || team.archived}
+            >
+              New comp
+            </button>
+          </form>
+        )}
+        {rulesets.length === 0 && canEdit && (
+          <p className="hint">No ruleset has been published, so comps cannot be created yet.</p>
         )}
 
         <h3 className="section-title">Access</h3>

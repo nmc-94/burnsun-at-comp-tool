@@ -18,8 +18,7 @@ none of it has ever been joined up in the browser.
    10-row scaffold with the duplicate-surcharge column · flagship pill · footer ·
    violations popover.
 4. **Live validation**: legality-aware ship search, in-place hull swap computed as if the
-   row's hull were absent, the **Enforce-rules toggle (default OFF)**, flagship
-   designation, hull icons.
+   row's hull were absent, flagship designation, hull icons.
 
 ## Where things stand
 
@@ -121,6 +120,11 @@ cannot be fully built from the current schema.
 than adding three columns whose editor, namespaces and team-scoped suggestions are a
 whole other phase. Decide this before you start the tile, not halfway through it.
 
+*Taken.* The band is reserved (`.chipsrow-reserved`, the mockup's chip-row height) so
+Phase H adds content rather than height. The footer has the same gap more mildly —
+`comment count` and `fork count` are Phase H — so it shows `by <creator>`, the save
+state, and the version label.
+
 ### Trap 2 — the mockup's duplicate-inflation panel is wrong
 
 Its figures were baked before the surcharge was settled (2026-07-24) as **retroactive** —
@@ -136,13 +140,22 @@ hull. The engine is pure, so the honest implementation is to build the candidate
 call `evaluate` again. Resist computing a delta by hand; that is the exact place a second,
 subtly different pricing rule gets born.
 
-### Trap 4 — the enforce-rules toggle is the phase's open question
+### Trap 4 — the enforce-rules toggle — *resolved by removal*
 
-The plan has carried it since the start and it is now due: **per-user build assist or
-per-comp shared property?** And does marking a comp final require legality? Default is
-OFF either way. Per-user needs no schema; per-comp needs a column and a rule about who
-may flip it. Settle it before the toggle is wired, because it decides whether Phase E
-writes a migration.
+The plan carried this since the start — **per-user build assist or per-comp shared
+property?** — and it came due here. It was answered by deleting the feature: **rules are
+reported and never enforced.** The tool always says what is wrong and never refuses an
+edit, which is the old "off" default promoted to the only behaviour.
+
+That settles the scope question by leaving nothing to scope, and it means **Phase E wrote
+no migration** — `0003` is still head. Two consequences worth knowing:
+
+- **The scaffold can overflow.** An eleventh hull is an `over-field-size` violation, not a
+  blocked action, so `scaffold()` renders `max(fieldSize, shipCount)` rows. It is exactly
+  the field size for every normal comp, and grows only into a state already flagged red.
+- **A second flagship is still refused, and that is not rule enforcement.** The partial
+  unique index is data integrity (see Trap 5). Flagship *eligibility* is a rule, so an
+  ineligible designation is permitted and reported as `flagship-not-eligible`.
 
 ### Trap 5 — flagship is enforced in two places, and only one of them is yours
 
@@ -174,8 +187,8 @@ Do not update it on save.
   pill and violations update live as they type.
 - The comp persists across a reload and an app restart, still bound to its ruleset
   version.
-- Ship search only offers what the ruleset lists; with **Enforce rules ON** an illegal
-  add or swap is refused, with it **OFF** the comp goes red but the edit stands.
+- Ship search only offers what the ruleset lists and annotates what each pick would cost
+  and break; every add and swap stands, and the comp goes red naming the violation.
 - An in-place hull swap reprices every affected duplicate, both directions.
 - One slot may be the flagship; a second is refused.
 - A viewer can read a comp but not edit it; a character with no grant **404s** on it.

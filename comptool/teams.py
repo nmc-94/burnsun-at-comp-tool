@@ -20,7 +20,6 @@ never silently dropped.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated
@@ -31,6 +30,7 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from .access import authorize, live
 from .auth.dependencies import current_viewer
 from .db import get_session
 from .esi import CharacterResolver, Resolution, get_character_resolver
@@ -119,12 +119,6 @@ class GrantDetail(_Response):
     created_at: datetime
 
 
-@dataclass(frozen=True, slots=True)
-class _Access:
-    team: Team
-    level: AccessLevel
-
-
 def _summary(team: Team, level: AccessLevel) -> TeamSummary:
     return TeamSummary(
         id=team.id,
@@ -148,44 +142,6 @@ def _grant(grant: TeamGrant, resolution: Resolution | None = None) -> GrantDetai
         resolution=resolution.value if resolution is not None else None,
         created_at=grant.created_at,
     )
-
-
-def _not_found(team_id: uuid.UUID) -> HTTPException:
-    # One answer for "no such team" and for "not yours", identical down to the message.
-    # Anything that distinguishes them turns this route into a way to discover which
-    # team ids are real.
-    return HTTPException(status_code=404, detail=f"No team {str(team_id)!r}")
-
-
-def _authorize(
-    session: Session, team_id: uuid.UUID, viewer: Viewer, required: AccessLevel
-) -> _Access:
-    """The only way a route reaches a team.
-
-    Grants are eager-loaded because the resolver takes them explicitly and the grant
-    routes need them anyway, so the whole decision costs two queries.
-    """
-    team = session.scalar(
-        select(Team).where(Team.id == team_id).options(selectinload(Team.grants))
-    )
-    if team is None:
-        raise _not_found(team_id)
-    level = resolve_level(team, team.grants, viewer)
-    if level < required:
-        raise _not_found(team_id)
-    return _Access(team=team, level=level)
-
-
-def _live(access: _Access) -> Team:
-    """Refuse to write to an archived team.
-
-    A conflict rather than the 404 the permission rule uses: archiving is not a loss of
-    permission, the team is plainly visible, and the way out — restore it — is something
-    the caller can actually do.
-    """
-    if access.team.archived_at is not None:
-        raise HTTPException(status_code=409, detail=f"Team {access.team.name!r} is archived")
-    return access.team
 
 
 def _find_grant(session: Session, team: Team, grant_id: uuid.UUID) -> TeamGrant:
@@ -257,7 +213,7 @@ def team_detail(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> TeamSummary:
-    access = _authorize(session, team_id, viewer, AccessLevel.VIEWER)
+    access = authorize(session, team_id, viewer, AccessLevel.VIEWER)
     return _summary(access.team, access.level)
 
 
@@ -268,8 +224,8 @@ def rename_team(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> TeamSummary:
-    access = _authorize(session, team_id, viewer, AccessLevel.OWNER)
-    team = _live(access)
+    access = authorize(session, team_id, viewer, AccessLevel.OWNER)
+    team = live(access)
     team.name = body.name
     session.commit()
     return _summary(team, access.level)
@@ -287,7 +243,7 @@ def archive_team(
     the ruleset versions they were built against are pinned against exactly this kind of
     tidying. Archiving is reversible; deleting would not be.
     """
-    access = _authorize(session, team_id, viewer, AccessLevel.OWNER)
+    access = authorize(session, team_id, viewer, AccessLevel.OWNER)
     if access.team.archived_at is None:
         access.team.archived_at = datetime.now(tz=UTC)
         session.commit()
@@ -300,7 +256,7 @@ def restore_team(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> TeamSummary:
-    access = _authorize(session, team_id, viewer, AccessLevel.OWNER)
+    access = authorize(session, team_id, viewer, AccessLevel.OWNER)
     if access.team.archived_at is not None:
         access.team.archived_at = None
         session.commit()
@@ -314,7 +270,7 @@ def list_grants(
     viewer: Viewer = Depends(current_viewer),
 ) -> list[GrantDetail]:
     """Who is on the team. Readable by the team, editable only by its owner."""
-    access = _authorize(session, team_id, viewer, AccessLevel.VIEWER)
+    access = authorize(session, team_id, viewer, AccessLevel.VIEWER)
     return [_grant(grant) for grant in sorted(access.team.grants, key=lambda g: g.created_at)]
 
 
@@ -333,8 +289,8 @@ def add_grant(
     and granting nothing until an id is attached. Access must never hinge on whether a
     third-party service answered.
     """
-    access = _authorize(session, team_id, viewer, AccessLevel.OWNER)
-    team = _live(access)
+    access = authorize(session, team_id, viewer, AccessLevel.OWNER)
+    team = live(access)
     name = body.character_name
 
     found = resolve(name)
@@ -364,8 +320,8 @@ def change_grant(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> GrantDetail:
-    access = _authorize(session, team_id, viewer, AccessLevel.OWNER)
-    grant = _find_grant(session, _live(access), grant_id)
+    access = authorize(session, team_id, viewer, AccessLevel.OWNER)
+    grant = _find_grant(session, live(access), grant_id)
     grant.level = _GRANTABLE[body.level]
     session.commit()
     return _grant(grant)
@@ -378,8 +334,8 @@ def remove_grant(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> Response:
-    access = _authorize(session, team_id, viewer, AccessLevel.OWNER)
-    session.delete(_find_grant(session, _live(access), grant_id))
+    access = authorize(session, team_id, viewer, AccessLevel.OWNER)
+    session.delete(_find_grant(session, live(access), grant_id))
     session.commit()
     return Response(status_code=204)
 
@@ -399,8 +355,8 @@ def resolve_grant(
     character. Stale *names* on resolved grants are refreshed at sign-in instead, where
     the character has just proved both their id and their name.
     """
-    access = _authorize(session, team_id, viewer, AccessLevel.OWNER)
-    grant = _find_grant(session, _live(access), grant_id)
+    access = authorize(session, team_id, viewer, AccessLevel.OWNER)
+    grant = _find_grant(session, live(access), grant_id)
     if grant.subject_id is not None:
         return _grant(grant, Resolution.RESOLVED)
 

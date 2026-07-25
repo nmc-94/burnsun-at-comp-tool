@@ -258,23 +258,22 @@ of comp tiles* rather than a single fit as in BurnSun.
 
 - Add/remove/reorder ships in a comp from an **inline ship search** with
   name/group/faction/tech-level filtering. The search is **legality-aware**, and
-  how hard that awareness bites depends on the enforcement toggle (below): with
-  enforcement **on**, it presents only hulls that are **legal to add right now**
-  given the rest of the comp (allowed by the ruleset, within remaining budget
-  accounting for the inflation this add would incur, within the hull-size caps,
-  within the per-match logi limit); with enforcement **off** (default), it offers
-  the broader roster but **annotates** which additions would be illegal and why,
-  so the guidance is always there without blocking exploration.
+  that awareness informs rather than gates: it offers every hull the ruleset
+  lists and **annotates** what each pick would cost and which rule it would newly
+  break — over budget accounting for the inflation this add would incur, over a
+  hull-size cap, past the per-match logi limit. The guidance is always there and
+  never blocks exploration.
 - **Inline hull swap (in-place replacement).** Any row that already holds a hull
   offers a fast, in-place swap: activate the row, get the same inline
   legality-aware search, pick a replacement, done — no separate dialog, no
-  remove-then-re-add dance. Crucially, the swap's legality is computed **as if the
-  row's current hull were absent** (its points and hull-size slot are freed
-  first), so the alternatives that "fit" are exactly those that fit *in that row*
-  — the search filters to them under enforcement, and merely annotates them when
-  enforcement is off. This reuses BurnSun's proven functional-swap pattern
-  (module/addition swap) applied to hulls. Swapping preserves the row's pilot
-  assignment and any flagship designation where the replacement remains eligible.
+  remove-then-re-add dance. Crucially, the swap is judged **as if the row's
+  current hull were absent** (its points and hull-size slot are freed first), so
+  a battleship replacing a battleship is not reported as a third one, and the
+  points move by the difference rather than by the newcomer's list price. This
+  reuses BurnSun's proven functional-swap pattern (module/addition swap) applied
+  to hulls. Swapping preserves the row's flagship designation; whether the
+  replacement is *eligible* to hold it is a rule, and is reported rather than
+  silently resolved.
 - Show, live as the user edits:
   - **running point total** and **remaining budget** against the cap (200), plus
     **points left on the table** (unspent points, which score for the opponent);
@@ -287,36 +286,26 @@ of comp tiles* rather than a single fit as in BurnSun.
     each pointing at the offending slot(s).
 - Designate one slot as the **flagship** (only if flagship-eligible); reflect its
   effect on the battleship count cap and label it in the lineup.
-- **Rule enforcement is a toggle — default OFF.** Enforcement is a build-time
-  assist the user can switch on or off, not a fixed policy. Legality is **always
-  computed and shown**; the toggle only governs whether illegal *edits are
-  prevented*:
-  - **Off (default) — permit + flag.** The user can build anything; the tile
-    continuously checks legality and, whenever the comp is illegal, **highlights
-    it and enumerates every reason** — over budget, over ship-count (>10), over a
-    hull-size cap, banned/omitted ship, over the per-match logi limit, illegal
-    flagship, etc. — each tied to the offending row(s). Nothing is blocked. This
-    is the freeform theorycrafting mode, and it is the default so exploration is
-    never fought.
-  - **On — legal by construction.** The constraint-gating goes active: filtered
-    search offers only hulls that fit, drops/swaps that would break a rule are
-    refused, and duplicates past a cap are blocked — so an illegal comp cannot be
-    assembled in the first place.
-  - **Scope (assumed):** a **per-user build-assist** setting (a global default,
-    and/or per-tile), *not* a shared property of the comp — your toggle never
-    changes how a teammate edits, and the comp's stored legality status is
-    objective. The server stays authoritative for legality either way (§6.5).
-    Confirm the scope — §9.3.
-  - **Re-validation still surfaces illegality that wasn't built** (in either
-    mode). When a ruleset changes (points/bans move — §4.2) or a comp is opened
-    under a newer ruleset, a previously-legal comp can *become* illegal; the tool
-    must represent and explain it (itemized violations, per offending row,
-    with what-to-fix). This is why checking and enforcement are separate concerns
-    over one engine — and why the "enumerate the reasons" view exists even in
-    enforcement mode.
-  - **Transient edits are a non-issue off**, and even on, in-place swap frees the
-    row first so the common "replace a big ship with a small one" never needs an
-    illegal intermediate state.
+- **Rules are reported, never enforced.** Legality is always computed and always
+  shown, and no edit is ever refused. The user can build anything; the tile
+  continuously checks legality and, whenever the comp is illegal, **highlights it
+  and enumerates every reason** — over budget, over ship-count (>10), over a
+  hull-size cap, banned/omitted ship, over the per-match logi limit, illegal
+  flagship — each tied to the offending row(s).
+  - **Why not a toggle.** An earlier draft carried an enforcement switch with a
+    "legal by construction" mode behind it, defaulting to off. It was cut before
+    it was built. A tool that sometimes refuses an edit has to be understood
+    twice, teaches nothing at the moment it says no, and makes every illegal
+    intermediate state — which theorycrafting is *made of* — into a fight. The
+    tool states what is wrong and leaves the judgement with the person building.
+  - **Re-validation still surfaces illegality that wasn't built.** When a ruleset
+    changes (points/bans move — §4.2) or a comp is opened under a newer ruleset,
+    a previously-legal comp can *become* illegal; the tool must represent and
+    explain it (itemized violations, per offending row, with what-to-fix). No
+    amount of gating at build time could have prevented these, which is the other
+    reason the reporting path is the only path.
+  - Legality is computed **client-side** and is not re-checked on the server
+    (§6.5): the server stores what a comp contains, never whether it is legal.
 - Assign a pilot to a slot; warn (not block) when the same pilot is assigned to
   more ships than a single fielded lineup allows — an in-progress draft may be
   only partly crewed, so pilot double-assignment is a warning, not a hard
@@ -340,12 +329,8 @@ This principle should guide every workspace interaction. Concretely:
   partial derivation.
 - **Drag a hull from one comp to another (copy).** Drag a row from tile A onto
   tile B to **copy** that hull into B (the source is unchanged). The drop follows
-  the same enforcement rule as inline add: with enforcement **on** for B, the
-  drop is accepted only if the hull fits (allow-list, remaining budget incl.
-  inflation, hull-size caps, logi limit) and is otherwise refused with a "won't
-  fit here" cue; with enforcement **off**, the drop always lands and B simply
-  flags the resulting illegality. Dragging a multi-selection copies every row
-  (and, under enforcement, reports any that couldn't be placed).
+  the same rule as inline add: it always lands, and B flags whatever illegality
+  results. Dragging a multi-selection copies every row.
 - **Natural extensions to keep the model open to** (not all necessarily MVP):
   dropping onto an occupied row to **swap** it in place; a modifier key to
   **move** (cut) instead of copy; and dragging hull(s) onto empty workspace to
@@ -512,8 +497,8 @@ should stay aware of it so it lands as an addition, not a rewrite.
   a hull, assign a pilot, tag, move a tile), which makes this far more tractable
   than document collaboration:
   - Favor a **server-authoritative operation model** — each edit is an operation
-    applied to canonical server state, validated (incl. legality + the
-    enforcement toggle, §4.1), then broadcast to peers — over a full CRDT/OT
+    applied to canonical server state, validated for *shape* (§4.1 keeps legality
+    out of the server entirely), then broadcast to peers — over a full CRDT/OT
     stack, unless fine-grained simultaneous conflicts prove common.
   - Consider **coarse soft-locks / presence hints** at the row, tile, or comp
     level ("someone is editing this") to avoid clobbering, reusing the lock +
@@ -841,13 +826,11 @@ owner. What remains open are design calls, not facts.
   and flagship status** carry over (where still valid) vs. reset is a refinement
   to confirm. Assumed: hull + notes carry; pilot carries if unambiguous; flagship
   designation drops on copy (a comp holds only one).
-- **Rule-enforcement toggle — scope.** *Resolved:* enforcement is a toggle,
-  **default OFF** (freeform permit-and-flag), with an opt-in "legal by
-  construction" mode (§4.1). *Open:* the toggle's **scope** — assumed a per-user
-  build-assist (global default and/or per-tile) that never changes a comp's
-  objective legality or a teammate's editing; alternative is a per-comp shared
-  property. Confirm. Also confirm whether **locking/marking a comp "final"**
-  should require legality regardless of the toggle.
+- **Rule-enforcement toggle — scope.** *Resolved by removal:* there is no
+  toggle. Rules are reported and never enforced (§4.1), which settles the scope
+  question — per-user versus per-comp — by leaving nothing to scope. Marking a
+  comp "final" is likewise not gated on legality; if such a state arrives it is a
+  statement about the team's intent, not about the rules.
 - **Multiple concurrent tournaments/rulesets:** assume one active ruleset at a
   time, but keep the data model version-aware from day one.
 - **Archetype cardinality:** single archetype per comp (assumed) vs. multiple —
@@ -871,11 +854,10 @@ owner. What remains open are design calls, not facts.
   duplicate surcharge, ship-count and hull-size caps, per-match logi limit,
   flagship designation, and **itemized legality that highlights an illegal comp
   and enumerates every reason**.
-- **Rule-enforcement toggle (default OFF):** default freeform (permit + flag),
-  with an opt-in "legal by construction" mode that gates search/swap/drops.
+- **Rules reported, never enforced:** the tile always says what is wrong and
+  never refuses an edit.
 - **Cross-tile iteration:** multi-select rows → new comp (baseline extraction /
-  partial fork), and **drag a hull from one comp to another to copy it**
-  (legality-gated so illegal drops are refused).
+  partial fork), and **drag a hull from one comp to another to copy it**.
 - **At-a-glance comparison** across the open tiles (the many-on-screen layout),
   plus a basic explicit compare view for two+ selected comps.
 - Creator tracking on every comp.

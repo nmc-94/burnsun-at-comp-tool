@@ -250,23 +250,25 @@ from Phase C, built on the ingester's existing functions.
 > choice for a JWKS-verified token and for Fernet at rest. Added beyond the plan:
 > `Team.archived_at`, because §4.3 asks for archive rather than delete.
 
-**Phase E — Single live-validating comp builder.** Build the `HANDOFF.md` **comp
-tile** (name · issue-flag · **± delta pill** green/amber/red · archetype+tag chips ·
-**fixed 10-row scaffold** with the dup-surcharge column · flagship oval pill ·
-footer · **violations popover**) inside a **minimal single-comp shell** — one comp
-in focus, persisted — not yet the multi-tile board. Includes inline
+**Phase E — Single live-validating comp builder.** *Done, with the enforcement toggle
+cut.* Built the `HANDOFF.md` **comp tile** (name · issue-flag · **± delta pill**
+green/amber/red · **fixed 10-row scaffold** with the dup-surcharge column · flagship
+oval pill · footer · **violations popover**) inside a **minimal single-comp shell** —
+one comp in focus, persisted — not yet the multi-tile board. Includes inline
 **legality-aware ship search** (add) + inline **in-place hull swap** (computed as if
-the row's hull were absent), the **Enforce-rules toggle (default OFF)**, flagship
-designation, and hull icons via the configurable helper. **This closes the vertical
-slice: a real user builds a real, live-validated (client-side) comp.**
+the row's hull were absent), flagship designation, and hull icons via the configurable
+helper. **This closes the vertical slice: a real user builds a real, live-validated
+(client-side) comp.**
 
-> **Two notes before starting.** The tile's **chip row has no data behind it yet**:
-> `Comp` was modelled in Phase B without `archetype`, `tags` or `forked_from_comp_id`,
-> and the plan puts all three in Phase H. Render the row from nothing, or move those
-> columns forward deliberately — do not discover it halfway through the tile. And
-> `teams.py`'s `_authorize` is the seam comp routes need (it answers existence and
-> permission together, which is what makes under-privilege a 404); it is module-private
-> today and wants promoting to a shared home rather than copying.
+> **Three notes on what changed.** The **Enforce-rules toggle was removed rather than
+> built**: rules are reported and never enforced (§4.1), which also settled the
+> per-user-versus-per-comp scope question by leaving nothing to scope, and meant the
+> phase needed no migration — `0003` is still head. The tile's **chip row has no data
+> behind it**, so it renders as a reserved empty band and `archetype`, `tags` and
+> `forked_from_comp_id` stay in Phase H. And `teams.py`'s `_authorize` was promoted to
+> `comptool/access.py` as `authorize`/`live`/`Access`/`team_not_found`, where comp routes
+> reach it one level down — a comp answers the same 404 for "not there" and "not yours"
+> as its team does, and never in its team's words.
 
 ### — Post-v1 (the full workspace) —
 
@@ -277,8 +279,9 @@ archetype), tiles independently memoized, and **layout persistence** (tabs, open
 comps, sizes).
 
 **Phase G — Cross-tile iteration & comparison.** **Multi-select rows → new comp**
-(partial fork) and **drag a hull between comps to copy** (legality-gated under
-enforcement), plus the explicit **compare view** across selected comps.
+(partial fork) and **drag a hull between comps to copy** — the drop always lands and
+the target flags whatever it breaks — plus the explicit **compare view** across
+selected comps.
 
 **Phase H — Team content.** Creator tracking, per-comp **comments**, **fork/copy
 with lineage**, and **Archetype (single) + Tags (multi)** via the reused chip editor
@@ -310,8 +313,9 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
   three are covered by tests, and only the live SSO round trip needs a person.)*
 - **UI:** `docker compose up` — which now arrives with the ruleset already published —
   then rebuild the mockup's example comps in tiles, confirm live totals / delta pill /
-  violations popover match the mockup, and verify the enforcement toggle gates
-  add/swap/drag. Note the mockup's **duplicate-inflation example carries stale
+  violations popover match the mockup, and verify an illegal add or swap still lands
+  and is flagged rather than refused. Note the mockup's **duplicate-inflation example
+  carries stale
   figures**: it was baked before the surcharge was settled as retroactive, so the
   engine is right and that one panel is not.
 
@@ -328,7 +332,9 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
   example comp in `comp-tool-mockup.html`, whose baked figures assumed a marginal
   surcharge (see decision 4).
 
+**Settled since:**
+- **Enforcement-toggle scope — resolved by removal (Phase E).** There is no toggle:
+  rules are reported and never enforced, so there is no scope to decide and no column
+  to add. Marking a comp "final" is likewise not gated on legality.
+
 **Still open (do not block the plan):**
-- **Enforcement-toggle scope** — per-user build assist (assumed) vs. per-comp shared
-  property; and whether locking a comp "final" requires legality. (Deferrable to the
-  detailed-planning session.)

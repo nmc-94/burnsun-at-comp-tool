@@ -27,8 +27,10 @@ collaboration, and the library-browser view.
 ## Workspace layout
 
 - **Top bar (app-wide):** BurnSun logo + wordmark · ruleset chip (`ATXXII · v2026-07-23
-  · Fenris Creations`, green dot = loaded) · team switcher · **Enforce rules** toggle
-  (per §4.1, default OFF) · team/people icon · character avatar.
+  · Fenris Creations`, green dot = loaded) · team switcher · team/people icon ·
+  character avatar. (An **Enforce rules** toggle sat here in an earlier pass. It was cut
+  before it was built — rules are reported and never enforced, per §4.1 — so the mockup's
+  `.enf-toggle` styles are dead and should not be ported.)
 - **Library rail (left, ~236px):** header `Team comps` + count, a search box, and an
   accordion of the team's comps grouped by **archetype** (each leaf: hull icon ·
   legality dot green/red · name · point total). No "Shared" tab — every comp is shared

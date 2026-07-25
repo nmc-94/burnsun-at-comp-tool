@@ -18,5 +18,8 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    // The default environment stays `node`: almost every test here is a pure module and
+    // pays nothing for a DOM it never touches. The few that render say so for themselves
+    // with an `@vitest-environment jsdom` docblock.
   },
 })

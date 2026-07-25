@@ -19,6 +19,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from . import __version__
 from .auth.routes import router as auth_router
+from .comps import router as comps_router
+from .comps import team_router as team_comps_router
 from .db import dispose_db, get_engine, init_db
 from .health import router as health_router
 from .logging_config import configure_logging
@@ -66,6 +68,10 @@ app.include_router(health_router)
 app.include_router(rulesets_router)
 app.include_router(auth_router)
 app.include_router(teams_router)
+# Comps arrive as two routers because they are addressed two ways: nested under a team to
+# list and create, and on their own id thereafter.
+app.include_router(team_comps_router)
+app.include_router(comps_router)
 
 # Hashed, immutable bundles. Mounted only when a build is present (backend-only dev/CI
 # runs without a web/dist); the catch-all handles the index and other root files.

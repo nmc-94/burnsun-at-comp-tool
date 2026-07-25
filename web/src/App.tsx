@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { ApiError, request } from './api'
 import { brand } from './brand/brandConfig'
+import CompScreen from './comps/CompScreen'
 import type { Session } from './session'
 import { fetchSession, signIn } from './session'
 import TeamList from './teams/TeamList'
@@ -20,8 +21,12 @@ interface HealthResponse {
 
 // No router yet. One comp in focus is Phase E's shape and a board of tabs is Phase F's;
 // a router retrofitted now would be designed for neither. The cost is no deep link to a
-// team, which nothing yet depends on.
-type Screen = { kind: 'teams' } | { kind: 'team'; id: string }
+// team or a comp, which nothing yet depends on.
+type Screen =
+  | { kind: 'teams' }
+  | { kind: 'team'; id: string }
+  // A comp carries the team it came from so closing it returns where it was opened.
+  | { kind: 'comp'; id: string; teamId: string }
 
 export default function App() {
   const [health, setHealth] = useState<HealthState>({ kind: 'loading' })
@@ -76,15 +81,7 @@ export default function App() {
         </span>
       </header>
 
-      {session?.character ? (
-        screen.kind === 'teams' ? (
-          <TeamList onOpen={(id) => setScreen({ kind: 'team', id })} />
-        ) : (
-          <TeamScreen teamId={screen.id} onBack={() => setScreen({ kind: 'teams' })} />
-        )
-      ) : (
-        <SignedOut session={session} />
-      )}
+      {session?.character ? renderScreen(screen, setScreen) : <SignedOut session={session} />}
 
       <footer className="app-footer">
         <span className="health">
@@ -98,6 +95,25 @@ export default function App() {
       </footer>
     </main>
   )
+}
+
+// A switch rather than nested ternaries: at three arms the ternary stopped being readable,
+// and Phase F adds a fourth.
+function renderScreen(screen: Screen, go: (screen: Screen) => void) {
+  switch (screen.kind) {
+    case 'teams':
+      return <TeamList onOpen={(id) => go({ kind: 'team', id })} />
+    case 'team':
+      return (
+        <TeamScreen
+          teamId={screen.id}
+          onBack={() => go({ kind: 'teams' })}
+          onOpenComp={(id) => go({ kind: 'comp', id, teamId: screen.id })}
+        />
+      )
+    case 'comp':
+      return <CompScreen compId={screen.id} onBack={() => go({ kind: 'team', id: screen.teamId })} />
+  }
 }
 
 function SignedOut({ session }: { session: Session | null }) {

@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./comp-tile.css";
 
 * {
   box-sizing: border-box;

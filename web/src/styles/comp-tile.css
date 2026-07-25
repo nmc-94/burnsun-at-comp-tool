@@ -1,0 +1,432 @@
+/* The comp tile, from docs/comp-tool-mockup.html — the locked design.
+ *
+ * The row grid is the load-bearing part. Fixed track widths are what keep the cost column
+ * aligned all the way down the scaffold, filled rows and empty ones alike, so a hull with
+ * a long name cannot shove the numbers out of line.
+ *
+ * Colours come from tokens.css and nothing here introduces one. No gradients, blur, glow
+ * or shadow either, with a single exception noted at the popover: it is an overlay rather
+ * than app chrome. */
+
+/* The tile is wider than a settings card, so the shell opens up for this screen rather
+   than the global max-width moving for every screen. */
+.card-wide {
+  max-width: 560px;
+}
+
+.ruleset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.ruleset-chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.tile {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-1);
+  border-radius: 11px;
+  width: 100%;
+}
+.thead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+}
+.thead .nm {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-name {
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+.tile-name:hover,
+.tile-name:focus {
+  border-color: var(--line-2);
+  background: var(--bg-soft);
+}
+.tbody {
+  padding: 0 11px 10px;
+}
+.tfoot {
+  border-top: 0.5px solid var(--line-1);
+  padding: 6px 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+.tfoot .fa {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tfoot .spacer {
+  flex: 1;
+}
+.tfoot .faint {
+  color: var(--text-4);
+}
+
+/* Held open for the archetype and tag chips a later phase adds, so their arrival is a
+   change of content rather than a relayout. */
+.chipsrow-reserved {
+  height: 19px;
+  margin: 8px 0 3px;
+}
+
+/* The delta pill: a signed distance from the cap, not a gauge. Comps cluster within a
+   point or two of the cap, so a bar would read as full and tell nobody anything. */
+.dpill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: 11.5px;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+.dpill.exact {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+}
+/* Under budget is legal and still worth flagging: unfielded points score for the
+   opponent. Hence the accent, not danger. */
+.dpill.under {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.dpill.over {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+.vanchor {
+  position: relative;
+  display: inline-flex;
+}
+.vtrig {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.vtrig:hover {
+  background: color-mix(in srgb, var(--danger) 24%, transparent);
+}
+.vtrig svg {
+  width: 13px;
+  height: 13px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+.trow {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 20px 26px;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 4px;
+  border-radius: 3px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+.trow:hover {
+  background: var(--bg-soft);
+}
+/* A row some violation names, so the popover's words have somewhere to point. */
+.trow.blamed .cost {
+  color: var(--danger);
+}
+.trow.highlighted {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.trow .ic {
+  width: 18px;
+  height: 18px;
+}
+.trow .ic .hicon {
+  width: 18px;
+  height: 18px;
+}
+.trow .nm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.trow .nm .t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.linkish {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.linkish:disabled {
+  cursor: default;
+}
+/* The surcharge gets its own track so it can never push the cost column around. Every
+   copy of a duplicated hull shows the same figure — the charge is retroactive, not a
+   penalty on whichever copy was added last. */
+.trow .dup {
+  font-family: var(--font-brand);
+  font-size: 9.5px;
+  color: var(--accent);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.trow .cost {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.trow.empty .nm .t,
+.trow.empty .cost {
+  color: var(--text-5);
+}
+.trow.empty .ph {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 1px dashed var(--line-2);
+  border-radius: 4px;
+}
+.trow.empty:not(:disabled) {
+  cursor: pointer;
+}
+.trow.empty:not(:disabled):hover {
+  background: var(--accent-soft);
+}
+.trow.empty:not(:disabled):hover .nm .t,
+.trow.empty:not(:disabled):hover .cost {
+  color: var(--accent);
+}
+.trow.empty:not(:disabled):hover .ph {
+  border-color: var(--accent);
+}
+.trow-open {
+  display: block;
+  height: auto;
+  padding: 4px;
+}
+
+/* Flagship: an oval pill after the name and nothing else — no margin bar, no row tint. */
+.flagpill {
+  flex: 0 0 auto;
+  font-family: var(--font-brand);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  line-height: 1.3;
+}
+.flagset,
+.rowclear {
+  border: 0;
+  background: transparent;
+  color: var(--text-4);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    color 0.12s;
+}
+/* Both are controls, and controls only appear on the row being worked on. The designated
+   row deliberately does not pin its star open: the pill already says it is the flagship,
+   and a permanent star beside a permanent pill says the same thing twice. */
+.trow:hover .flagset,
+.trow:hover .rowclear,
+.flagset:focus-visible,
+.rowclear:focus-visible {
+  opacity: 1;
+}
+.flagset[aria-pressed="true"] {
+  color: var(--accent);
+}
+.flagset:hover,
+.rowclear:hover {
+  color: var(--text-1);
+}
+
+/* The one place a shadow is allowed: this is an overlay, not app chrome. */
+.vpop {
+  position: absolute;
+  top: 26px;
+  right: 0;
+  z-index: 30;
+  width: 256px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+  padding: 11px;
+}
+:root:not([data-theme="dark"]) .vpop {
+  box-shadow: 0 8px 22px rgba(13, 18, 32, 0.12);
+}
+.vpop .vh {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: 11.5px;
+  color: var(--danger);
+  margin-bottom: 9px;
+}
+.vpop .vh svg {
+  width: 13px;
+  height: 13px;
+}
+.vitem {
+  display: flex;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 0.5px solid var(--line-1);
+  text-align: left;
+}
+.vitem .vd {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  margin-top: 4px;
+  flex: 0 0 auto;
+}
+.vitem .vt {
+  font-size: 11.5px;
+}
+.vitem .vt b {
+  font-weight: 500;
+}
+.vitem .vt .fix {
+  display: block;
+  color: var(--text-3);
+  font-size: 10.5px;
+  margin-top: 1px;
+}
+
+/* The inline hull picker, opened on a row. */
+.shipsearch-input {
+  width: 100%;
+}
+.shipsearch-results {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 190px;
+  overflow-y: auto;
+}
+.shipsearch-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 24px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.shipsearch-option:hover {
+  background: var(--accent-soft);
+}
+.shipsearch-option .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shipsearch-option .cost {
+  font-family: var(--font-brand);
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* What the pick would break, stated — never a reason to withhold it. */
+.shipsearch-option .warns {
+  grid-column: 2 / -1;
+  color: var(--danger);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comp-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+.comp-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 0.5px solid var(--line-1);
+}
+.comp-name {
+  font-family: var(--font-brand);
+  font-size: 12px;
+}
