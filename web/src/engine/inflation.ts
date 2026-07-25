@@ -1,26 +1,27 @@
-// Duplicate-hull inflation: fielding more than one of the same hull costs extra.
+// Duplicate-hull inflation: fielding more than one of the same hull costs extra, and the
+// surcharge falls on *every* copy — not just the extra ones.
 //
-// Rulesets state that every additional copy adds points, but not always whether the
-// surcharge repeats at a fixed size or grows with each copy. Both readings live here
-// behind one function and the ruleset says which applies, so the two never diverge in
-// the running total.
-
-import type { InflationMode } from './types'
+// Worked through with an Abaddon (base 40, inflation value 4):
+//
+//   one copy    →  40 each  (40 total)
+//   two copies  →  44 each  (88 total)
+//   three       →  48 each  (144 total)
+//
+// So the surcharge is (copies - 1) x the hull's inflation value, charged per copy. Note
+// what this means for a builder: adding a hull re-prices the copies already in the comp,
+// so the cost of an addition cannot be shown as a fixed per-hull delta — the comp has to
+// be re-evaluated.
+//
+// The inflation value itself is per-hull ruleset data and never derived from hull size;
+// rulesets carry deliberate exceptions.
 
 /**
- * The surcharge one copy of a hull incurs.
+ * The surcharge each copy of a hull carries, given how many of it the comp fields.
  *
- * The two modes agree for the second copy and only diverge from the third onward, so a
- * comp with a single duplicate pair cannot tell them apart.
- *
- * @param copyIndex 0 for the first copy of a hull in the comp, 1 for the second, ...
- * @param inflationValue The hull's per-copy increment, read verbatim from the ruleset.
+ * @param copies How many of this exact hull are in the comp.
+ * @param inflationValue The hull's increment, read verbatim from the ruleset.
  */
-export function duplicateSurcharge(
-  copyIndex: number,
-  inflationValue: number,
-  mode: InflationMode,
-): number {
-  if (copyIndex <= 0) return 0
-  return mode === 'escalating' ? copyIndex * inflationValue : inflationValue
+export function duplicateSurcharge(copies: number, inflationValue: number): number {
+  if (copies <= 1) return 0
+  return (copies - 1) * inflationValue
 }

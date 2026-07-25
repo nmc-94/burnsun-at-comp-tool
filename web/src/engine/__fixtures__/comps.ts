@@ -1,9 +1,10 @@
 // Comps for the golden corpus.
 //
 // The first group is the four example comps from docs/comp-tool-mockup.html, which the
-// design was drawn against — their totals are the numbers the mockup renders, so the
-// engine reproducing them exactly is the strongest single check we have. The rest are
-// built to isolate one rule each.
+// design was drawn against, so the engine reproducing their totals is the strongest
+// single check we have. Three of the four match the mockup exactly; the fourth does not,
+// and deliberately so — see the note on it below. The rest are built to isolate one rule
+// each.
 
 import type { Comp, CompSlot, ViolationCode } from '../types'
 import { SHIP, UNPRICED_TYPE_ID } from './atxxii-mini'
@@ -46,14 +47,19 @@ export const mockupComps: readonly MockupCase[] = [
     violationCodes: [],
   },
   {
-    label: 'Dual-Orthrus Kite — duplicate-hull inflation',
+    // The mockup renders this comp as a legal 198, but its example data was built before
+    // the inflation rule was confirmed and charges the surcharge only to the second copy
+    // of a hull. Charged to every copy, as the rule actually works, both Orthrus cost 21
+    // and both Svipul cost 11 — which puts the comp at 201, a point over the cap. The
+    // engine follows the rule; the mockup's own arithmetic is what is out of date.
+    label: 'Dual-Orthrus Kite — duplicate inflation tips it over the cap',
     comp: comp(
       SHIP.machariel, SHIP.megathron, SHIP.scimitar, SHIP.orthrus, SHIP.orthrus,
       SHIP.svipul, SHIP.svipul, SHIP.jackdaw, SHIP.slasher, SHIP.condor,
     ),
-    pointsUsed: 198,
-    legal: true,
-    violationCodes: [],
+    pointsUsed: 201,
+    legal: false,
+    violationCodes: ['over-budget'],
   },
   {
     label: 'Triple-BS Alpha — over budget and over the battleship cap',
@@ -67,11 +73,16 @@ export const mockupComps: readonly MockupCase[] = [
   },
 ]
 
-/** Three copies of one hull — the smallest comp the two inflation readings disagree on. */
+/** The ruleset's own worked example: one, two and three copies of a battleship. */
+export const singleAbaddon = comp(SHIP.abaddon)
+export const doubleAbaddon = comp(SHIP.abaddon, SHIP.abaddon)
+export const tripleAbaddon = comp(SHIP.abaddon, SHIP.abaddon, SHIP.abaddon)
+
+export const doubleSvipul = comp(SHIP.svipul, SHIP.svipul)
 export const tripleSvipul = comp(SHIP.svipul, SHIP.svipul, SHIP.svipul)
 
-/** A pair, which both readings cost identically. */
-export const doubleSvipul = comp(SHIP.svipul, SHIP.svipul)
+/** Duplicates of a hull whose inflation value is zero cost nothing extra. */
+export const tripleRifter = comp(SHIP.rifter, SHIP.rifter, SHIP.rifter)
 
 export const thirdBattleshipWithoutFlagship = comp(
   SHIP.abaddon,

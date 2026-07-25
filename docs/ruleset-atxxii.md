@@ -95,10 +95,11 @@ class table — so both layers must be ingested.
 
 ### 4.2 Duplicate-hull inflation (the "twist")
 
-The inflation rule is back for ATXXII: **each additional copy of the same hull
-adds points, by hull size.** The per-hull-size increments stated in the article:
+The inflation rule is back for ATXXII: **fielding more than one of the same hull
+raises what each of them costs.** The per-hull-size increments stated in the
+article:
 
-| Hull size            | Inflation per extra copy |
+| Hull size            | Inflation value (I)      |
 |----------------------|--------------------------|
 | Frigate              | +0                       |
 | Logistics / T1 Support Frigate | +1             |
@@ -118,13 +119,30 @@ The data contains at least one deliberate per-ship exception: the **Geri**
 the per-ship `Inflation Value` verbatim and must **not** recompute it from hull
 size.
 
-> **OPEN — exact inflation formula (see REQUIREMENTS §9).** The article says
-> "every additional copy adds points" but does not state whether the surcharge
-> is **flat per extra copy** (copy 2 = base+I, copy 3 = base+I) or **escalating**
-> (copy 2 = base+I, copy 3 = base+2I). This is the single most important number
-> still to confirm, because the validation engine's running total depends on it.
-> The Quick Comp Creator's comp-building tab (not captured here) presumably
-> implements it; confirm from that tab or the Discord.
+**Exact formula (confirmed by the owner, 2026-07-24).** The surcharge is
+**retroactive: it applies to every copy of the hull, not only the extra ones**,
+and grows with the number fielded:
+
+> **cost per copy = base + (copies − 1) × I** — so *n* copies total
+> *n × (base + (n − 1) × I)*.
+
+Worked through with an **Abaddon** (base 40, I = 4):
+
+| Copies fielded | Cost each | Comp total |
+|----------------|-----------|------------|
+| 1              | 40        | 40         |
+| 2              | 44        | 88         |
+| 3              | 48        | 144        |
+
+(Three battleships is not itself legal — see §4.3 — but the arithmetic is the
+point.) Note the consequence for a builder UI: because the charge is retroactive,
+**adding a hull re-prices the copies already in the comp**, so the cost of an
+addition cannot be shown as a fixed per-hull delta.
+
+This resolves what was previously the ruleset's one open numeric unknown; earlier
+drafts of this document and of `REQUIREMENTS.md` speculated about a *marginal*
+surcharge (charged only to the second and later copies), which is **not** how the
+rule works.
 
 ### 4.3 Hull-size count caps
 

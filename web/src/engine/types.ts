@@ -24,16 +24,6 @@ export type HullSize =
 /** Which per-match logistics allowance a hull draws from. */
 export type LogisticsGroup = 'cruiser' | 'frigate'
 
-/**
- * How the surcharge for duplicate hulls accumulates.
- *
- * - `flat` — every extra copy adds the same `inflationValue`.
- * - `escalating` — the nth extra copy adds n × `inflationValue`.
- *
- * Which one a tournament uses is part of its ruleset, never assumed.
- */
-export type InflationMode = 'flat' | 'escalating'
-
 /** One hull as the ruleset sees it. */
 export interface RulesetShip {
   readonly typeId: number
@@ -44,8 +34,8 @@ export interface RulesetShip {
   readonly shipClass: string
   readonly hullSize: HullSize
   /**
-   * Points added per extra copy of this exact hull. Ingested verbatim per ship and never
-   * derived from `hullSize` — rulesets carry deliberate per-hull exceptions.
+   * Drives the duplicate-hull surcharge. Ingested verbatim per ship and never derived
+   * from `hullSize` — rulesets carry deliberate per-hull exceptions.
    */
   readonly inflationValue: number
   /** Non-null for logistics hulls, which are exempt from the hull-size caps. */
@@ -69,7 +59,6 @@ export interface Ruleset {
   readonly pointCap: number
   /** Maximum ships a team may field. */
   readonly fieldSize: number
-  readonly inflationMode: InflationMode
   /** Every hull that resolves to a point value, keyed by EVE type id. */
   readonly ships: Readonly<Record<number, RulesetShip>>
   /** The fallback point layer, keyed by `RulesetShip.shipClass`. */
@@ -131,12 +120,12 @@ export interface SlotEvaluation {
   readonly name: string
   /** The resolved point value before duplicate inflation. */
   readonly basePoints: number
-  /** The duplicate-hull surcharge this copy incurs. */
+  /** The duplicate-hull surcharge, which every copy of a hull carries equally. */
   readonly surcharge: number
   /** `basePoints + surcharge` — what this slot actually costs. */
   readonly points: number
-  /** 0 for the first copy of this hull in the comp, 1 for the second, and so on. */
-  readonly copyIndex: number
+  /** How many of this hull the comp fields, this slot included. 1 when it is unique. */
+  readonly copies: number
   readonly hullSize: HullSize | null
   readonly isFlagship: boolean
   /** False when the hull resolves to no point value at all. */

@@ -10,70 +10,63 @@ import { describe, expect, it } from 'vitest'
 import { duplicateSurcharge, evaluate } from './index'
 import type { Comp, Ruleset } from './index'
 import {
+  atxxiiRuleset,
   bannedTyphoonRuleset,
-  escalatingRuleset,
-  flatRuleset,
   prelimRuleset,
   SHIP,
 } from './__fixtures__/atxxii-mini'
 import * as comps from './__fixtures__/comps'
 
-function codes(comp: Comp, ruleset: Ruleset = escalatingRuleset): string[] {
+function codes(comp: Comp, ruleset: Ruleset = atxxiiRuleset): string[] {
   return evaluate(comp, ruleset).violations.map((violation) => violation.code)
 }
 
 describe('duplicateSurcharge', () => {
-  it('charges nothing for the first copy of a hull', () => {
-    expect(duplicateSurcharge(0, 4, 'flat')).toBe(0)
-    expect(duplicateSurcharge(0, 4, 'escalating')).toBe(0)
+  it('charges nothing for a hull the comp fields once', () => {
+    expect(duplicateSurcharge(1, 4)).toBe(0)
+    expect(duplicateSurcharge(0, 4)).toBe(0)
   })
 
-  it('agrees on the second copy and diverges from the third', () => {
-    expect(duplicateSurcharge(1, 2, 'flat')).toBe(2)
-    expect(duplicateSurcharge(1, 2, 'escalating')).toBe(2)
-
-    expect(duplicateSurcharge(2, 2, 'flat')).toBe(2)
-    expect(duplicateSurcharge(2, 2, 'escalating')).toBe(4)
-
-    expect(duplicateSurcharge(3, 2, 'flat')).toBe(2)
-    expect(duplicateSurcharge(3, 2, 'escalating')).toBe(6)
+  it('grows with the number of copies', () => {
+    expect(duplicateSurcharge(2, 4)).toBe(4)
+    expect(duplicateSurcharge(3, 4)).toBe(8)
+    expect(duplicateSurcharge(4, 4)).toBe(12)
   })
 
   it('leaves hulls with no inflation value free to duplicate', () => {
-    expect(duplicateSurcharge(3, 0, 'escalating')).toBe(0)
+    expect(duplicateSurcharge(3, 0)).toBe(0)
   })
 })
 
 describe('the mockup example comps', () => {
-  // These carry at most two copies of any hull, so both inflation readings must agree.
-  for (const ruleset of [escalatingRuleset, flatRuleset]) {
-    for (const example of comps.mockupComps) {
-      it(`${example.label} (${ruleset.inflationMode})`, () => {
-        const { summary, violations } = evaluate(example.comp, ruleset)
+  for (const example of comps.mockupComps) {
+    it(example.label, () => {
+      const { summary, violations } = evaluate(example.comp, atxxiiRuleset)
 
-        expect(summary.pointsUsed).toBe(example.pointsUsed)
-        expect(summary.pointsRemaining).toBe(200 - example.pointsUsed)
-        expect(summary.pointsLeftOnTable).toBe(Math.max(0, 200 - example.pointsUsed))
-        expect(summary.legal).toBe(example.legal)
-        expect(violations.map((violation) => violation.code)).toEqual(example.violationCodes)
-      })
-    }
+      expect(summary.pointsUsed).toBe(example.pointsUsed)
+      expect(summary.pointsRemaining).toBe(200 - example.pointsUsed)
+      expect(summary.pointsLeftOnTable).toBe(Math.max(0, 200 - example.pointsUsed))
+      expect(summary.legal).toBe(example.legal)
+      expect(violations.map((violation) => violation.code)).toEqual(example.violationCodes)
+    })
   }
 
   it('breaks the dual-Orthrus comp down per slot the way the tile renders it', () => {
     const dualOrthrus = comps.mockupComps[2]!
-    const { slots } = evaluate(dualOrthrus.comp, escalatingRuleset)
+    const { slots } = evaluate(dualOrthrus.comp, atxxiiRuleset)
 
-    // Two Orthrus (base 19, inflation 2) and two Svipul (base 10, inflation 1).
-    expect(slots.map((slot) => slot.surcharge)).toEqual([0, 0, 0, 0, 2, 0, 1, 0, 0, 0])
-    expect(slots[3]).toMatchObject({ name: 'Orthrus', basePoints: 19, points: 19, copyIndex: 0 })
-    expect(slots[4]).toMatchObject({ name: 'Orthrus', basePoints: 19, points: 21, copyIndex: 1 })
-    expect(slots[6]).toMatchObject({ name: 'Svipul', basePoints: 10, points: 11, copyIndex: 1 })
+    // Two Orthrus (base 19, inflation 2) and two Svipul (base 10, inflation 1). Both
+    // copies of each carry the surcharge, which is where the mockup's data disagrees.
+    expect(slots.map((slot) => slot.surcharge)).toEqual([0, 0, 0, 2, 2, 1, 1, 0, 0, 0])
+    expect(slots[3]).toMatchObject({ name: 'Orthrus', basePoints: 19, points: 21, copies: 2 })
+    expect(slots[4]).toMatchObject({ name: 'Orthrus', basePoints: 19, points: 21, copies: 2 })
+    expect(slots[5]).toMatchObject({ name: 'Svipul', basePoints: 10, points: 11, copies: 2 })
+    expect(slots[7]).toMatchObject({ name: 'Jackdaw', basePoints: 10, points: 10, copies: 1 })
   })
 
   it('reports the over-budget comp in a stable order', () => {
     const tripleBattleship = comps.mockupComps[3]!
-    const { violations } = evaluate(tripleBattleship.comp, escalatingRuleset)
+    const { violations } = evaluate(tripleBattleship.comp, atxxiiRuleset)
 
     expect(violations[0]).toMatchObject({
       code: 'over-budget',
@@ -87,33 +80,54 @@ describe('the mockup example comps', () => {
 })
 
 describe('duplicate-hull inflation', () => {
-  it('costs a pair identically under both readings', () => {
-    expect(evaluate(comps.doubleSvipul, flatRuleset).summary.pointsUsed).toBe(21)
-    expect(evaluate(comps.doubleSvipul, escalatingRuleset).summary.pointsUsed).toBe(21)
+  // The ruleset's own worked example. An Abaddon costs 40 with an inflation value of 4:
+  // one is 40 each, two are 44 each, three are 48 each.
+  it('prices one Abaddon at 40', () => {
+    const { slots, summary } = evaluate(comps.singleAbaddon, atxxiiRuleset)
+
+    expect(slots.map((slot) => slot.points)).toEqual([40])
+    expect(summary.pointsUsed).toBe(40)
   })
 
-  it('costs a third copy differently under each reading', () => {
-    const flat = evaluate(comps.tripleSvipul, flatRuleset)
-    const escalating = evaluate(comps.tripleSvipul, escalatingRuleset)
+  it('prices two Abaddons at 44 each', () => {
+    const { slots, summary } = evaluate(comps.doubleAbaddon, atxxiiRuleset)
 
-    expect(flat.slots.map((slot) => slot.surcharge)).toEqual([0, 1, 1])
-    expect(flat.summary.pointsUsed).toBe(32)
+    expect(slots.map((slot) => slot.points)).toEqual([44, 44])
+    expect(summary.pointsUsed).toBe(88)
+  })
 
-    expect(escalating.slots.map((slot) => slot.surcharge)).toEqual([0, 1, 2])
-    expect(escalating.summary.pointsUsed).toBe(33)
+  it('prices three Abaddons at 48 each', () => {
+    // Three battleships breach the count cap, but the arithmetic is the point here.
+    const { slots, summary } = evaluate(comps.tripleAbaddon, atxxiiRuleset)
+
+    expect(slots.map((slot) => slot.points)).toEqual([48, 48, 48])
+    expect(summary.pointsUsed).toBe(144)
+  })
+
+  it('charges the surcharge to every copy, not only the extra ones', () => {
+    // The distinction that matters: a marginal reading would make these 21 and 32.
+    expect(evaluate(comps.doubleSvipul, atxxiiRuleset).summary.pointsUsed).toBe(22)
+    expect(evaluate(comps.tripleSvipul, atxxiiRuleset).summary.pointsUsed).toBe(36)
+  })
+
+  it('leaves hulls with no inflation value free to duplicate', () => {
+    const { slots, summary } = evaluate(comps.tripleRifter, atxxiiRuleset)
+
+    expect(slots.map((slot) => slot.surcharge)).toEqual([0, 0, 0])
+    expect(summary.pointsUsed).toBe(12)
   })
 })
 
 describe('two-layer point resolution', () => {
   it('prices a hull the per-ship table omits through its class bucket', () => {
-    const { summary, violations } = evaluate(comps.classPricedHull, escalatingRuleset)
+    const { summary, violations } = evaluate(comps.classPricedHull, atxxiiRuleset)
 
     expect(summary.pointsUsed).toBe(9)
     expect(violations).toEqual([])
   })
 
   it('prefers the individual value over the class value', () => {
-    const { slots, summary } = evaluate(comps.individualOverridesClass, escalatingRuleset)
+    const { slots, summary } = evaluate(comps.individualOverridesClass, atxxiiRuleset)
 
     // Megathron 39 against a Battleship bucket of 40; Maulus 7 against a Tech 1
     // Disruption Frigate bucket of 6.
@@ -122,7 +136,7 @@ describe('two-layer point resolution', () => {
   })
 
   it('rejects a hull neither layer prices', () => {
-    const { slots, violations } = evaluate(comps.unpricedHull, escalatingRuleset)
+    const { slots, violations } = evaluate(comps.unpricedHull, atxxiiRuleset)
 
     expect(violations).toHaveLength(1)
     expect(violations[0]).toMatchObject({ code: 'unlisted-hull', slotIndexes: [0] })
@@ -130,7 +144,7 @@ describe('two-layer point resolution', () => {
   })
 
   it('rejects a hull its class prices but the ruleset excludes', () => {
-    const { violations } = evaluate(comps.bannedHull, escalatingRuleset)
+    const { violations } = evaluate(comps.bannedHull, atxxiiRuleset)
 
     expect(violations).toHaveLength(1)
     expect(violations[0]).toMatchObject({ code: 'banned-hull', message: 'Nestor is banned' })
@@ -141,7 +155,7 @@ describe('count caps', () => {
   it('caps battleships at two without a flagship', () => {
     const { summary, violations } = evaluate(
       comps.thirdBattleshipWithoutFlagship,
-      escalatingRuleset,
+      atxxiiRuleset,
     )
 
     expect(summary.battleshipAllowance).toBe(2)
@@ -150,7 +164,7 @@ describe('count caps', () => {
   })
 
   it('allows a third battleship once one of them is the flagship', () => {
-    const { summary, violations } = evaluate(comps.thirdBattleshipWithFlagship, escalatingRuleset)
+    const { summary, violations } = evaluate(comps.thirdBattleshipWithFlagship, atxxiiRuleset)
 
     expect(summary.battleshipAllowance).toBe(3)
     expect(summary.flagshipSlotIndex).toBe(2)
@@ -159,16 +173,17 @@ describe('count caps', () => {
 
   it('exempts logistics from the hull-size cap', () => {
     // Three Orthrus plus a Scimitar is four cruiser hulls but only three that count.
-    const { summary, violations } = evaluate(comps.threeCruisersPlusLogi, escalatingRuleset)
+    const { summary, violations } = evaluate(comps.threeCruisersPlusLogi, atxxiiRuleset)
 
     expect(summary.hullSizeCounts.Cruiser).toBe(3)
     expect(summary.logisticsCounts).toEqual({ cruiser: 1, frigate: 0 })
-    expect(summary.pointsUsed).toBe(95)
+    // Three Orthrus at 19 + 2x2 each, plus a Scimitar at 32.
+    expect(summary.pointsUsed).toBe(101)
     expect(violations).toEqual([])
   })
 
   it('blames only the slots that count when a size cap is breached', () => {
-    const { summary, violations } = evaluate(comps.fourCruisersPlusLogi, escalatingRuleset)
+    const { summary, violations } = evaluate(comps.fourCruisersPlusLogi, atxxiiRuleset)
 
     expect(summary.hullSizeCounts.Cruiser).toBe(4)
     expect(violations.map((violation) => violation.code)).toEqual(['hull-size-cap'])
@@ -178,7 +193,7 @@ describe('count caps', () => {
   })
 
   it('caps the field size', () => {
-    const { summary, violations } = evaluate(comps.overFieldSize, escalatingRuleset)
+    const { summary, violations } = evaluate(comps.overFieldSize, atxxiiRuleset)
 
     expect(summary.shipCount).toBe(11)
     expect(summary.pointsUsed).toBe(175)
@@ -211,7 +226,7 @@ describe('per-match logistics limit', () => {
 
 describe('flagships', () => {
   it('rejects a hull the ruleset bars from flagship status', () => {
-    const { summary, violations } = evaluate(comps.ineligibleFlagship, escalatingRuleset)
+    const { summary, violations } = evaluate(comps.ineligibleFlagship, atxxiiRuleset)
 
     expect(violations.map((violation) => violation.code)).toEqual(['flagship-not-eligible'])
     // An invalid designation must not raise the battleship allowance.
@@ -237,7 +252,7 @@ describe('flagships', () => {
 
 describe('budget reporting', () => {
   it('treats an empty comp as legal with the whole budget unspent', () => {
-    const { summary, slots, violations } = evaluate(comps.emptyComp, escalatingRuleset)
+    const { summary, slots, violations } = evaluate(comps.emptyComp, atxxiiRuleset)
 
     expect(summary).toMatchObject({
       legal: true,
@@ -252,7 +267,7 @@ describe('budget reporting', () => {
   })
 
   it('reports nothing left on the table once a comp is over budget', () => {
-    const { summary } = evaluate(comps.mockupComps[3]!.comp, escalatingRuleset)
+    const { summary } = evaluate(comps.mockupComps[3]!.comp, atxxiiRuleset)
 
     expect(summary.pointsRemaining).toBe(-24)
     expect(summary.pointsLeftOnTable).toBe(0)
@@ -260,12 +275,12 @@ describe('budget reporting', () => {
 
   it('gives every violation an actionable one-line fix', () => {
     const allViolations = [
-      ...evaluate(comps.mockupComps[3]!.comp, escalatingRuleset).violations,
-      ...evaluate(comps.unpricedHull, escalatingRuleset).violations,
-      ...evaluate(comps.twoLogisticsCruisers, escalatingRuleset).violations,
-      ...evaluate(comps.overFieldSize, escalatingRuleset).violations,
-      ...evaluate(comps.ineligibleFlagship, escalatingRuleset).violations,
-      ...evaluate(comps.twoFlagships, escalatingRuleset).violations,
+      ...evaluate(comps.mockupComps[3]!.comp, atxxiiRuleset).violations,
+      ...evaluate(comps.unpricedHull, atxxiiRuleset).violations,
+      ...evaluate(comps.twoLogisticsCruisers, atxxiiRuleset).violations,
+      ...evaluate(comps.overFieldSize, atxxiiRuleset).violations,
+      ...evaluate(comps.ineligibleFlagship, atxxiiRuleset).violations,
+      ...evaluate(comps.twoFlagships, atxxiiRuleset).violations,
       ...evaluate(comps.mockupComps[1]!.comp, prelimRuleset).violations,
     ]
 
@@ -280,7 +295,7 @@ describe('budget reporting', () => {
 
 describe('purity', () => {
   it('does not touch its inputs and repeats itself exactly', () => {
-    const ruleset: Ruleset = structuredClone(escalatingRuleset)
+    const ruleset: Ruleset = structuredClone(atxxiiRuleset)
     const comp: Comp = structuredClone(comps.mockupComps[2]!.comp)
     const rulesetBefore = structuredClone(ruleset)
     const compBefore = structuredClone(comp)
@@ -294,7 +309,7 @@ describe('purity', () => {
   })
 
   it('runs against frozen inputs', () => {
-    const ruleset = deepFreeze(structuredClone(escalatingRuleset))
+    const ruleset = deepFreeze(structuredClone(atxxiiRuleset))
     const comp = deepFreeze(structuredClone(comps.mockupComps[0]!.comp))
 
     expect(evaluate(comp, ruleset).summary.pointsUsed).toBe(200)

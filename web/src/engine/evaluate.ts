@@ -5,7 +5,9 @@
 // ruleset — no I/O, no clock, no globals, and it never mutates its inputs — so a
 // workspace can run it per comp on every keystroke and callers can memoize on identity.
 //
-// Two passes over the slots: one to resolve and cost them, one to judge them.
+// Three passes over the slots: one to count hulls (duplicate inflation charges every copy
+// of a hull, so a slot cannot be priced before the whole comp is known), one to resolve
+// and cost them, one to judge them.
 
 import { duplicateSurcharge } from './inflation'
 import type {
@@ -44,24 +46,27 @@ function resolvePoints(ship: RulesetShip, ruleset: Ruleset): number | null {
 export function evaluate(comp: Comp, ruleset: Ruleset): LegalityResult {
   const slots: SlotEvaluation[] = []
   const hullSizeCounts: Partial<Record<HullSize, number>> = {}
-  const copiesSoFar = new Map<number, number>()
   const designatedFlagshipIndexes: number[] = []
 
   let pointsUsed = 0
   let logisticsCruisers = 0
   let logisticsFrigates = 0
 
-  // Pass one: resolve every slot, cost it, and tally what the rules count.
+  // Pass one: how many of each hull. The surcharge is retroactive — every copy pays it —
+  // so no slot can be priced until the whole comp has been counted.
+  const copiesByTypeId = new Map<number, number>()
+  for (const slot of comp.slots) {
+    copiesByTypeId.set(slot.typeId, (copiesByTypeId.get(slot.typeId) ?? 0) + 1)
+  }
+
+  // Pass two: resolve every slot, cost it, and tally what the rules count.
   for (const [index, slot] of comp.slots.entries()) {
     const ship = ruleset.ships[slot.typeId]
     const basePoints = ship ? resolvePoints(ship, ruleset) : null
-    const copyIndex = copiesSoFar.get(slot.typeId) ?? 0
-    copiesSoFar.set(slot.typeId, copyIndex + 1)
+    const copies = copiesByTypeId.get(slot.typeId) ?? 1
 
     const surcharge =
-      ship && basePoints !== null
-        ? duplicateSurcharge(copyIndex, ship.inflationValue, ruleset.inflationMode)
-        : 0
+      ship && basePoints !== null ? duplicateSurcharge(copies, ship.inflationValue) : 0
     const points = (basePoints ?? 0) + surcharge
     pointsUsed += points
 
@@ -81,7 +86,7 @@ export function evaluate(comp: Comp, ruleset: Ruleset): LegalityResult {
       basePoints: basePoints ?? 0,
       surcharge,
       points,
-      copyIndex,
+      copies,
       hullSize: ship?.hullSize ?? null,
       isFlagship: slot.isFlagship === true,
       resolved: basePoints !== null,
@@ -102,7 +107,7 @@ export function evaluate(comp: Comp, ruleset: Ruleset): LegalityResult {
       ? ruleset.hullSizeCaps.Battleship
       : ruleset.flagship.battleshipAllowance
 
-  // Pass two: judge.
+  // Pass three: judge.
   const violations: Violation[] = []
   const shipCount = comp.slots.length
   const pointsRemaining = ruleset.pointCap - pointsUsed

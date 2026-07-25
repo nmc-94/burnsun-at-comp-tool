@@ -28,8 +28,9 @@ in-repo:
   `gid=284772315`), plus `sources/README.md` documenting its layout and quirks.
 
 The numeric values in this document are now taken from those captures rather than
-illustrative. **One numeric ambiguity remains open** (the exact duplicate-hull
-inflation *formula* — flat vs. escalating per copy); it is called out in §9.
+illustrative. The one ambiguity the captures left open — the exact duplicate-hull
+inflation *formula* — was **confirmed by the owner on 2026-07-24** and is written
+up in `ruleset-atxxii.md` §4.2; no numeric unknowns remain.
 
 Two structural facts remain the most important design drivers:
 
@@ -115,15 +116,19 @@ built under).
 raises the comp's point cost. Each ship carries a per-ship **`inflation_value`**
 (ATXXII per-hull-size defaults: Frigate +0, Logi/T1-Support Frigate +1,
 Destroyer +1, Cruiser/Industrial +2, Battlecruiser +3, Battleship +4, Corvette
-+0). This is a *quantity-dependent running surcharge* folded into the live total,
-so the validation engine must recompute a hull's effective cost from how many of
-that exact hull are already in the comp — not a flat per-ship value.
++0). The surcharge is **retroactive** — it applies to *every* copy of the hull,
+not only the extra ones — and grows with the number fielded:
+**cost per copy = base + (copies − 1) × I** (an Abaddon at base 40, I=4: one
+costs 40, two cost 44 each, three cost 48 each). Confirmed 2026-07-24; see
+`ruleset-atxxii.md` §4.2.
 
 - **Ingest `inflation_value` verbatim per ship; do NOT derive it from hull
   size** — the data contains deliberate per-ship exceptions (e.g. the Geri, a
   Frigate-hull unique, carries +3 while other Assault-Frigate uniques carry +0).
-- `‹OPEN — exact formula: flat (+I per extra copy) vs. escalating (+I, +2I, …)›`
-  is the one remaining numeric ambiguity; see §9.1.
+- Because the charge is retroactive, a hull's effective cost depends on the whole
+  comp: the engine must count every copy before pricing any slot, and **adding a
+  hull re-prices the copies already present**, so the UI cannot show the cost of
+  an addition as a fixed per-hull delta.
 
 **Hull-size count caps** — at most **3 ships of a given hull size**, except
 **Battleships capped at 2**. **Logistics ships are exempt** from this cap (both
@@ -793,31 +798,23 @@ Design:
 
 ## 9. Assumptions & open questions
 
-Most numeric/rules questions are now **resolved** from the captured sources
-(§0, `ruleset-atxxii.md`, `sources/`). What follows separates the one real
-remaining unknown from the already-answered items and the standing design calls.
+All numeric/rules questions are now **resolved** — from the captured sources
+(§0, `ruleset-atxxii.md`, `sources/`) and, for the inflation formula, from the
+owner. What remains open are design calls, not facts.
 
 ### 9.1 Still open (needs a source or an owner decision)
 
-1. **Duplicate-hull inflation formula — the one remaining numeric unknown.** The
-   per-hull `inflation_value` is known and captured, but the article doesn't say
-   whether the surcharge is **flat** (each extra copy = `base + I`) or
-   **escalating** (`base`, `base + I`, `base + 2I`, …). The validation engine's
-   running total depends on this. Resolve from the Quick Comp Creator's
-   comp-building tab (which implements it) or the tournament Discord before
-   hard-coding. *Recommend* modeling it as a small pluggable function so either
-   interpretation is a one-line change, and unit-testing both.
-2. **Fitting-level legality:** MVP models a comp as *hull choices*, not fits. The
+1. **Fitting-level legality:** MVP models a comp as *hull choices*, not fits. The
    ruleset's fitting restrictions (`ruleset-atxxii.md` §6) are captured but not
    enforced. Confirm if/when fit-legality is wanted — BurnSun's fitting engine is
    uniquely positioned to check it (ECM-hull gating, meta caps, T2-rig ban, BS
    plate/extender limit, flagship meta exemptions), so this is a natural later
    phase rather than a rebuild.
-3. **Shared/scrim pick-ban join model:** how the opposing team joins a shared
+2. **Shared/scrim pick-ban join model:** how the opposing team joins a shared
    link — EVE SSO (attributable) vs. capability link (anyone with the URL) — and
    whether shared mode reproduces the full official sequence incl. Avalanche +
    unique bans. Deferred to the pick-ban design pass (§4.6).
-4. **Real-time collaboration design pass (§4.7):** concurrency model (op-broadcast
+3. **Real-time collaboration design pass (§4.7):** concurrency model (op-broadcast
    + soft-locks vs. CRDT), shared-tab scope (one comp vs. a whole board), link
    access/attribution, and the realtime transport + pub/sub. Deferred to its own
    day-two design pass; the MVP only needs to stay "aware" of it (op-shaped

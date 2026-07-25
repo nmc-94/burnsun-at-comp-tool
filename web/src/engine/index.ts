@@ -11,7 +11,6 @@ export type {
   Comp,
   CompSlot,
   HullSize,
-  InflationMode,
   LegalityResult,
   LegalitySummary,
   LogisticsGroup,
