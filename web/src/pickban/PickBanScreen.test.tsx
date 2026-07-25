@@ -15,6 +15,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PickBanScreen from './PickBanScreen'
+import { brand } from '../brand/brandConfig'
 import { atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 
 const RULESET = {
@@ -216,7 +217,12 @@ describe('a rehearsal in progress', () => {
   it('ignores a stored rehearsal that is not one', async () => {
     // A stored blob is something somebody wrote down earlier. Dropped whole rather than
     // repaired, so nobody is restored into a state they were never in.
-    sessionStorage.setItem('comp-tool.pick-ban.t1', '{"bans":["nope"],"format":"main"}')
+    // Derived, not spelled out: the key follows `brand.storageKeyPrefix`, and this test is
+    // about what a bad blob does rather than about what the key is called.
+    sessionStorage.setItem(
+      `${brand.storageKeyPrefix}.pick-ban.t1`,
+      '{"bans":["nope"],"format":"main"}',
+    )
     stubFetch()
     show()
     await ready()

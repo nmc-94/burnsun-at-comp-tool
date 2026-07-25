@@ -7,8 +7,13 @@
     <script>
       // Set the theme before first paint to avoid a flash. Values: light | dark | system.
       // Must stay in sync with src/theme.ts (same key and resolution rule).
+      //
+      // The prefix is substituted at build time from brand.storageKeyPrefix — see the
+      // brand-storage-prefix plugin in vite.config.ts. This script runs before any module, so
+      // it cannot import the config, and a literal here would drift the moment anyone
+      // rebranded.
       (function () {
-        var KEY = 'comp-tool.theme'
+        var KEY = '__BRAND_STORAGE_PREFIX__.theme'
         var pref = 'system'
         try {
           var stored = localStorage.getItem(KEY)

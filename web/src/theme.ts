@@ -1,10 +1,18 @@
 // Light/dark theme. The pre-paint bootstrap in index.html sets data-theme before
 // React mounts; this module handles runtime reads and the toggle. Both must agree on
 // STORAGE_KEY and the resolution rule.
+//
+// They agree by construction rather than by discipline: the key is built from
+// `brand.storageKeyPrefix` here, and index.html carries a placeholder that the build
+// substitutes from the same value. The inline script cannot import this config — it runs
+// before any module — so a plain literal there would mean a self-hoster who rebranded got a
+// theme that persisted in one place and was read from another.
+
+import { brand } from './brand/brandConfig'
 
 export type ThemePref = 'light' | 'dark' | 'system'
 
-const STORAGE_KEY = 'comp-tool.theme'
+const STORAGE_KEY = `${brand.storageKeyPrefix}.theme`
 
 export function resolveTheme(pref: ThemePref): 'light' | 'dark' {
   if (pref !== 'system') return pref
