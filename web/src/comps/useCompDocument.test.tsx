@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 import { resetRulesetCache } from '../rulesets/cache'
+import { resetInFlightWrites, trackWrite } from './in-flight'
 import { useCompDocument } from './useCompDocument'
 
 const COMP = {
@@ -87,6 +88,7 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   resetRulesetCache()
+  resetInFlightWrites()
 })
 
 describe('loading', () => {
@@ -98,6 +100,26 @@ describe('loading', () => {
     const ruleset = calls.find((call) => call.url.includes('/rulesets/'))
     expect(ruleset?.url).toContain('/versions/v2026-07-23')
     expect(calls.some((call) => call.url.includes('/latest'))).toBe(false)
+  })
+
+  it('waits for a write it already has in the air before reading the comp back', async () => {
+    // The board-switch race: the same comp on two boards, where the tile going away flushes
+    // its last edit from a cleanup nobody can await and the tile arriving reads at once. The
+    // read is cheaper and wins, so without this the new tile shows the comp as it was before
+    // the edit — and the edit is gone from the only screen it was ever on.
+    const calls = stubFetch()
+    let land: (value: unknown) => void = () => {}
+    trackWrite('c1', new Promise((resolve) => (land = resolve)))
+
+    renderHook(() => useCompDocument('c1'))
+    await act(async () => {})
+    expect(calls.filter((call) => call.url === '/api/v1/comps/c1')).toHaveLength(0)
+
+    await act(async () => land(undefined))
+
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url === '/api/v1/comps/c1')).toHaveLength(1),
+    )
   })
 
   it('reports an editor as able to edit, and reports failure as an alert-worthy error', async () => {

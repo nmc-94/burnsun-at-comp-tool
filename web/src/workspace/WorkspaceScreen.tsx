@@ -11,9 +11,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { messageFor } from '../api'
-import { createComp, listComps } from '../comps/api'
+import { createComp, listComps, replaceSlots } from '../comps/api'
+import type { CopyTarget } from '../comps/CompTileHost'
 import type { CompDetail } from '../comps/types'
 import { evaluate } from '../engine'
+import type { CompSlot } from '../engine'
 import { toEngineComp } from '../comps/tile-model'
 import { listRulesets } from '../rulesets/api'
 import { loadRulesetVersion } from '../rulesets/cache'
@@ -209,6 +211,22 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
     [board],
   )
 
+  /**
+   * Where a tile's hulls can be copied to: the other comps on this board, in board order.
+   *
+   * Only the comps a person can write to, because a destination that would refuse the copy
+   * is not a destination. The names here are the ones the board loaded with; each tile's
+   * own leaf keeps up with a rename through the card store, the way the rail does.
+   */
+  const copyTargets = useMemo<readonly CopyTarget[]>(() => {
+    const named = new Map((comps ?? []).map((comp) => [comp.id, comp]))
+    return (board?.tiles ?? []).flatMap((tile) => {
+      const comp = named.get(tile.compId)
+      if (!comp || (comp.yourLevel !== 'editor' && comp.yourLevel !== 'owner')) return []
+      return [{ id: comp.id, name: comp.name }]
+    })
+  }, [board, comps])
+
   useEffect(() => {
     // The URL is authoritative for which board is on screen; the layout records it so a
     // later bare team URL lands where the person left off rather than on the first board.
@@ -231,6 +249,50 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
       arrange(withCompClosed(layout, board.id, compId))
     },
     [layout, board, arrange],
+  )
+
+  /**
+   * A new comp holding the rows somebody picked out of an existing one.
+   *
+   * One POST and one PUT: the comp API has no way to create a comp with slots, and it does
+   * not need one — a subset of a legal comp is legal, so there is nothing here to gate.
+   *
+   * The ruleset comes from the comp the rows were taken out of rather than from the team's
+   * commonest, because those are the point values they were picked under. The *version*
+   * cannot be carried: `createComp` names only a slug and the server pins to the newest
+   * published, deliberately. So rows taken out of a comp pinned to an older version land in
+   * one pinned to the newest, and the new tile reports what the newest says — which is the
+   * binding working, and visible in the version the tile prints in its foot.
+   */
+  const port = useCallback(
+    async (sourceCompId: string, rows: readonly CompSlot[]) => {
+      if (!layout || !board || creating || rows.length === 0) return
+      const source = (comps ?? []).find((candidate) => candidate.id === sourceCompId)
+      if (!source) return
+      setCreating(true)
+      try {
+        const made = await createComp(
+          teamId,
+          `${source.name} (partial)`.slice(0, 200),
+          source.rulesetSlug,
+        )
+        const filled = await replaceSlots(
+          made.id,
+          rows.map((row) => ({ typeId: row.typeId, isFlagship: row.isFlagship ?? false })),
+        )
+        // The filled comp, not the empty one: it carries the slots, so the seeding effect
+        // above judges it instead of drawing a comp that looks like it holds nothing.
+        setComps((current) => [...(current ?? []), filled])
+        setNewCompId(filled.id)
+        arrange(withCompOpened(layout, board.id, filled.id))
+        setError(null)
+      } catch (problem: unknown) {
+        setError(messageFor(problem))
+      } finally {
+        setCreating(false)
+      }
+    },
+    [layout, board, creating, comps, teamId, arrange],
   )
 
   const create = useCallback(async () => {
@@ -306,6 +368,8 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
           newCompId={newCompId}
           onClose={closeComp}
           onCreate={() => void create()}
+          onPort={(compId, rows) => void port(compId, rows)}
+          copyTargets={copyTargets}
         />
 
         {/* What a driver waits on instead of sleeping through the layout debounce, and the

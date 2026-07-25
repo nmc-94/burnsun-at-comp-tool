@@ -413,6 +413,79 @@
   font-size: 11px;
 }
 
+/* A tile being offered hulls. An outline rather than a fill: the rows underneath are what
+   the person is reading while they decide, and tinting the whole tile hides them. */
+.board-tile-receiving {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 11px;
+}
+
+/* What the offered hulls would cost *here* — this comp's ruleset's answer, not the sending
+   comp's, which is the only reason this is drawn in the receiving tile at all. */
+.board-tile-preview {
+  margin: 4px 0 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* Said in the tile the hulls came *from*: a copy changes a comp somewhere else on the
+   board, and otherwise nothing moves where the person is looking. */
+.board-tile-transfer {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.copytargets {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 30;
+  max-height: 190px;
+  overflow-y: auto;
+  min-width: 168px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-1);
+  border-radius: 10px;
+  /* The one place a shadow is allowed: this is an overlay, not app chrome. */
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+  padding: 4px;
+}
+
+.copytargets-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.copytarget {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  padding: 4px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.copytarget:hover,
+.copytarget:focus-visible {
+  background: var(--bg-soft);
+  color: var(--accent);
+}
+
 .ghost-tile {
   border: 1px dashed var(--line-1);
   border-radius: 11px;

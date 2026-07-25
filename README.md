@@ -187,6 +187,38 @@ await expect(tile.getByTestId('comp-save-state')).toHaveAttribute('data-save-sta
 await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-layout-state', 'idle')
 ```
 
+Moving hulls between comps is scriptable the same way, and without a drag: the drag is a
+shortcut over these controls rather than the only way to reach them. Rows are picked out by
+a checkbox named for the hull *and its slot*, because a comp legitimately holds three of the
+same hull.
+
+```javascript
+await tile.getByRole('checkbox', { name: 'Select Abaddon in slot 1' }).check()
+await tile.getByRole('checkbox', { name: 'Select Vindicator in slot 2' }).check()
+await expect(tile.getByTestId('comp-selection-status')).toHaveText('2 hulls selected')
+
+// Out into a comp of their own — one POST and one PUT, and the new tile lands on the board.
+await tile.getByRole('button', { name: 'Port to a new comp' }).click()
+await expect(page.getByTestId('board-grid')).toHaveAttribute('data-comp-count', '2')
+
+// Or into a comp that already exists. The destination is named, so twenty are twenty
+// controls; hovering or focusing one previews the cost *in that comp*, against the ruleset
+// version it is pinned to, which may not be the one these hulls were priced under.
+await tile.getByRole('button', { name: 'Copy to another comp' }).click()
+// `exact` matters: porting rows out of a comp makes an "Armor Brawl (partial)" beside it.
+const target = page.getByTestId('board-tile').filter({ has: page.getByLabel('Armor Brawl', { exact: true }) })
+await tile.getByRole('button', { name: 'Copy to Armor Brawl' }).hover()
+await expect(target.getByTestId('board-tile-preview')).toContainText('costs')
+await tile.getByRole('button', { name: 'Copy to Armor Brawl' }).click()
+
+await expect(tile.getByTestId('board-tile-transfer')).toHaveText('Copied 2 hulls to Armor Brawl')
+await expect(target.getByTestId('comp-save-state')).toHaveAttribute('data-save-state', 'idle')
+```
+
+The copy always lands. If it breaks a rule the target says so through its own
+`comp-issue-flag`, and a hull the target's ruleset version never listed arrives as
+`Unknown hull <typeId>` with an `unlisted-hull` violation rather than being refused.
+
 Deep links work, so a board is addressable directly: `/teams/:teamId/boards/:boardId`, and
 `/comps/:compId` opens that comp on whichever board was last in front.
 

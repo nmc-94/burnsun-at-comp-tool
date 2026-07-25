@@ -771,13 +771,22 @@ plus the per-phase design-stance and definition-of-done gates in each
 `docs/PHASE-*-HANDOFF.md`. No linter can check a testid convention or detect two
 elements sharing an accessible name, so those stay a review concern.
 
-> **The linter half is weaker than this section implied.** `oxlint` reports
-> `jsx-a11y` findings as *warnings* and exits `0`, so `npm run lint` and the CI job
-> that runs it go green with accessibility violations present — measured with a
-> deliberate `autoFocus`, which printed its warning and still exited `0`. Until
-> those rules are raised to errors, everything in this section is a review concern
-> rather than a gate. Raising them is the obvious fix and is not yet done, because
-> it wants a pass over the existing warnings first.
+> **The linter half was weaker than this section implied, and was fixed in Phase G.**
+> `oxlint` reported `jsx-a11y` findings as *warnings* and exited `0`, so `npm run lint`
+> and the CI job that runs it went green with accessibility violations present —
+> measured with a deliberate `autoFocus`, which printed its warning and still exited
+> `0`. The fix was waiting on a pass over the existing warnings, and that pass was
+> empty: `oxlint` over `web/src` emitted nothing at all. So the thirteen rules that
+> carry this section now sit at `error` in `web/.oxlintrc.json`, measured both ways —
+> a clean tree exits `0`, and a probe file with `autoFocus` and a bare `onClick` on a
+> `<div>` exits `1` with three errors.
+>
+> Two suppressions exist, both on drag handlers
+> (`no-noninteractive-element-interactions` on the draggable row and on the drop-target
+> cell), both carrying the reason in a comment: the rule's real requirement is a
+> keyboard equivalent, and there is one — the drag is a shortcut over a named control
+> and reaches nothing that control does not. What no linter can check stays a review
+> concern: a testid convention, and two elements sharing an accessible name.
 
 **An automated end-to-end suite is deliberately deferred.** This section exists
 so that adding one later is a matter of writing tests rather than re-plumbing the

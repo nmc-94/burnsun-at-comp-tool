@@ -10,7 +10,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CompSlot, LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
 import ShipSearch from './ShipSearch'
-import { deltaPill, rowsBlamedBy, scaffold, withFlagship, withRow } from './tile-model'
+import {
+  deltaPill,
+  EMPTY_SELECTION,
+  rowsBlamedBy,
+  scaffold,
+  selectRow,
+  slotsAt,
+  withFlagship,
+  withRow,
+} from './tile-model'
+import type { RowSelection } from './tile-model'
 import ViolationsPopover from './ViolationsPopover'
 
 /**
@@ -35,6 +45,15 @@ interface Props {
   /** Put the cursor in the name. Set only for a comp that was just created, so naming it is
    *  the next thing rather than a second click. */
   autoFocusName?: boolean
+  /**
+   * What to do with the rows somebody has picked out. All optional, and each control appears
+   * only when its handler does: the tile knows nothing about boards or comp ids, so where
+   * the hulls go is the cell's business, not this component's.
+   */
+  onPortRows?: (rows: CompSlot[]) => void
+  onCopyRows?: (rows: CompSlot[]) => void
+  onDragRows?: (rows: CompSlot[]) => void
+  onDragRowsEnd?: () => void
 }
 
 export default function CompTile({
@@ -49,11 +68,31 @@ export default function CompTile({
   onChange,
   onRename,
   autoFocusName,
+  onPortRows,
+  onCopyRows,
+  onDragRows,
+  onDragRowsEnd,
 }: Props) {
   const [openRow, setOpenRow] = useState<number | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [highlighted, setHighlighted] = useState<readonly number[]>([])
+  // Rows, not comps: this is a gesture inside one tile and it belongs nowhere near the URL.
+  const [selectedRows, setSelectedRows] = useState<RowSelection>(EMPTY_SELECTION)
+  const [pickedFrom, setPickedFrom] = useState(slots)
   const nameField = useRef<HTMLInputElement>(null)
+
+  // A selection is a list of row numbers, and removing a row renumbers every row below it.
+  // Held across an edit it would quietly come to mean different hulls than the ones with
+  // ticks beside them, and porting it would take the wrong ones without saying so.
+  //
+  // Adjusted during the render that brings the new slots in, not from an effect. An effect's
+  // *first* run can be deferred past a click — measured, intermittently — and it would then
+  // clear a selection somebody had just made, on the grounds that the rows had changed when
+  // what had actually changed was that the tile had finished loading.
+  if (pickedFrom !== slots) {
+    setPickedFrom(slots)
+    if (selectedRows.rows.length > 0) setSelectedRows(EMPTY_SELECTION)
+  }
 
   useEffect(() => {
     // Focused here rather than with the autoFocus attribute, which jsx-a11y rightly objects
@@ -68,10 +107,16 @@ export default function CompTile({
   const blamed = useMemo(() => rowsBlamedBy(result.violations), [result.violations])
   const pill = deltaPill(result.summary)
   const highlightedRows = new Set(highlighted)
+  const picked = new Set(selectedRows.rows)
 
   function pick(index: number, typeId: number) {
     onChange(withRow(slots, index, typeId))
     setOpenRow(null)
+  }
+
+  /** A drag of a row inside the selection takes the whole selection with it. */
+  function dragging(index: number): CompSlot[] {
+    return slotsAt(slots, picked.has(index) ? selectedRows.rows : [index])
   }
 
   return (
@@ -181,15 +226,56 @@ export default function CompTile({
             // below goes through this rather than interpolating an empty string.
             const hullName = slot.resolved ? slot.name : `Unknown hull ${slot.typeId}`
 
+            if (picked.has(row.index)) classes.push('picked')
+
             return (
+              // A row is a list item that can be dragged, which is what `draggable` and the
+              // two handlers below are for and what the rule objects to. The objection is
+              // answered rather than waived: the drag is a shortcut over "Copy selected
+              // hulls to another comp" in the bar below, which is a real control with a real
+              // name, and nothing here is reachable only by dragging.
+              // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
               <li
                 className={classes.join(' ')}
                 key={row.index}
                 data-testid="comp-row"
                 data-row={row.index}
+                draggable={editable && onDragRows !== undefined}
+                onDragStart={(event) => {
+                  onDragRows?.(dragging(row.index))
+                  // The payload is not here — it is in the store the receiving tile reads,
+                  // which is what lets this be tested at all. `dataTransfer` is only what
+                  // the browser draws under the cursor, and jsdom does not have one.
+                  if (event.dataTransfer) {
+                    event.dataTransfer.effectAllowed = 'copy'
+                    event.dataTransfer.setData('text/plain', hullName)
+                  }
+                }}
+                onDragEnd={() => onDragRowsEnd?.()}
               >
                 <span className="ic">
                   {icon && <img className="hicon" src={icon} alt="" width={18} height={18} />}
+                  {editable && (
+                    <input
+                      className="rowpick"
+                      data-testid="comp-row-select"
+                      type="checkbox"
+                      checked={picked.has(row.index)}
+                      // Named for the slot as well as the hull: a comp legitimately holds
+                      // three of the same hull, and picking the wrong one of three controls
+                      // called "Select Abaddon" is a mistake nothing on screen would show.
+                      aria-label={`Select ${hullName} in slot ${position}`}
+                      onChange={(event) =>
+                        setSelectedRows((current) =>
+                          // React synthesises a checkbox's change from the click that caused
+                          // it, so the native event is the one carrying the shift key — and
+                          // the space bar raises a click too, which is how the keyboard gets
+                          // the same gesture without a second handler.
+                          selectRow(current, row.index, { range: shiftHeld(event.nativeEvent) }),
+                        )
+                      }
+                    />
+                  )}
                 </span>
                 <span className="nm">
                   <button
@@ -253,6 +339,47 @@ export default function CompTile({
             )
           })}
         </ul>
+
+        {selectedRows.rows.length > 0 && (
+          <div className="rowsel" data-testid="comp-selection">
+            {/* The count lives here rather than in the button names. A name that moves with
+                state cannot be matched by anything, and a driver should not have to know how
+                many rows it picked to find the control that acts on them. */}
+            <p className="rowsel-count" data-testid="comp-selection-status" role="status">
+              {selectedRows.rows.length === 1
+                ? '1 hull selected'
+                : `${selectedRows.rows.length} hulls selected`}
+            </p>
+            {/* Short enough that two fit across a 320px tile. What they act on is the line
+                above, not a word in every name — and a name carrying the count could not be
+                matched by anything looking for the control. */}
+            {onPortRows && (
+              <button
+                className="rowsel-act"
+                type="button"
+                onClick={() => onPortRows(slotsAt(slots, selectedRows.rows))}
+              >
+                Port to a new comp
+              </button>
+            )}
+            {onCopyRows && (
+              <button
+                className="rowsel-act"
+                type="button"
+                onClick={() => onCopyRows(slotsAt(slots, selectedRows.rows))}
+              >
+                Copy to another comp
+              </button>
+            )}
+            <button
+              className="rowsel-act"
+              type="button"
+              onClick={() => setSelectedRows(EMPTY_SELECTION)}
+            >
+              Clear selection
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="tfoot">
@@ -284,6 +411,10 @@ export default function CompTile({
       </div>
     </div>
   )
+}
+
+function shiftHeld(event: Event): boolean {
+  return event instanceof MouseEvent && event.shiftKey
 }
 
 function saveLabel(state: SaveState): string {

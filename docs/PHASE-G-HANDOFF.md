@@ -11,12 +11,15 @@ Phase F put many comps on screen at once. Phase G makes the space **between** th
 you reshape a set of candidate comps by moving hulls around, not by filling forms.
 
 1. **Multi-select rows → new comp.** Select several rows in a tile (shift for a range,
-   ctrl/cmd to toggle) and port them into a fresh comp in one action. A subset of a legal
+   click to toggle) and port them into a fresh comp in one action. A subset of a legal
    comp is always legal, so this never needs a gate.
 2. **Drag a hull from one tile to another to copy it.** The source is unchanged. The drop
    *always lands* and the target flags whatever it breaks — same rule as inline add.
-3. **The compare view**: two or more selected comps aligned, with their differences called
-   out — point spend per hull, shared versus unique hulls, budget headroom.
+
+> **The compare view was cut from this phase by the owner** and moved to deferred, below.
+> `?sel=` and `/teams/:t/boards/:b/compare` still parse and format — `route.test.ts` pins
+> them and a shared compare link still resolves to a real board — but nothing renders them,
+> and Trap 4 is therefore now about one selection rather than two.
 
 ## Where things stand
 
@@ -118,17 +121,26 @@ own `change(withRow(...))`. No comp's slots ever leave the tile that owns them.
 a feature no keyboard user and no driver can reach, and §6.8 treats the second as a
 first-class requirement rather than a nicety.
 
-**Do not expect the linter to catch this.** `oxlint` reports its `jsx-a11y` findings as
-warnings and exits `0`, so `npm run lint` — and the `frontend` CI job with it — goes green
-with accessibility violations present. Measured, not assumed: a deliberate `autoFocus` on a
-probe file printed its warning and still exited `0`. §6.8's claim that the plugin gates this
-in CI is therefore aspirational today. Either raise those rules to errors before leaning on
-them, or treat drag accessibility as something review has to catch.
+**The linter did not catch this, and now it does.** `oxlint` reported its `jsx-a11y` findings
+as warnings and exited `0`, so `npm run lint` — and the `frontend` CI job with it — went
+green with accessibility violations present; measured with a deliberate `autoFocus`. The
+blocker on fixing it was a pass over the existing warnings, and that pass turned out to be
+empty: `oxlint` over `web/src` emitted nothing at all. So Phase G raised the thirteen rules
+that matter to `error` in `.oxlintrc.json`, and measured the result both ways — a clean tree
+exits `0`, a probe file with `autoFocus` and a bare `onClick` on a `<div>` exits `1` with
+three errors.
 
 Design the *operation* first and the drag second: "copy this hull to…" as a real control
-with a real accessible name, which a drag then becomes a shortcut for. That also gives the
-jsdom tests something to click, because **you cannot test HTML5 drag-and-drop in jsdom** —
-`DataTransfer` is not implemented. If the only path is a drag, the feature ships untested.
+with a real accessible name, which a drag then becomes a shortcut for.
+
+**A correction to the last sentence of this trap, which turned out to be a design choice
+rather than a fact.** You cannot put a payload in `DataTransfer` under jsdom — it is not
+implemented — but that does not make a drag untestable. Phase G's payload lives in a module
+store (`hull-transfer.ts`) and `dataTransfer` carries only what the browser draws under the
+cursor, guarded with `?.`. `fireEvent.dragStart`, `dragEnter`, `dragLeave` and `drop` then
+all reach their handlers, and `BoardTransfer.test.tsx` drives the whole gesture. Keeping the
+payload off the event is what makes both the keyboard path and the test possible, which is
+the same decision twice.
 
 ### Trap 3 — two comps, two ruleset versions
 
@@ -140,57 +152,96 @@ the target ruleset entirely.
 
 The stance answers it: the drop lands and the target reports. But *the target's* ruleset
 judges it, and the preview shown while dragging has to be computed against the target too —
-`previewRow(targetSlots, index, typeId, targetRuleset)` — or the number under the cursor is
-the wrong one. Decide what the UI says when the hull is absent from the target ruleset;
-`annotate` already produces the violation, so this is a copy question, not an engine one.
+`previewHulls(targetSlots, typeIds, targetRuleset)` — or the number under the cursor is
+the wrong one.
 
-### Trap 4 — the compare view is where two selections get confused
+**Settled by putting the preview in the receiving tile.** It is a `useMemo` in that tile's
+own `CompTileHost`, over its own slots and its own pinned ruleset, so the wrong ruleset is
+not something to remember not to use — it is not in scope there. The sending tile never
+computes a number about a comp it does not own, which is Trap 1 and Trap 3 answered by one
+arrangement.
 
-`?sel=` names **comps**, for comparison across tiles. Multi-select of **rows** inside one
-tile is ephemeral, belongs to that tile, and must not touch the URL — it is a text-selection
-gesture, not a location. They are different things at different scales and they will want
-the same words; name them apart in the code (`selectedComps` versus `selectedRows`) before
-either exists.
+A hull absent from the receiving version needed no new copy: the engine already emits
+`unlisted-hull`, and `CompTile` already renders `Unknown hull <typeId>` for a slot it cannot
+resolve. The preview says what it costs (nothing) and names what it breaks in the engine's
+own words.
 
-Related: the compare view is reachable at `/teams/:t/boards/:b/compare` and **a board is
-still required** — `hrefFor` deliberately formats a compare route with no board back down to
+### Trap 4 — two selections at two scales
+
+`?sel=` names **comps**. Multi-select of **rows** inside one tile is ephemeral, belongs to
+that tile, and must not touch the URL — it is a text-selection gesture, not a location. They
+are different things at different scales and they will want the same words, so they do not
+get them: the row selection is `selectedRows`, and `selectedComps` is a name kept free.
+
+With the compare view deferred, only `selectedRows` exists today; `?sel=` parses and formats
+and nothing reads it. The naming discipline still applies to whatever renders it later.
+
+Related, and still true: compare is reachable at `/teams/:t/boards/:b/compare` and **a board
+is required** — `hrefFor` deliberately formats a compare route with no board back down to
 the board list, because compare-of-nothing is not a place.
 
-### Trap 5 — Phase F left concurrent writes unsolved, and drag makes it worse
+### Trap 5 — concurrent writes are still unsolved, but *not* for the reason stated here
 
 `PUT /api/v1/comps/{id}/slots` replaces the whole list, so two editors saving at once
-silently overwrite each other. Phase F deferred this deliberately. Phase G writes to **two
-comps per gesture**, and a partial extraction writes a third, so the window widens again.
+silently overwrite each other. Phase F deferred this deliberately.
+
+**This brief claimed Phase G widens the window, and that claim is wrong.** Checked against
+the phase's own spec: a cross-tile copy leaves the source unchanged, so it writes **one**
+comp — the target — and a partial extraction writes a comp created microseconds earlier
+whose id nobody else holds. Per gesture, Phase G writes at most one comp another person
+could also be editing, exactly as Phase F did. The rate of writes to any given comp is set
+by the 600 ms debounce and by how many people hold it open, and Phase G changes neither.
+
+There is one honest widening, and it is about **attention rather than rate**: you can now
+change comp X by copying into it while looking at comp Y. `board-tile-transfer` exists
+because of that.
 
 **The hook the Phase F brief suggested does not work, and this was checked rather than
 reasoned about.** `Comp.updated_at` does not move on a slot write: `_apply_slots` mutates
 only `comp_slot` rows, so SQLAlchemy emits no `UPDATE` on `comp` and `onupdate=func.now()`
 never fires. Measured on 2026-07-25 — a `PUT .../slots` left `updatedAt` byte-identical
-while a `PATCH` rename moved it. What would work is an explicit monotonic `version` column
-bumped inside `_apply_slots`, returned in
-`CompDetail`, sent as `If-Match`, answered with a 409 — plus a `conflict` save state on the
-tile with a reload action. That is a migration (`0005`), a route change, and a real piece of
-conflict UX. Decide whether it lands here or waits for real-time collaboration; it should
-not be discovered halfway through building drag.
+while a `PATCH` rename moved it.
 
-Note also that Phase F's own miniature version is live and documented: the **same comp open
-on two boards** gives one person two tiles racing on save.
+**Deferred again in Phase G, deliberately, with the design recorded so it is a scoped task
+rather than a rediscovery.** What would work: an explicit monotonic `slots_version` on
+`comp`, bumped inside `_apply_slots` and by nothing else — a rename and a slot rewrite
+commute, so bumping on `PATCH` would manufacture conflicts whose only remedy is lossy —
+under a `SELECT … FOR UPDATE` on the write path, because the compare-and-set would otherwise
+interleave. Returned in `CompDetail` (a field, not an `ETag`: the listing serves N comps in
+one response and has nowhere to put N headers), sent as `If-Match: "3"`, and answered with
+**412, not 409**. That last one is not cosmetic: `PUT .../slots` already answers 409 for the
+archived team (`access.py:70`) and for a second flagship (`comps.py:210`), so a third meaning
+on that status is a branch the client cannot make. Plus a `conflict` save state distinct
+from `error`, and a reload action — the only place in this tool where work on screen is
+thrown away, so it must be an explicit click and never a timer.
 
-## Key files / seams to build on
+**What did land in Phase G** is the half that needs no server: `web/src/comps/in-flight.ts`.
+`WorkspaceScreen` draws only the active board, so the same comp on two boards means its
+tiles hand over at a board switch — the one going away flushes its last edit from a cleanup
+nobody can await, and the one arriving reads at once and wins. That was a silent overwrite a
+single user could reproduce on demand, and it is the race that would otherwise become a
+*spurious* "changed elsewhere" for somebody working alone the day the version column lands.
 
-- `web/src/router/route.ts` — `?sel=` and `/compare` already parse; `Route.selection` and
-  `Route.view` are waiting for a renderer.
-- `web/src/workspace/WorkspaceScreen.tsx` — owns the layout, the comp list and the seeding
-  of the card store. Where a compare view hangs off.
+## Key files / seams built on
+
+- `web/src/workspace/hull-transfer.ts` — **new.** The per-target-id channel a hull crosses
+  tiles through. `propose` asks what hulls would cost in a comp, `offerHulls` commits, and
+  the drag and the keyboard path make exactly those two calls.
+- `web/src/comps/in-flight.ts` — **new.** Do not read a comp while your own write to it is
+  in the air (Trap 5's client half).
+- `web/src/comps/tile-model.ts` — `withRow`, `previewRow`, `annotate`, `introducedBy`, plus
+  `slotsAt`, `withHullsAdded`, `previewHulls` and the `RowSelection` helpers.
+- `web/src/comps/CompTile.tsx` — the locked tile. Row selection and the drag source live
+  here; every new prop is optional and its control appears only with its handler.
+- `web/src/comps/CompTileHost.tsx` — the cell. Drop target, preview, destination list and
+  the "copied to…" status: everything that knows another tile exists.
 - `web/src/workspace/BoardGrid.tsx` — holds ids and stable callbacks, no comp state. The
-  invariant Trap 1 is about.
-- `web/src/workspace/comp-cards.ts` — the pattern for anything that must cross tiles.
-- `web/src/comps/useCompDocument.ts` — one comp's whole lifecycle; a drop calls its `change`.
-- `web/src/comps/tile-model.ts` — `withRow`, `previewRow`, `annotate`, `introducedBy`.
-- `web/src/comps/CompTile.tsx` — the locked tile. Row multi-select lands here.
-- `web/src/styles/workspace.css` — board, rail and tab styles; the mockup's ported CSS.
-- `comptool/comps.py` — `_apply_slots` is where a `version` bump would go (Trap 5).
-- `comptool/workspace.py` — how a route that takes comp ids stays leak-free.
+  invariant Trap 1 is about, and a pure pass-through for the two new props.
+- `web/src/workspace/comp-cards.ts` — the pattern the transfer store copies, and where a
+  destination gets the name to call a comp by.
+- `web/src/router/route.ts` — `?sel=` and `/compare` parse and format; nothing renders them.
+- `comptool/comps.py` — `_apply_slots` is where a `slots_version` bump would go (Trap 5).
+  Untouched this phase; head is still `0004`.
 
 ## Definition of done (Phase G)
 
@@ -198,17 +249,23 @@ on two boards** gives one person two tiles racing on save.
   new comp appears on the board.
 - A hull dragged from one tile to another is copied; the source is unchanged and the target
   flags any rule the addition breaks.
-- Every one of the above has a keyboard-and-driver-reachable equivalent that is not a drag.
-- Two or more selected comps can be compared side by side, at a URL that can be shared.
+- The cost shown while dragging is the *receiving* comp's, computed against the ruleset
+  version that comp is pinned to.
+- Every one of the above has a keyboard-and-driver-reachable equivalent that is not a drag,
+  and it goes through the same code.
 - Typing in one tile still does not re-render or re-judge the others — the two tests in
   `workspace/BoardGrid.test.tsx` still pass, unmodified.
 - **The whole walkthrough is scriptable without a single CSS selector** — every new control
-  reachable by role and name, every new region by `data-testid` (§6.8), with the Areas table
-  updated for any new area.
+  reachable by role and name, every new region by `data-testid` (§6.8). No new area was
+  needed: every id added is in `comp` or `board`.
 - `alembic check` clean; `ruff` + `pytest` + frontend `lint`/`test`/`build` green.
 
 ## Not in Phase G (deferred)
 
+**The compare view** — cut by the owner during planning, not dropped for want of time. The
+URL grammar stays; the screen is unwritten. · **Optimistic concurrency on slot writes**
+(Trap 5) — designed, not built; the design is in this file and it is a prerequisite for
+§4.7's operation model rather than a detour, so it is scheduled and not abandoned. ·
 Comments, fork lineage, archetype and tags (Phase H) · pick-ban and share-slug export
 (Phase I) · corporation and alliance grants · the automated point-data sync worker ·
 fitting-level legality · real-time collaboration and the shared board · per-tile position

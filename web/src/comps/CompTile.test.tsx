@@ -26,6 +26,9 @@ afterEach(cleanup)
 /** Render the tile over `slots`, re-judging on every change the way CompScreen does. */
 function mount(slots: CompSlot[], editable = true) {
   const onChange = vi.fn()
+  const onPortRows = vi.fn()
+  const onCopyRows = vi.fn()
+  const onDragRows = vi.fn()
   const tile = (next: CompSlot[]) => (
     <CompTile
       name="Angel Shield Kite"
@@ -38,10 +41,19 @@ function mount(slots: CompSlot[], editable = true) {
       saveState="idle"
       onChange={onChange}
       onRename={vi.fn()}
+      onPortRows={onPortRows}
+      onCopyRows={onCopyRows}
+      onDragRows={onDragRows}
     />
   )
   const view = render(tile(slots))
-  return { onChange, rerenderWith: (next: CompSlot[]) => view.rerender(tile(next)) }
+  return {
+    onChange,
+    onPortRows,
+    onCopyRows,
+    onDragRows,
+    rerenderWith: (next: CompSlot[]) => view.rerender(tile(next)),
+  }
 }
 
 function slots(...typeIds: number[]): CompSlot[] {
@@ -63,6 +75,17 @@ function openSearch() {
 /** A hull as the search offers it — scoped, because the tile also names hulls in its rows. */
 function option(name: RegExp) {
   return within(screen.getByTestId('ship-search-results')).getByRole('button', { name })
+}
+
+/** One row's select box, by the name a person hears — slot number and all. */
+function tick(name: string) {
+  return screen.getByRole('checkbox', { name })
+}
+
+function row(index: number) {
+  const found = screen.getAllByTestId('comp-row')[index]
+  if (!found) throw new Error(`the tile has no row ${index}`)
+  return found
 }
 
 describe('the scaffold', () => {
@@ -279,6 +302,106 @@ describe('a hull the ruleset does not price', () => {
   })
 })
 
+describe('picking rows out', () => {
+  it('ports the picked rows, in row order, whatever order they were picked in', () => {
+    const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+
+    fireEvent.click(tick('Select Orthrus in slot 3'))
+    fireEvent.click(tick('Select Abaddon in slot 1'))
+    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
+
+    expect(onPortRows).toHaveBeenCalledWith([
+      { typeId: SHIP.abaddon, isFlagship: false },
+      { typeId: SHIP.orthrus, isFlagship: false },
+    ])
+  })
+
+  it('extends a range when shift is held', () => {
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus, SHIP.svipul))
+
+    fireEvent.click(tick('Select Rifter in slot 2'))
+    fireEvent.click(tick('Select Svipul in slot 4'), { shiftKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Copy to another comp' }))
+
+    expect(onCopyRows.mock.calls[0]?.[0].map((slot: CompSlot) => slot.typeId)).toEqual([
+      SHIP.rifter,
+      SHIP.orthrus,
+      SHIP.svipul,
+    ])
+  })
+
+  it('carries the flagship out with it, because a subset holds at most one', () => {
+    const three: CompSlot[] = [
+      { typeId: SHIP.vindicator, isFlagship: true },
+      { typeId: SHIP.abaddon, isFlagship: false },
+      { typeId: SHIP.rifter, isFlagship: false },
+    ]
+    const { onPortRows } = mount(three)
+
+    fireEvent.click(tick('Select Vindicator in slot 1'))
+    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
+
+    expect(onPortRows).toHaveBeenCalledWith([{ typeId: SHIP.vindicator, isFlagship: true }])
+  })
+
+  it('forgets the selection when the rows change underneath it', () => {
+    // Row numbers renumber when a row is removed. Held across an edit, a selection would
+    // come to mean different hulls than the ones with ticks beside them.
+    const { rerenderWith } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+    fireEvent.click(tick('Select Orthrus in slot 3'))
+    expect(screen.getByTestId('comp-selection')).toBeTruthy()
+
+    rerenderWith(slots(SHIP.rifter, SHIP.orthrus))
+
+    expect(screen.queryByTestId('comp-selection')).toBeNull()
+  })
+
+  it('says how many are picked without putting the number in a control name', () => {
+    // A name that moves with state cannot be matched by anything looking for it.
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.click(tick('Select Abaddon in slot 1'))
+    expect(screen.getByTestId('comp-selection-status').textContent).toBe('1 hull selected')
+
+    fireEvent.click(tick('Select Rifter in slot 2'))
+    expect(screen.getByTestId('comp-selection-status').textContent).toBe('2 hulls selected')
+    expect(screen.getByRole('button', { name: 'Port to a new comp' })).toBeTruthy()
+  })
+
+  it('puts them down again', () => {
+    mount(slots(SHIP.abaddon))
+
+    fireEvent.click(tick('Select Abaddon in slot 1'))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }))
+
+    expect(screen.queryByTestId('comp-selection')).toBeNull()
+  })
+
+  it('drags the whole selection when the row dragged is part of it', () => {
+    const { onDragRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+
+    fireEvent.click(tick('Select Abaddon in slot 1'))
+    fireEvent.click(tick('Select Orthrus in slot 3'))
+    fireEvent.dragStart(row(0))
+
+    expect(onDragRows.mock.calls[0]?.[0].map((slot: CompSlot) => slot.typeId)).toEqual([
+      SHIP.abaddon,
+      SHIP.orthrus,
+    ])
+  })
+
+  it('drags just the one row when it is not part of the selection', () => {
+    const { onDragRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+
+    fireEvent.click(tick('Select Abaddon in slot 1'))
+    fireEvent.dragStart(row(1))
+
+    expect(onDragRows.mock.calls[0]?.[0].map((slot: CompSlot) => slot.typeId)).toEqual([
+      SHIP.rifter,
+    ])
+  })
+})
+
 describe('a viewer', () => {
   it('sees the comp but is given nothing to change it with', () => {
     mount(slots(SHIP.abaddon), false)
@@ -287,6 +410,7 @@ describe('a viewer', () => {
     expect(screen.queryByTestId('comp-name')).toBeNull()
     expect(screen.queryByTestId('comp-row-flagship-toggle')).toBeNull()
     expect(screen.queryByTestId('comp-row-remove')).toBeNull()
+    expect(screen.queryByTestId('comp-row-select')).toBeNull()
     const firstEmpty = within(screen.getAllByTestId('comp-row-empty')[0]!).getByRole('button')
     expect(firstEmpty.hasAttribute('disabled')).toBe(true)
   })

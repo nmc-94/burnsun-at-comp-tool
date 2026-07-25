@@ -54,7 +54,19 @@ function stubServer(saved: unknown = { boards: [], activeBoardId: null, updatedA
     } else if (url.endsWith('/workspace')) {
       body = layout
     } else if (url.endsWith('/comps') && init.method === 'POST') {
-      body = compBody('made', 'Untitled comp', [])
+      const sent = JSON.parse(String(init.body)) as { name: string }
+      body = compBody('made', sent.name, [])
+    } else if (url.endsWith('/slots') && init.method === 'PUT') {
+      // Echoed, because a comp created empty and then filled is only a comp with hulls in
+      // it from this response onwards.
+      const id = url.split('/').at(-2) ?? 'made'
+      const sent = JSON.parse(String(init.body)) as { slots: { typeId: number }[] }
+      const known = COMPS.find((comp) => comp.id === id)
+      body = compBody(
+        id,
+        known?.name ?? 'Alpha (partial)',
+        sent.slots.map((slot) => slot.typeId),
+      )
     } else if (url.endsWith('/comps')) {
       body = COMPS.map((comp) => compBody(comp.id, comp.name, comp.typeIds))
     } else if (url.includes('/rulesets/')) {
@@ -269,5 +281,89 @@ describe('arranging', () => {
       (call) => call.url.endsWith('/comps') && call.init.method === 'POST',
     )
     expect(JSON.parse(String(created?.init.body)).rulesetSlug).toBe('atxxii')
+  })
+})
+
+describe('porting rows into a new comp', () => {
+  async function openWithAlpha() {
+    stubServer({
+      boards: [{ id: 'b1', name: 'Angel doctrines', tiles: [{ compId: 'a' }] }],
+      activeBoardId: 'b1',
+      updatedAt: '2026-07-24T00:00:00Z',
+    })
+    const view = await open()
+    await waitFor(() => expect(screen.getByLabelText('Alpha')).toBeTruthy())
+    return view
+  }
+
+  function port() {
+    const alpha = screen.getByLabelText('Alpha')
+    fireEvent.click(within(alpha).getByRole('checkbox', { name: 'Select Abaddon in slot 1' }))
+    fireEvent.click(
+      within(alpha).getByRole('button', { name: 'Port to a new comp' }),
+    )
+  }
+
+  it('creates the comp, fills it, and puts it on the board', async () => {
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Angel doctrines', tiles: [{ compId: 'a' }] }],
+      activeBoardId: 'b1',
+      updatedAt: '2026-07-24T00:00:00Z',
+    })
+    await open()
+    await waitFor(() => expect(screen.getByLabelText('Alpha')).toBeTruthy())
+
+    port()
+
+    await waitFor(() => expect(tileNames()).toEqual(['a', 'made']))
+    const created = server.calls.find(
+      (call) => call.url.endsWith('/comps') && call.init.method === 'POST',
+    )
+    const filled = server.calls.find(
+      (call) => call.url.endsWith('/slots') && call.init.method === 'PUT',
+    )
+    // One POST and one PUT. A subset of a legal comp is legal, so there is nothing to gate.
+    expect(JSON.parse(String(created?.init.body)).name).toBe('Alpha (partial)')
+    // The source comp's ruleset, not the team's commonest: those are the point values the
+    // rows were picked under.
+    expect(JSON.parse(String(created?.init.body)).rulesetSlug).toBe('atxxii')
+    expect(filled?.url).toBe('/api/v1/comps/made/slots')
+    expect(JSON.parse(String(filled?.init.body))).toEqual({
+      slots: [{ typeId: SHIP.abaddon, isFlagship: false }],
+    })
+  })
+
+  it('leaves the comp the rows came out of exactly as it was', async () => {
+    await openWithAlpha()
+
+    port()
+
+    await waitFor(() => expect(tileNames()).toContain('made'))
+    const alpha = screen.getByLabelText('Alpha')
+    expect(within(alpha).getAllByTestId('comp-row-name').map((row) => row.textContent)).toEqual([
+      'Abaddon',
+    ])
+    expect(within(alpha).getByTestId('comp-save-state').dataset.saveState).toBe('idle')
+  })
+
+  it('remembers the new comp in the saved arrangement', async () => {
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Angel doctrines', tiles: [{ compId: 'a' }] }],
+      activeBoardId: 'b1',
+      updatedAt: '2026-07-24T00:00:00Z',
+    })
+    await open()
+    await waitFor(() => expect(screen.getByLabelText('Alpha')).toBeTruthy())
+
+    port()
+    await waitFor(() => expect(tileNames()).toContain('made'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    await waitFor(() => expect(savesOf(server.calls).length).toBeGreaterThan(0))
+    const saved = savesOf(server.calls).at(-1)
+    expect(JSON.parse(String(saved?.init.body)).boards[0].tiles).toEqual([
+      { compId: 'a' },
+      { compId: 'made' },
+    ])
   })
 })

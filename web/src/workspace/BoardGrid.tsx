@@ -8,7 +8,9 @@
 
 import { useEffect, useRef } from 'react'
 
+import type { CompSlot } from '../engine'
 import CompTileHost from '../comps/CompTileHost'
+import type { CopyTarget } from '../comps/CompTileHost'
 import GhostTile from './GhostTile'
 
 interface Props {
@@ -20,6 +22,13 @@ interface Props {
   readonly newCompId: string | null
   readonly onClose: (compId: string) => void
   readonly onCreate: () => void
+  /**
+   * Optional, and passed straight through. A board given neither still draws every tile —
+   * it simply offers no way to move hulls out of one, which is what keeps a bare
+   * `<BoardGrid>` a complete board.
+   */
+  readonly onPort?: (compId: string, rows: readonly CompSlot[]) => void
+  readonly copyTargets?: readonly CopyTarget[]
 }
 
 export default function BoardGrid({
@@ -30,6 +39,8 @@ export default function BoardGrid({
   newCompId,
   onClose,
   onCreate,
+  onPort,
+  copyTargets,
 }: Props) {
   const grid = useRef<HTMLElement>(null)
 
@@ -54,6 +65,8 @@ export default function BoardGrid({
           compId={compId}
           onClose={onClose}
           autoFocusName={compId === newCompId}
+          onPort={onPort}
+          copyTargets={copyTargets}
         />
       ))}
 

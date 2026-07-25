@@ -25,6 +25,7 @@ import { loadRulesetVersion } from '../rulesets/cache'
 import type { RulesetVersionDetail } from '../rulesets/types'
 import { getComp, renameComp, replaceSlots } from './api'
 import type { SaveState } from './CompTile'
+import { trackWrite, whenWritesSettle } from './in-flight'
 import { toEngineComp } from './tile-model'
 import type { CompDetail } from './types'
 
@@ -62,9 +63,14 @@ export function useCompDocument(compId: string): CompDocument {
     setRuleset(null)
     setError(null)
 
-    getComp(compId)
+    // Waited on before the read, not after: closing a tile flushes its last edit from a
+    // cleanup nobody can await, so a tile opening on the same comp — the same comp on two
+    // boards, a board switch — would otherwise race that write and win, and load the comp as
+    // it was before it.
+    whenWritesSettle(compId)
+      .then(() => (cancelled ? null : getComp(compId)))
       .then(async (found) => {
-        if (cancelled) return
+        if (cancelled || !found) return
         setComp(found)
         const loaded: CompSlot[] = found.slots.map((slot) => ({
           typeId: slot.typeId,
@@ -90,7 +96,7 @@ export function useCompDocument(compId: string): CompDocument {
     async (next: CompSlot[]) => {
       setSaveState('saving')
       try {
-        const updated = await replaceSlots(compId, next.map(toWire))
+        const updated = await trackWrite(compId, replaceSlots(compId, next.map(toWire)))
         persisted.current = JSON.stringify(next)
         setComp(updated)
         setSaveState('idle')

@@ -182,12 +182,43 @@
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 .trow .ic {
+  position: relative;
   width: 18px;
   height: 18px;
 }
 .trow .ic .hicon {
   width: 18px;
   height: 18px;
+}
+/* The row's tick sits on top of its hull icon rather than beside it, so picking rows out
+   costs the row no width and the tile's four-track grid does not move. Hidden by opacity and
+   never by `display`, because a control nothing can focus is a control nobody has. */
+.rowpick {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.trow:hover .rowpick,
+.rowpick:focus-visible,
+.rowpick:checked {
+  opacity: 1;
+}
+.trow:hover .rowpick:not(:checked),
+.trow .rowpick:focus-visible:not(:checked) {
+  opacity: 0.65;
+}
+/* A picked row keeps its tint while the cursor is elsewhere, so a selection built across
+   several rows is still visible as one thing. */
+.trow.picked {
+  background: var(--accent-soft);
+}
+.trow[draggable="true"] {
+  cursor: grab;
 }
 .trow .nm {
   display: flex;
@@ -257,6 +288,42 @@
   display: block;
   height: auto;
   padding: 4px;
+}
+
+/* What to do with the rows that are ticked. Present only while some are, and below the rows
+   rather than above them, so nothing a person is reading moves when it appears. */
+.rowsel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 4px 0;
+  border-top: 1px solid var(--line-1);
+}
+.rowsel-count {
+  margin: 0;
+  flex: 1 0 100%;
+  font-family: var(--font-brand);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+.rowsel-act {
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+.rowsel-act:hover,
+.rowsel-act:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* Flagship: an oval pill after the name and nothing else — no margin bar, no row tint. */

@@ -298,25 +298,48 @@ comps, sizes).
 > grid, so a tile has no size or position beyond its order, and the stored tile object
 > reserves room for both.
 
-**Phase G — Cross-tile iteration & comparison.** **Multi-select rows → new comp**
-(partial fork) and **drag a hull between comps to copy** — the drop always lands and
-the target flags whatever it breaks — plus the explicit **compare view** across
-selected comps.
+**Phase G — Cross-tile iteration.** **Multi-select rows → new comp** (partial fork)
+and **copy a hull between comps** — the copy always lands and the target flags
+whatever it breaks.
 
-> **Still the right shape after Phase F, with three things now pinned down.** The
-> **URL is already built for it**: `?sel=id,id` and `/teams/:t/boards/:b/compare` both
-> parse and format today, so the compare view is a screen to write, not a router to
-> revisit. The **board state shape is the constraint to respect** — each tile owns its
-> own slots and nothing lifts them, which is what makes tiles independent, so a
-> cross-tile drag needs a deliberate channel rather than a shared parent holding both
-> comps. And **two selections are not one**: `?sel=` names *comps* for comparison,
-> while multi-select of *rows* inside a tile is ephemeral and belongs nowhere near the
-> URL. Fork lineage stays in Phase H, so a partial extraction in G records no parent
-> until then. See `docs/PHASE-G-HANDOFF.md`.
+> **The compare view was cut from this phase by the owner** and is deferred rather
+> than dropped; `?sel=id,id` and `/teams/:t/boards/:b/compare` still parse and format,
+> so whoever writes the screen still writes a screen and not a router. What shipped is
+> the two cross-tile gestures. **The channel between tiles is a per-target-id store**
+> (`hull-transfer.ts`, modelled on `comp-cards.ts`): the source names type ids at a
+> target, the target turns them into an edit of its own comp, and no comp's slots are
+> ever held outside the cell that owns them — which is what let the two `BoardGrid`
+> independence tests pass unmodified. **The drag is a shortcut over a named control**,
+> not a second path: hovering a destination and dragging onto a tile both call
+> `propose`, clicking and dropping both call `offerHulls`. Keeping the payload in that
+> store rather than in `DataTransfer` is also what made the drag testable in jsdom,
+> which the Phase F brief had recorded as impossible. **The preview is computed in the
+> receiving tile**, so the ruleset judging an arriving hull is the receiving comp's
+> pinned version and the wrong one is not in scope to reach for. Fork lineage stays in
+> Phase H, so a partial extraction records no parent until then — and a port carries
+> the source's ruleset *slug* but lands on the newest *version*, because `CompCreate`
+> deliberately refuses to let a client name one. See `docs/PHASE-G-HANDOFF.md`.
 
-**Phase H — Team content.** Creator tracking, per-comp **comments**, **fork/copy
-with lineage**, and **Archetype (single) + Tags (multi)** via the reused chip editor
-(team-scoped suggestions) with filter/browse.
+**Phase H — Team content.** Per-comp **comments**, **fork/copy with lineage**, and
+**Archetype (single) + Tags (multi)** with team-scoped suggestions and filter/browse.
+
+> **Re-scoped after Phase G, because a third of it is already built and another
+> third has a gesture waiting for it.** **Creator tracking is done** — `Comp` has
+> carried `created_by_character_id`/`created_by_name` since `0002`, they are written
+> once and never reassigned, and the tile has drawn `comp-author` since Phase E. All
+> §4.1a still wants of this phase is that a *fork* records its own creator. **The
+> comments table exists too** (`comp_comment`, `0002`, with its `(comp_id, created_at)`
+> index and a cascade relationship), so comments are routes and a thread UI, not a
+> schema — but §4.1b's edit-your-own needs an `updated_at` the table does not have.
+> **Lineage is a retro-fit, not a new gesture**: Phase G shipped the partial fork
+> ("Port to a new comp") recording no parent, and §4.1c says a partial fork carries
+> the same `forked_from_comp_id` flagged as a partial derivation — so the column
+> arrives *under* something already on screen, and the full fork is the new part.
+> **Tagging is the only piece starting from nothing in the schema**, and it is the one
+> with its UI seams pre-built: the tile's `comp-chips` band is held open, `.chip`
+> styles are seeded in `base.css`, and the rail's accordion was deliberately left
+> unported because there was nothing to group by until archetype arrived. See
+> `docs/PHASE-H-HANDOFF.md`.
 
 **Phase I — Mock/solo pick-ban & share-slug export.** Single-party rehearsal of the
 ban phase (4 bans/captain, the Red/Blue sequence, ban caps 3/hull + 2/logi, flagship
@@ -388,7 +411,26 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
   `archetype` keeps its Phase H scope rather than being pulled forward half-built, so the
   rail is a flat searchable list of the team's comps.
 - **The router is hand-rolled (Phase F).** Four routes over the History API, no runtime
-  dependency, and Phase G's selection and compare URLs already parse and format.
+  dependency, and the selection and compare URLs already parse and format.
+- **The compare view is deferred (Phase G).** Cut by the owner during planning rather
+  than for want of time. The URL grammar stays parsed, formatted and tested so the screen
+  remains a screen to write; nothing renders `Route.view` or `Route.selection` today.
+- **Optimistic concurrency on slot writes — designed, not built (Phase G).** Deferred a
+  third time, but on corrected grounds: the Phase G brief claimed a cross-tile drag writes
+  two comps, and it does not — the copy leaves the source alone and an extraction writes a
+  comp nobody else holds, so the window is exactly Phase F's. The design is recorded in
+  `docs/PHASE-G-HANDOFF.md` with the two findings that cost the most to rediscover:
+  `Comp.updated_at` cannot be the precondition because a slot write never touches the
+  `comp` row, and the refusal must be **412** because `PUT .../slots` already spends 409 on
+  the archived team and the second flagship. It is a prerequisite for §4.7's operation
+  model rather than a detour, so it is scheduled and not abandoned. What did land is the
+  client half, `web/src/comps/in-flight.ts`, which closes the one race a single user could
+  reproduce: the same comp on two boards, where the unmounting tile's flush raced the
+  mounting tile's read.
+- **§6.8's linter half is real now (Phase G).** The `jsx-a11y` rules that matter run at
+  `error` rather than `warn`, measured both ways — a clean tree exits `0`, a probe with
+  `autoFocus` and a bare `onClick` on a `<div>` exits `1`. The pass over existing warnings
+  the caveat was waiting on turned out to be empty.
 - **The comp listing carries slots (Phase F).** Legality stays client-only, so the rail's
   dot has to be computed in the browser, and there is nothing to compute it from
   otherwise. `CompSummary` is gone: one comp shape on the wire.

@@ -109,6 +109,35 @@ export function withRow(
 }
 
 /**
+ * The rows at `indexes`, in row order.
+ *
+ * A filter rather than a map over the indexes, which makes it row-ordered, duplicate-free
+ * and safe against an index past the end without any of the three being a separate check.
+ */
+export function slotsAt(slots: readonly CompSlot[], indexes: readonly number[]): CompSlot[] {
+  const wanted = new Set(indexes)
+  return slots.filter((_, at) => wanted.has(at))
+}
+
+/**
+ * The comp with `typeIds` appended, which is what arriving from another tile looks like.
+ *
+ * It takes type ids rather than slots on purpose: a comp holds at most one flagship — the
+ * database enforces it and the API answers a second one with a 409 — so a hull copied into
+ * a comp that already has one must arrive as a plain hull. Carrying `CompSlot`s here would
+ * make that a rule to remember; carrying ids makes it impossible to get wrong.
+ */
+export function withHullsAdded(
+  slots: readonly CompSlot[],
+  typeIds: readonly number[],
+): CompSlot[] {
+  return typeIds.reduce<CompSlot[]>(
+    (built, typeId) => withRow(built, built.length, typeId),
+    [...slots],
+  )
+}
+
+/**
  * What the comp would look like with that row changed.
  *
  * The honest implementation of an in-place swap: build the candidate and judge it whole.
@@ -125,9 +154,75 @@ export function previewRow(
   return evaluate(toEngineComp(withRow(slots, index, typeId)), ruleset)
 }
 
+/**
+ * What the comp would look like with those hulls added, judged whole for the same reason
+ * `previewRow` is.
+ *
+ * The `ruleset` argument is the one that matters when this answers a question about another
+ * tile's hulls: comps on one board can be pinned to different versions, so the ruleset here
+ * must be the *receiving* comp's. A hull the receiving ruleset does not list arrives
+ * unresolved and unpriced, which is a violation to report rather than a copy to refuse.
+ */
+export function previewHulls(
+  slots: readonly CompSlot[],
+  typeIds: readonly number[],
+  ruleset: Ruleset,
+): LegalityResult {
+  return evaluate(toEngineComp(withHullsAdded(slots, typeIds)), ruleset)
+}
+
 /** Designate row `index` as the flagship, clearing whatever held it before. */
 export function withFlagship(slots: readonly CompSlot[], index: number | null): CompSlot[] {
   return slots.map((slot, at) => ({ typeId: slot.typeId, isFlagship: at === index }))
+}
+
+/**
+ * Which rows of one tile are picked out, for porting or copying elsewhere.
+ *
+ * Rows, not comps. The URL's `?sel=` names *comps*; this is a text-selection gesture inside
+ * a single tile, it is ephemeral, and it belongs nowhere near the address bar. The two are
+ * different things at different scales and they want the same words, so they do not get
+ * them.
+ *
+ * The anchor is where a range extends from — the last row touched without shift.
+ */
+export interface RowSelection {
+  readonly rows: readonly number[]
+  readonly anchor: number | null
+}
+
+export const EMPTY_SELECTION: RowSelection = { rows: [], anchor: null }
+
+/**
+ * Row `index` picked, or unpicked.
+ *
+ * Plain is a toggle, because the control is a checkbox and a checkbox that cleared its
+ * neighbours would be lying about what it is. Shift extends from the anchor by union, so a
+ * range only ever adds — the way back out is the checkbox that put a row in.
+ */
+export function selectRow(
+  selection: RowSelection,
+  index: number,
+  options?: { readonly range?: boolean },
+): RowSelection {
+  const held = new Set(selection.rows)
+
+  if (options?.range && selection.anchor !== null) {
+    const from = Math.min(selection.anchor, index)
+    const to = Math.max(selection.anchor, index)
+    for (let at = from; at <= to; at += 1) held.add(at)
+    // The anchor stays put, so a second shift-click re-extends from where the range began
+    // rather than from where the last one ended.
+    return { rows: [...held].sort(ascending), anchor: selection.anchor }
+  }
+
+  if (held.has(index)) held.delete(index)
+  else held.add(index)
+  return { rows: [...held].sort(ascending), anchor: index }
+}
+
+function ascending(a: number, b: number): number {
+  return a - b
 }
 
 /**

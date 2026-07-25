@@ -11,18 +11,24 @@ import { describe, expect, it } from 'vitest'
 
 import { evaluate } from '../engine'
 import type { CompSlot, Violation } from '../engine'
-import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
+import { SHIP, UNPRICED_TYPE_ID, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 import {
   annotate,
   deltaPill,
+  EMPTY_SELECTION,
   introducedBy,
+  previewHulls,
   previewRow,
   rowsBlamedBy,
   scaffold,
   searchHulls,
+  selectRow,
+  slotsAt,
   withFlagship,
+  withHullsAdded,
   withRow,
 } from './tile-model'
+import type { RowSelection } from './tile-model'
 
 function slots(...typeIds: number[]): CompSlot[] {
   return typeIds.map((typeId) => ({ typeId, isFlagship: false }))
@@ -136,6 +142,113 @@ describe('withRow', () => {
     const withFlag: CompSlot[] = [{ typeId: SHIP.vindicator, isFlagship: true }]
 
     expect(withRow(withFlag, 0, SHIP.rifter)).toEqual([{ typeId: SHIP.rifter, isFlagship: true }])
+  })
+})
+
+describe('slotsAt — the rows a person picked out', () => {
+  it('returns them in row order, whatever order they were picked in', () => {
+    const four = slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus, SHIP.svipul)
+
+    expect(slotsAt(four, [2, 0]).map((slot) => slot.typeId)).toEqual([SHIP.abaddon, SHIP.orthrus])
+  })
+
+  it('takes a row once however many times it is named', () => {
+    const two = slots(SHIP.abaddon, SHIP.rifter)
+
+    expect(slotsAt(two, [1, 1, 1])).toEqual([{ typeId: SHIP.rifter, isFlagship: false }])
+  })
+
+  it('ignores a row that is not there rather than producing a hole', () => {
+    const two = slots(SHIP.abaddon, SHIP.rifter)
+
+    expect(slotsAt(two, [0, 9])).toHaveLength(1)
+  })
+
+  it('carries the flagship designation, because a subset holds at most one', () => {
+    const three: CompSlot[] = [
+      { typeId: SHIP.abaddon, isFlagship: false },
+      { typeId: SHIP.vindicator, isFlagship: true },
+      { typeId: SHIP.rifter, isFlagship: false },
+    ]
+
+    expect(slotsAt(three, [1, 2])).toEqual([
+      { typeId: SHIP.vindicator, isFlagship: true },
+      { typeId: SHIP.rifter, isFlagship: false },
+    ])
+  })
+})
+
+describe('withHullsAdded — hulls arriving from another comp', () => {
+  it('appends them in the order given, leaving what was there alone', () => {
+    const one = slots(SHIP.abaddon)
+
+    expect(withHullsAdded(one, [SHIP.rifter, SHIP.orthrus]).map((slot) => slot.typeId)).toEqual([
+      SHIP.abaddon,
+      SHIP.rifter,
+      SHIP.orthrus,
+    ])
+  })
+
+  it('never brings a flagship with it, so two can never meet', () => {
+    // The receiving comp may already have one, and the API answers a second with a 409.
+    // Taking type ids rather than slots is what makes this true by construction.
+    const flagged: CompSlot[] = [{ typeId: SHIP.vindicator, isFlagship: true }]
+
+    expect(withHullsAdded(flagged, [SHIP.typhoon])).toEqual([
+      { typeId: SHIP.vindicator, isFlagship: true },
+      { typeId: SHIP.typhoon, isFlagship: false },
+    ])
+  })
+
+  it('adds nothing when nothing is offered', () => {
+    const two = slots(SHIP.abaddon, SHIP.rifter)
+
+    expect(withHullsAdded(two, [])).toEqual(two)
+  })
+
+  it('lands the hull past the field size rather than swallowing it', () => {
+    // Nothing here refuses a copy. An eleventh hull is a violation the receiving tile
+    // reports, not an edit that quietly does not happen.
+    const full = slots(...Array<number>(10).fill(SHIP.rifter))
+
+    const after = previewHulls(full, [SHIP.rifter], atxxiiRuleset)
+
+    expect(after.slots).toHaveLength(11)
+    expect(after.violations.map((violation) => violation.code)).toContain('over-field-size')
+  })
+})
+
+describe('previewHulls — judged by the comp receiving them', () => {
+  it('reprices the copies already there, the way a swap does', () => {
+    const two = slots(SHIP.orthrus, SHIP.orthrus)
+    expect(costs(two)).toEqual([21, 21])
+
+    const after = previewHulls(two, [SHIP.orthrus], atxxiiRuleset)
+
+    // Three now, so 23 each — a hull arriving made the two that were already here dearer.
+    expect(after.slots.map((slot) => slot.points)).toEqual([23, 23, 23])
+    expect(after.summary.pointsUsed).toBe(69)
+  })
+
+  it('disagrees with adding the arriving hull at its list price', () => {
+    const two = slots(SHIP.orthrus, SHIP.orthrus)
+    const current = judge(two)
+    const after = previewHulls(two, [SHIP.orthrus], atxxiiRuleset)
+
+    const honest = after.summary.pointsUsed - current.summary.pointsUsed
+
+    expect(honest).toBe(27)
+    expect(honest).not.toBe(19)
+  })
+
+  it('reports a hull its ruleset does not price rather than refusing it', () => {
+    // What a copy out of a comp pinned to another version looks like on arrival.
+    const one = slots(SHIP.rifter)
+
+    const after = previewHulls(one, [UNPRICED_TYPE_ID], atxxiiRuleset)
+
+    expect(after.slots[1]?.resolved).toBe(false)
+    expect(after.violations.map((violation) => violation.code)).toContain('unlisted-hull')
   })
 })
 
@@ -348,3 +461,48 @@ describe('annotate', () => {
     expect(candidate?.ship.name).toBe('Abaddon')
   })
 })
+
+describe('selectRow', () => {
+  it('adds a row, and takes the same row back out', () => {
+    const one = selectRow(EMPTY_SELECTION, 2)
+    expect(one.rows).toEqual([2])
+
+    expect(selectRow(one, 2).rows).toEqual([])
+  })
+
+  it('keeps the rows in row order however they were picked', () => {
+    const picked = [5, 1, 3].reduce(selectRowAt, EMPTY_SELECTION)
+
+    expect(picked.rows).toEqual([1, 3, 5])
+  })
+
+  it('extends from the anchor with shift, upwards or down', () => {
+    const anchored = selectRow(EMPTY_SELECTION, 4)
+
+    expect(selectRow(anchored, 7, { range: true }).rows).toEqual([4, 5, 6, 7])
+    expect(selectRow(anchored, 1, { range: true }).rows).toEqual([1, 2, 3, 4])
+  })
+
+  it('leaves the anchor where it was, so a second shift-click re-extends from the start', () => {
+    const anchored = selectRow(EMPTY_SELECTION, 4)
+    const wide = selectRow(anchored, 7, { range: true })
+
+    expect(wide.anchor).toBe(4)
+    expect(selectRow(wide, 6, { range: true }).rows).toEqual([4, 5, 6, 7])
+  })
+
+  it('behaves as a plain pick when shift arrives with nothing to extend from', () => {
+    expect(selectRow(EMPTY_SELECTION, 3, { range: true }).rows).toEqual([3])
+  })
+
+  it('never adds a row twice when ranges overlap', () => {
+    const first = selectRow(selectRow(EMPTY_SELECTION, 1), 4, { range: true })
+    const second = selectRow(selectRow(first, 3), 6, { range: true })
+
+    expect(second.rows).toEqual([1, 2, 3, 4, 5, 6])
+  })
+})
+
+function selectRowAt(selection: RowSelection, index: number): RowSelection {
+  return selectRow(selection, index)
+}
