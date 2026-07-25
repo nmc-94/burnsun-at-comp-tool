@@ -771,6 +771,14 @@ plus the per-phase design-stance and definition-of-done gates in each
 `docs/PHASE-*-HANDOFF.md`. No linter can check a testid convention or detect two
 elements sharing an accessible name, so those stay a review concern.
 
+> **The linter half is weaker than this section implied.** `oxlint` reports
+> `jsx-a11y` findings as *warnings* and exits `0`, so `npm run lint` and the CI job
+> that runs it go green with accessibility violations present — measured with a
+> deliberate `autoFocus`, which printed its warning and still exited `0`. Until
+> those rules are raised to errors, everything in this section is a review concern
+> rather than a gate. Raising them is the obvious fix and is not yet done, because
+> it wants a pass over the existing warnings first.
+
 **An automated end-to-end suite is deliberately deferred.** This section exists
 so that adding one later is a matter of writing tests rather than re-plumbing the
 UI. `README.md` documents how to drive the app in the meantime.

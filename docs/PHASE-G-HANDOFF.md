@@ -48,6 +48,7 @@ docker compose up --build
 ```
 
 ```bash
+docker exec at-comp-tool-db-1 createdb -U comptool comptool_test   # once per clone
 ruff check . && pytest
 ```
 
@@ -55,14 +56,25 @@ ruff check . && pytest
 cd web && npm install && npm run lint && npm test && npm run build
 ```
 
-> **Local footgun, still live.** The `database` test fixture drops every table while
-> `alembic_version` survives, so after `pytest` a later `alembic upgrade head` silently
-> no-ops and `alembic check` reports total drift. Run the drift gate against a scratch
-> database; `env.py` prefers `ALEMBIC_DATABASE_URL`. Head is `0004`.
+> **The test database is not the app's database.** The suite drops every table, so it runs
+> on `COMPTOOL_TEST_DATABASE_URL` — defaulting to `comptool_test` — and `tests/conftest.py`
+> refuses to start against any database whose name does not say it is disposable. It also
+> ignores the repo's `.env`, so a local `COMPTOOL_SESSION_COOKIE_SECURE=false` cannot turn
+> the cookie-security tests red. This replaces a footgun the earlier handoffs only warned
+> about: plain `pytest` with the stack up used to empty the development database, and did.
+>
+> The residue of that is worth knowing, because `alembic_version` is not part of
+> `Base.metadata`. Any database whose tables were dropped out from under it keeps claiming
+> its old revision, so `alembic upgrade head` no-ops and the app then fails on a schema that
+> is not there — drop `alembic_version` and migrate again. Run the drift gate on its own
+> scratch database; `env.py` prefers `ALEMBIC_DATABASE_URL`. Head is `0004`.
 
-To develop signed in without an EVE application, mint a session directly and set the cookie
-— there is deliberately no dev backdoor route; the one-liner is in `README.md` under
-"Driving the front end", which also shows how to scope a locator to one tile on a board.
+`docker compose` passes the repo's `.env` to the app container, so EVE SSO credentials go
+there (see `.env.example`; `COMPTOOL_ESI_ENABLED` needs `ESI_CALLBACK_URL` and
+`ESI_TOKEN_SECRET` alongside it or the app refuses to start). To develop signed in without
+an EVE application at all, mint a session directly and set the cookie — there is
+deliberately no dev backdoor route; the one-liner is in `README.md` under "Driving the front
+end", which also shows how to scope a locator to one tile on a board.
 
 ## Design stance (carried forward, non-negotiable)
 
@@ -103,8 +115,15 @@ own `change(withRow(...))`. No comp's slots ever leave the tile that owns them.
 ### Trap 2 — drag is not keyboard-operable, and §6.8 is not optional
 
 `dragstart`/`drop` are mouse events. A workspace whose only way to move a hull is a drag has
-a feature no keyboard user and no driver can reach — and §6.8 makes the second of those a
-CI-adjacent concern, not a nicety.
+a feature no keyboard user and no driver can reach, and §6.8 treats the second as a
+first-class requirement rather than a nicety.
+
+**Do not expect the linter to catch this.** `oxlint` reports its `jsx-a11y` findings as
+warnings and exits `0`, so `npm run lint` — and the `frontend` CI job with it — goes green
+with accessibility violations present. Measured, not assumed: a deliberate `autoFocus` on a
+probe file printed its warning and still exited `0`. §6.8's claim that the plugin gates this
+in CI is therefore aspirational today. Either raise those rules to errors before leaning on
+them, or treat drag accessibility as something review has to catch.
 
 Design the *operation* first and the drag second: "copy this hull to…" as a real control
 with a real accessible name, which a drag then becomes a shortcut for. That also gives the
