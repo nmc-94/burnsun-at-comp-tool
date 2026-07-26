@@ -580,18 +580,6 @@
   opacity: 0.35;
 }
 
-/* What the offered hulls would cost *here* — this comp's ruleset's answer, not the sending
-   comp's, which is the only reason this is drawn in the receiving tile at all. */
-.board-tile-preview {
-  margin: 4px 0 0;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
 .ghost-tile {
   border: 1px dashed var(--line-1);
   border-radius: 11px;

@@ -177,6 +177,12 @@ not something to remember not to use — it is not in scope there. The sending t
 computes a number about a comp it does not own, which is Trap 1 and Trap 3 answered by one
 arrangement.
 
+> **Later:** the mid-drag preview is gone, and `previewHulls` with it. A drag is a moving
+> thing, so the sentence appeared, changed and vanished as the cursor crossed the board —
+> a figure that only exists while you are not looking at it. What the trap was really about
+> survives untouched and is now the whole of it: the arriving hull is judged by the *receiving*
+> comp's ruleset, in the receiving tile, and reported there once it has landed.
+
 A hull absent from the receiving version needed no new copy: the engine already emits
 `unlisted-hull`, and `CompTile` already renders `Unknown hull <typeId>` for a slot it cannot
 resolve. The preview says what it costs (nothing) and names what it breaks in the engine's

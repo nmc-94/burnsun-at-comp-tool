@@ -18,7 +18,6 @@ import {
   EMPTY_SELECTION,
   introducedBy,
   offersFlagship,
-  previewHulls,
   previewRow,
   rowsBlamedBy,
   scaffold,
@@ -212,41 +211,32 @@ describe('withHullsAdded — hulls arriving from another comp', () => {
     // reports, not an edit that quietly does not happen.
     const full = slots(...Array<number>(10).fill(SHIP.rifter))
 
-    const after = previewHulls(full, [SHIP.rifter], atxxiiRuleset)
+    const after = judge(withHullsAdded(full, [SHIP.rifter]))
 
     expect(after.slots).toHaveLength(11)
     expect(after.violations.map((violation) => violation.code)).toContain('over-field-size')
   })
-})
 
-describe('previewHulls — judged by the comp receiving them', () => {
   it('reprices the copies already there, the way a swap does', () => {
+    // The arrival is judged whole rather than added up: the duplicate surcharge is retroactive,
+    // so a hull arriving makes every copy already in the comp dearer.
     const two = slots(SHIP.orthrus, SHIP.orthrus)
     expect(costs(two)).toEqual([21, 21])
 
-    const after = previewHulls(two, [SHIP.orthrus], atxxiiRuleset)
+    const after = judge(withHullsAdded(two, [SHIP.orthrus]))
 
-    // Three now, so 23 each — a hull arriving made the two that were already here dearer.
     expect(after.slots.map((slot) => slot.points)).toEqual([23, 23, 23])
     expect(after.summary.pointsUsed).toBe(69)
+    // 27, not the 19 an Orthrus lists at — which is why nothing in the tile ever adds a price.
+    expect(after.summary.pointsUsed - judge(two).summary.pointsUsed).toBe(27)
   })
 
-  it('disagrees with adding the arriving hull at its list price', () => {
-    const two = slots(SHIP.orthrus, SHIP.orthrus)
-    const current = judge(two)
-    const after = previewHulls(two, [SHIP.orthrus], atxxiiRuleset)
-
-    const honest = after.summary.pointsUsed - current.summary.pointsUsed
-
-    expect(honest).toBe(27)
-    expect(honest).not.toBe(19)
-  })
-
-  it('reports a hull its ruleset does not price rather than refusing it', () => {
-    // What a copy out of a comp pinned to another version looks like on arrival.
+  it('reports a hull the receiving ruleset does not price rather than refusing it', () => {
+    // What a copy out of a comp pinned to another version looks like on arrival. Judged by the
+    // *receiving* comp's ruleset, which is the only one entitled to say what a hull costs here.
     const one = slots(SHIP.rifter)
 
-    const after = previewHulls(one, [UNPRICED_TYPE_ID], atxxiiRuleset)
+    const after = judge(withHullsAdded(one, [UNPRICED_TYPE_ID]))
 
     expect(after.slots[1]?.resolved).toBe(false)
     expect(after.violations.map((violation) => violation.code)).toContain('unlisted-hull')

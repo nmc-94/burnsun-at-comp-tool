@@ -86,10 +86,15 @@ test('the row it would land on says so while the cursor is over it', async ({
 
   await expect(onto.getByTestId('comp-row').nth(1)).toHaveAttribute('data-landing', 'true')
   await expect(onto.getByTestId('comp-row').nth(0)).toHaveAttribute('data-landing', 'false')
-  // And nothing else: no outline around the whole card, no caption under it. The marked row is
-  // the answer, and it already carries the name of the hull it would replace.
+  // And not the whole card as well: the marked row has already said where the hull is going,
+  // and it carries the name of the one it would replace.
   await expect(onto).not.toHaveClass(/board-tile-receiving/)
-  await expect(onto.getByTestId('board-tile-preview')).toHaveCount(0)
+
+  // Stepping off the row onto the tile's own space hands the affordance back to the comp —
+  // which is what an empty slot does too, since a hull let go of on one lands on the end.
+  await onto.getByTestId('comp-row-empty').first().dispatchEvent('dragenter', { bubbles: true })
+  await expect(onto).toHaveClass(/board-tile-receiving/)
+  await expect(onto.getByTestId('comp-row').nth(1)).toHaveAttribute('data-landing', 'false')
 })
 
 test('a hull moved between slots of one comp lands, which a drop on the tile would not', async ({

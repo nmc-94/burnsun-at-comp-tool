@@ -154,23 +154,6 @@ export function previewRow(
   return evaluate(toEngineComp(withRow(slots, index, typeId)), ruleset)
 }
 
-/**
- * What the comp would look like with those hulls added, judged whole for the same reason
- * `previewRow` is.
- *
- * The `ruleset` argument is the one that matters when this answers a question about another
- * tile's hulls: comps on one board can be pinned to different versions, so the ruleset here
- * must be the *receiving* comp's. A hull the receiving ruleset does not list arrives
- * unresolved and unpriced, which is a violation to report rather than a copy to refuse.
- */
-export function previewHulls(
-  slots: readonly CompSlot[],
-  typeIds: readonly number[],
-  ruleset: Ruleset,
-): LegalityResult {
-  return evaluate(toEngineComp(withHullsAdded(slots, typeIds)), ruleset)
-}
-
 /** Designate row `index` as the flagship, clearing whatever held it before. */
 export function withFlagship(slots: readonly CompSlot[], index: number | null): CompSlot[] {
   return slots.map((slot, at) => ({ typeId: slot.typeId, isFlagship: at === index }))

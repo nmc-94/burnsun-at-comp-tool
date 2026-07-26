@@ -209,8 +209,14 @@ describe('dragging a hull into another comp', () => {
   })
 })
 
-describe('the preview under the cursor', () => {
-  it('prices the hull where it would land, not where it came from', async () => {
+// The affordance is an outline and nothing else. It used to carry a costing under the tile —
+// what the arriving hulls would do to the total, judged by the receiving comp's ruleset — and
+// that is deliberately gone: a drag is a moving thing, so the sentence appeared, changed and
+// vanished as the cursor crossed the board, which is not a figure anybody reads. The judgement
+// itself has not gone anywhere; it happens on arrival, where the tile's own delta pill and
+// issue flag report it, and `dragging a hull into another comp` above is where that is proved.
+describe('the tile a hull is being offered to', () => {
+  it('says so, and says nothing more than that', async () => {
     stubFetch()
     grid(['a', 'b'])
     await settled(['Alpha', 'Beta'])
@@ -218,40 +224,13 @@ describe('the preview under the cursor', () => {
     lift('Alpha')
     fireEvent.dragEnter(tile('Beta'))
 
-    // A third Abaddon costs 56: the surcharge is retroactive, so three cost 48 each where
-    // two cost 44, and 88 becomes 144. Its list price of 40 answers no question here, and
-    // neither does the 48 it will itself be charged.
-    const preview = within(tile('Beta')).getByTestId('board-tile-preview')
-    expect(preview.textContent).toContain('costs 56 points')
-    expect(preview.getAttribute('role')).toBe('status')
+    expect(tile('Beta').className).toContain('board-tile-receiving')
+    expect(within(tile('Beta')).queryByTestId('board-tile-preview')).toBeNull()
+    // Not the tile it is leaving, which is neither a destination nor drawn as one.
+    expect(tile('Alpha').className).not.toContain('board-tile-receiving')
   })
 
-  it('names what the copy would break, in the engine’s own words', async () => {
-    stubFetch()
-    grid(['a', 'b'])
-    await settled(['Alpha', 'Beta'])
-
-    lift('Alpha')
-    fireEvent.dragEnter(tile('Beta'))
-
-    expect(within(tile('Beta')).getByTestId('board-tile-preview').textContent).toContain('breaks:')
-    expect(within(tile('Alpha')).queryByTestId('board-tile-preview')).toBeNull()
-  })
-
-  it('prices it by the receiving version, so a hull that version never listed reads as free', async () => {
-    stubFetch()
-    grid(['a', 'd'])
-    await settled(['Alpha', 'Delta'])
-
-    lift('Alpha')
-    fireEvent.dragEnter(tile('Delta'))
-
-    const preview = within(tile('Delta')).getByTestId('board-tile-preview')
-    expect(preview.textContent).toContain('costs 0 points')
-    expect(preview.textContent).toContain('breaks:')
-  })
-
-  it('goes away when the cursor leaves', async () => {
+  it('stops saying so when the cursor leaves', async () => {
     stubFetch()
     grid(['a', 'b'])
     await settled(['Alpha', 'Beta'])
@@ -260,7 +239,7 @@ describe('the preview under the cursor', () => {
     fireEvent.dragEnter(tile('Beta'))
     fireEvent.dragLeave(tile('Beta'))
 
-    expect(within(tile('Beta')).queryByTestId('board-tile-preview')).toBeNull()
+    expect(tile('Beta').className).not.toContain('board-tile-receiving')
   })
 
   it('is not offered by the tile the hull is already in', async () => {
@@ -271,7 +250,7 @@ describe('the preview under the cursor', () => {
     lift('Alpha')
     fireEvent.dragEnter(tile('Alpha'))
 
-    expect(within(tile('Alpha')).queryByTestId('board-tile-preview')).toBeNull()
+    expect(tile('Alpha').className).not.toContain('board-tile-receiving')
   })
 })
 
@@ -320,12 +299,9 @@ describe('dragging a hull onto a slot', () => {
     fireEvent.dragEnter(tile('Beta'))
 
     expect(rowOf('Beta', 1).dataset.landing).toBe('false')
-    // And the tile takes over both halves of the affordance: these hulls are going on the end
-    // now, which is the landing that has nowhere but a caption to report itself.
+    // And the tile takes the affordance over: the hull is going on the end now, which is the
+    // comp's business rather than any one row's.
     expect(tile('Beta').className).toContain('board-tile-receiving')
-    expect(within(tile('Beta')).getByTestId('board-tile-preview').textContent).toContain(
-      'Copying 1 hull here',
-    )
   })
 
   it('takes a hull from the comp it is already in, which the tile as a whole will not', async () => {
@@ -357,7 +333,6 @@ describe('dragging a hull onto a slot', () => {
     fireEvent.drop(rowOf('Gamma', 0))
 
     expect(rowOf('Gamma', 0).dataset.landing).toBe('false')
-    expect(within(tile('Gamma')).queryByTestId('board-tile-preview')).toBeNull()
     expect(hulls('Gamma')).toEqual(['Rifter', 'Scimitar'])
     expect(writes(calls)).toHaveLength(0)
   })

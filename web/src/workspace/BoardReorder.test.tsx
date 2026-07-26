@@ -355,7 +355,7 @@ describe('the boundary with the hull drag', () => {
     fireEvent.dragStart(row as HTMLElement)
     fireEvent.dragEnter(tile('Beta'))
 
-    expect(within(tile('Beta')).getByTestId('board-tile-preview')).toBeTruthy()
+    expect(tile('Beta').className).toContain('board-tile-receiving')
     expect(board().dataset.reordering).toBe('false')
 
     fireEvent.drop(tile('Beta'))

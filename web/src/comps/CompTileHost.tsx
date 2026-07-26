@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { MouseEvent as PointerPress } from 'react'
 
-import type { CompSlot, Violation } from '../engine'
+import type { CompSlot } from '../engine'
 import CommentThread from './CommentThread'
 import SharePanel from './SharePanel'
 import CompTile from './CompTile'
@@ -35,7 +35,7 @@ import {
   takeOffer,
 } from '../workspace/hull-transfer'
 import type { CarriedRows } from '../workspace/hull-transfer'
-import { introducedBy, previewHulls, slotsAt, withHullsAdded, withRow } from './tile-model'
+import { slotsAt, withHullsAdded, withRow } from './tile-model'
 import type { CompDetail } from './types'
 import { registerUndoTarget } from './undo-keys'
 import { useCompDocument } from './useCompDocument'
@@ -166,28 +166,20 @@ export default function CompTileHost({
   }, [compId, comp, editable, transfer, slots, change])
 
   /**
-   * What the hulls being offered would cost *here*.
+   * Whether hulls are being offered to this comp as a whole, which is what the outline says.
    *
-   * Computed in the receiving tile because that is the only place it can be: comps on one
-   * board can be pinned to different ruleset versions, so the price of an arriving hull is
-   * this comp's ruleset's to say and not the sending comp's.
+   * Where they would land, and nothing else. This used to carry a costing as well — what the
+   * arriving hulls would do to the total, judged by *this* comp's ruleset — drawn as a line of
+   * prose under the tile. It is gone, and the reason is that a drag is a moving thing: the
+   * sentence appeared, changed and vanished as the cursor crossed the board, and a figure that
+   * only exists while you are not looking at it is not one anybody reads. The tile's own delta
+   * pill answers the same question a moment later, in the place it always sits, once the drop
+   * has actually happened.
    *
-   * **Only for a landing on the comp as a whole**, which is the one that has something to
-   * say: hulls going on the end of a ten-row scaffold need somewhere to report what they will
-   * cost, and there is nowhere else. A hull going into a *named* slot has the slot — the row
-   * marks itself, the hull it would replace is written on it, and a line of prose underneath
-   * the tile is a caption on the one thing already answering the question.
+   * Nothing is judged here at all now — a `dragenter` no longer runs the engine over a comp it
+   * is only passing over.
    */
-  const preview = useMemo(() => {
-    if (!ruleset || !result || transfer?.phase !== 'proposed') return null
-    if (transfer.atIndex !== null) return null
-    const after = previewHulls(slots, transfer.offer.typeIds, ruleset.payload)
-    return {
-      count: transfer.offer.typeIds.length,
-      delta: after.summary.pointsUsed - result.summary.pointsUsed,
-      breaks: introducedBy(result.violations, after.violations),
-    }
-  }, [ruleset, result, slots, transfer])
+  const receiving = transfer?.phase === 'proposed' && transfer.atIndex === null
 
   const name = comp?.name ?? 'Loading comp'
 
@@ -373,7 +365,7 @@ export default function CompTileHost({
       // Which is only ever a landing on the comp as a whole — a hull going into a named slot
       // is the same claim about one row, and the row draws it. Saying it twice, once around the
       // card and once around the row inside it, reads as two things happening.
-      className={`board-tile${preview ? ' board-tile-receiving' : ''}`}
+      className={`board-tile${receiving ? ' board-tile-receiving' : ''}`}
       data-testid="board-tile"
       data-comp-id={compId}
       // Written here and changed by `reorder.ts` while a drag is in flight. Safe because
@@ -567,12 +559,6 @@ export default function CompTileHost({
         )
       )}
 
-      {preview && (
-        <p className="board-tile-preview" data-testid="board-tile-preview" role="status">
-          {previewLabel(preview.count, preview.delta, preview.breaks)}
-        </p>
-      )}
-
       {error && (
         <p className="err" data-testid="board-tile-error" role="alert">
           {error}
@@ -580,13 +566,4 @@ export default function CompTileHost({
       )}
     </section>
   )
-}
-
-function previewLabel(count: number, delta: number, breaks: readonly Violation[]): string {
-  const hulls = count === 1 ? '1 hull' : `${count} hulls`
-  const cost = `Copying ${hulls} here costs ${delta} points`
-  // The engine's own words for what it would break. Re-authoring them here would be a second
-  // set of sentences for one rule, drifting apart from the popover's.
-  if (breaks.length === 0) return cost
-  return `${cost}, and breaks: ${breaks.map((violation) => violation.message).join('; ')}`
 }

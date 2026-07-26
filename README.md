@@ -277,9 +277,9 @@ await expect(page.getByTestId('board-grid')).toHaveAttribute('data-comp-count', 
 await page.keyboard.press('ControlOrMeta+c')
 await page.keyboard.press('ControlOrMeta+v')
 
-// Or into a comp that already exists. Dragging over the destination previews the cost *in
-// that comp*, against the ruleset version it is pinned to, which may not be the one these
-// hulls were priced under. `tileNamed` matches exactly: porting rows out of a comp makes an
+// Or into a comp that already exists. It is priced *in that comp*, against the ruleset version
+// it is pinned to, which may not be the one these hulls were priced under — and reported there
+// on arrival. `tileNamed` matches exactly: porting rows out of a comp makes an
 // "Armor Brawl (partial)" beside it.
 const target = tileNamed(page, 'Armor Brawl')
 await tile.getByTestId('comp-row').nth(0).dragTo(target)
@@ -302,10 +302,16 @@ was.
 
 `data-landing` on `comp-row` says which row a drop would replace; it is written at rest as
 `"false"` on every row, so it can be waited on rather than polled for existence. It is the
-*only* thing a row landing marks — neither `board-tile-receiving` nor `board-tile-preview`
-appears, because the marked row has already said where the hull is going and carries the name
-of the one it would replace. Both of those belong to the tile-wide landing, which has nowhere
-else to report itself.
+*only* thing a row landing marks — the tile's own `board-tile-receiving` outline stays off,
+because the marked row has already said where the hull is going and carries the name of the one
+it would replace. An **empty** row is not a landing: a hull let go of on one goes on the end of
+the comp, the same as anywhere else on the tile, so the tile takes the outline instead.
+
+Nothing announces what an arriving hull would *cost* before it lands. A drag is a moving thing,
+and a figure that appears, changes and vanishes as the cursor crosses the board is not one
+anybody reads — so the judgement happens on arrival, where the receiving tile's own
+`comp-points-delta` and `comp-issue-flag` report it against the ruleset version that comp is
+pinned to. Assert there, after the drop, rather than mid-gesture.
 
 ```javascript
 // Aim at the row, not the tile. The source's centre is its hull name, which is what carries.
