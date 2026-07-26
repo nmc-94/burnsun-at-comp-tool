@@ -101,6 +101,12 @@ class Settings(BaseSettings):
     #: guarding a feature; for the duration it is the identity provider.
     dev_auth_secret: str = ""
 
+    # Development name resolution. The second back door — see comptool/dev_resolve.py.
+    #: Resolves a character name from ``auth_session`` instead of from ESI, so an offline
+    #: end-to-end run can grant access to a character it has signed in. No secret: it hands
+    #: out nothing and is reachable only through a route that already requires ownership.
+    dev_resolve_enabled: bool = False
+
     @model_validator(mode="after")
     def _check_sso_configuration(self) -> Settings:
         # Trailing slashes would double up when joined with a path.
@@ -143,6 +149,26 @@ class Settings(BaseSettings):
                 f"{DEV_AUTH_SECRET_MIN_LENGTH} characters. It is the only thing between a "
                 f"caller and every identity in this database; generate one with "
                 f'python -c "import secrets; print(secrets.token_urlsafe(24))"'
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_dev_resolve_configuration(self) -> Settings:
+        """The same refusal for the same reason, one door along.
+
+        Separate from the sign-in's validator although the rule is identical: the two are
+        independent switches, and an error naming the wrong one sends whoever reads it to
+        the wrong variable.
+        """
+        if not self.dev_resolve_enabled:
+            return self
+        if not is_development_environment(self.environment):
+            raise ValueError(
+                f"COMPTOOL_DEV_RESOLVE_ENABLED is set but COMPTOOL_ENVIRONMENT is "
+                f"{self.environment!r}. Development resolution answers character lookups "
+                f"from this database's sign-in history instead of from EVE, so it is allowed "
+                f"only where the environment says it is a development one "
+                f"({', '.join(sorted(DEVELOPMENT_ENVIRONMENTS))})."
             )
         return self
 

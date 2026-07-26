@@ -11,6 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 import { resetRulesetCache } from '../rulesets/cache'
+// jsdom builds <dialog> as a bare HTMLElement with no showModal, so the settings dialog
+// cannot mount without this. See ui/dialog-polyfill.ts.
+import '../ui/dialog-polyfill'
 import WorkspaceScreen from './WorkspaceScreen'
 import { resetCompCards } from './comp-cards'
 import { resetHullTransfers } from './hull-transfer'
@@ -131,6 +134,21 @@ function stubServer(saved: unknown = { boards: [], activeBoardId: null, updatedA
       })
     } else if (url.endsWith('/comps')) {
       body = COMPS.map((comp) => state(comp.id))
+    } else if (url.endsWith('/grants')) {
+      // The settings dialog's second read. Empty is the interesting shape here — this file is
+      // about the workspace, and who is on the team is TeamSettingsDialog.test.tsx's subject.
+      body = []
+    } else if (/\/api\/v1\/teams\/[^/]+$/.test(url)) {
+      body = {
+        id: 't1',
+        name: 'Aurora Vanguard',
+        ownerCharacterId: 90_000_001,
+        ownerCharacterName: 'Kadir',
+        yourLevel: 'owner',
+        archived: false,
+        createdAt: '2026-07-01T00:00:00Z',
+        updatedAt: '2026-07-20T00:00:00Z',
+      }
     } else if (url.includes('/rulesets/')) {
       body = { slug: 'atxxii', versionLabel: 'v2026-07-23', payload: atxxiiRuleset }
     } else {
@@ -701,5 +719,28 @@ describe('tagging a comp from its tile', () => {
 
     // And the rail can now filter by it, which is the same set seen from the other side.
     expect(screen.getByRole('button', { name: 'Filter by Shield' })).toBeTruthy()
+  })
+})
+
+describe('team settings', () => {
+  // Two doors, one dialog. The board strip has a button, and the account menu has a link to
+  // `/teams/:id/settings` — which is also the address the settings *page* had. Both have to
+  // arrive at the same place or one of them is a dead end, which is what this pins.
+  it('opens from the board strip without changing where you are', async () => {
+    stubServer()
+    await open()
+
+    fireEvent.click(screen.getByTestId('team-settings-open'))
+
+    expect(screen.getByTestId('team-settings-dialog')).toBeTruthy()
+  })
+
+  it('opens on arrival at the settings URL', async () => {
+    stubServer()
+    render(<WorkspaceScreen teamId="t1" boardId={null} openSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('team-settings-dialog')).toBeTruthy())
+    // The board is behind it, not replaced by it — the dialog is over the workspace.
+    expect(screen.getByTestId('board-tabs')).toBeTruthy()
   })
 })

@@ -399,13 +399,46 @@ def test_signing_in_refreshes_the_name_shown_beside_a_grant(client, eve):
     assert [grant.subject_name for grant in rows(TeamGrant)] == ["Kadir"]
 
 
-def _grant_to(character_id: int, name: str) -> None:
+def test_signing_in_refreshes_the_name_on_a_team_you_own(client, eve):
+    # The owner is not in the grant sweep above — ownership is a column — so without this
+    # half the one name that can never be reconciled is the owner's own.
+    _grant_to(90_000_001, "Kadir", owner_name="Kadir Under Their Old Name")
+
+    state = begin_login(client)
+    client.get(f"/api/v1/auth/callback?code=c&state={state}", follow_redirects=False)
+
+    from comptool.models import Team
+
+    assert [team.owner_character_name for team in rows(Team)] == ["Kadir"]
+
+
+def test_signing_in_fills_in_an_owner_name_that_was_never_stored(client, eve):
+    # The backfill 0007 could not do. `!=` does not match NULL in SQL, so this is the case
+    # the explicit is_(None) arm exists for — and every team predating the column is in it.
+    _grant_to(90_000_001, "Kadir", owner_name=None)
+
+    state = begin_login(client)
+    client.get(f"/api/v1/auth/callback?code=c&state={state}", follow_redirects=False)
+
+    from comptool.models import Team
+
+    assert [team.owner_character_name for team in rows(Team)] == ["Kadir"]
+
+
+def _grant_to(character_id: int, name: str, owner_name: str | None = "Somebody Else") -> None:
     from comptool.models import AccessLevel, SubjectKind, Team, TeamGrant
 
     opened = db()
     session = next(opened)
     try:
-        team = Team(name="Aurora Vanguard", owner_character_id=90_000_999)
+        # Owned by the character signing in, so the owner half of the reconciliation has
+        # something to find. The grant below is a *separate* row for the same character —
+        # which is the realistic shape: you can be granted access to a team you own.
+        team = Team(
+            name="Aurora Vanguard",
+            owner_character_id=character_id,
+            owner_character_name=owner_name,
+        )
         session.add(team)
         session.flush()
         session.add(

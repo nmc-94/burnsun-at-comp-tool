@@ -20,6 +20,7 @@ interface Props {
   readonly onAdd: () => void
   readonly onRename: (boardId: string, name: string) => void
   readonly onClose: (boardId: string) => void
+  readonly onOpenSettings: () => void
 }
 
 export default function BoardTabs({
@@ -30,6 +31,7 @@ export default function BoardTabs({
   onAdd,
   onRename,
   onClose,
+  onOpenSettings,
 }: Props) {
   const [renaming, setRenaming] = useState<string | null>(null)
 
@@ -68,9 +70,37 @@ export default function BoardTabs({
         </button>
       </nav>
       {/* Outside the nav on purpose: a rehearsal is not a board, and putting it in the
-          landmark would make "Boards" name a list with a non-board in it. */}
+          landmark would make "Boards" name a list with a non-board in it. Settings is here
+          for the same reason, and for one more: it is the only way into the access list, so
+          it has to be somewhere present on every board and every viewport. */}
       <PickBanLink teamId={teamId} />
+      <SettingsButton onOpen={onOpenSettings} />
     </div>
+  )
+}
+
+/**
+ * A button rather than a link, because it opens an overlay rather than going anywhere, and
+ * `aria-haspopup="dialog"` rather than `aria-expanded`, because a modal is not a disclosure.
+ *
+ * Shown to everybody. Any member may *read* who has access — the server says so — and the
+ * dialog switches itself to read-only for anyone who is not the owner. Gating it here would
+ * mean fetching the team to decide whether to draw a 60px button, on the workspace's own
+ * critical path, and a control that appears a moment after the page does is worse than one
+ * that always works.
+ */
+function SettingsButton({ onOpen }: { readonly onOpen: () => void }) {
+  return (
+    <button
+      className="ftab-settings"
+      data-testid="team-settings-open"
+      type="button"
+      aria-haspopup="dialog"
+      aria-label="Team settings"
+      onClick={onOpen}
+    >
+      Settings
+    </button>
   )
 }
 

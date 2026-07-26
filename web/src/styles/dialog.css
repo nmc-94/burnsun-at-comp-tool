@@ -1,0 +1,644 @@
+/* The application's one modal dialog, and the shell any future one uses.
+ *
+ * A native <dialog> in the top layer, which is the whole reason this file is as short as it
+ * is: the focus trap, `inert` on everything behind, Escape, and immunity to the workspace's
+ * nested overflow and transform contexts are the browser's, not ours. There is no scrim
+ * element and no z-index anywhere in here, on purpose.
+ *
+ * The transform is the part worth spelling out. Under 860px `.lib` gets
+ * `transform: translateX(-100%)` (workspace.css), and a transform creates a containing block
+ * for `position: fixed` descendants — so a hand-rolled fixed scrim rendered inside the
+ * workspace would be trapped inside the library rail. Escaping that means a portal to
+ * document.body and a new z-index tier above the 30 the popovers already claim. The top layer
+ * needs neither.
+ *
+ * CASCADE, AND IT BITES. base.css @imports this file at its top, so every rule here lands
+ * *before* base.css's own .btn/.badge/.notice/.empty. Anything that has to override one of
+ * those is written `.dialog .btn` — two classes beat one, and specificity does not care about
+ * source order. Same reasoning as `.app-shell.app-shell-wide` in workspace.css. New selectors
+ * are prefixed `dlg-` for the same reason: `.row` and `.level` are already spoken for.
+ *
+ * No shadow and no blur. §6.4 sanctions a shadow for overlays, and comp-tile.css spends it on
+ * the popovers — but those float over live content with nothing between them and it. Here the
+ * scrim does the separating, and the locked design (docs/team-access-modal.html) has none.
+ */
+
+.dialog {
+  /* One number, one line to change. On the element rather than :root so a second dialog can
+     set its own without a cascade argument. */
+  --dialog-w: 680px;
+
+  /* Responsiveness is the dialog's own width, not the window's — the same component is the
+     phone sheet. See the two queries at the bottom, and the note there about why they are
+     two and not one. */
+  container-type: inline-size;
+
+  width: min(100%, var(--dialog-w));
+  /* The gutters a wrapper element would otherwise have provided. There is no wrapper: the top
+     layer centres this against the viewport by itself. */
+  max-width: calc(100vw - 36px);
+  max-height: calc(100dvh - 52px);
+  margin: auto;
+
+  /* Zero, and load-bearing. A modal dialog's own padding box is backdrop as far as
+     `event.target` is concerned, so padding here would be a rim around the edge that dismisses
+     the dialog when clicked. Every pixel of padding lives on the head, body and foot. */
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  /* Clips the head and foot to the radius. The body does the scrolling. */
+  overflow: hidden;
+
+  background: var(--bg-panel);
+  color: var(--text-1);
+  /* The UA gives <dialog> nothing; base.css sets the family on body and it does not reach
+     here through the top layer's own box. */
+  font: inherit;
+}
+
+/* Attribute-qualified, and that is not pedantry. The UA stylesheet's
+   `dialog:not([open]) { display: none }` is user-agent origin, and *author* origin wins over
+   it regardless of specificity — so a bare `.dialog { display: flex }` would leave a closed
+   dialog on screen. */
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog::backdrop {
+  /* Before Chrome 122 / Safari 17.4 / Firefox 125 — all 2024 — ::backdrop inherited from
+     nothing at all, not even :root, and this would have silently fallen back to the UA's own
+     grey. It inherits from its originating element now. */
+  background: var(--scrim);
+}
+
+/* The page behind. No JS, and it releases itself when the dialog unmounts. `:root:has()` is
+   already how tokens.css reaches the document from a descendant. */
+:root:has(dialog[open]) {
+  overflow: hidden;
+}
+
+.dialog-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+/* h1–h3 already take font-brand and weight 500 from base.css; only the size is new here. */
+.dialog-title {
+  font-size: 14.5px;
+}
+
+.dialog-body {
+  flex: 1 1 auto;
+  /* Load-bearing. Without it this flex item refuses to shrink below its content, and the box
+     grows past its own max-height instead of scrolling — the same note workspace.css makes
+     about the grid. */
+  min-height: 0;
+  overflow-y: auto;
+  /* The wheel stops here rather than chaining to the page behind. The scroll lock above
+     already stills that page, but iOS still rubber-bands it. */
+  overscroll-behavior: contain;
+  padding: 15px 16px 16px;
+}
+
+.dialog-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--line-1);
+  background: var(--bg-panel-alt);
+}
+
+/* `.dialog .btn.dialog-close`, not `.dialog-close`, and this is the trap the file header
+   warns about biting for real. `.dialog .btn` below is two classes; a one-class rule cannot
+   beat it whatever the source order, so `padding: 0` lost to `padding: 0 11px` and a 28px
+   square kept 6px of content box for a 12px glyph. The × rendered as a dot. Every icon-only
+   button in here needs all three classes for the same reason — see `.dlg-x`. */
+.dialog .btn.dialog-close {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+}
+
+/* base.css declares no global :focus-visible — every component states its own, as the entry
+   screens do. */
+.dialog :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- what the shell lends its contents ----------------------------------------------
+   Scoped deltas only. Putting `display: inline-flex` on the global `.btn` would change every
+   button in the application. */
+
+.dialog .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+}
+.dialog .btn.sm {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.dialog .badge {
+  font-family: var(--font-brand);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.dialog .badge.ok {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+}
+.dialog .badge.owner {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+.dialog .notice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--line-1);
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+.dialog .notice.warn {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+}
+.dialog .notice.good {
+  background: color-mix(in srgb, var(--success) 9%, transparent);
+  border-color: color-mix(in srgb, var(--success) 32%, transparent);
+}
+.dialog .notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.dialog .empty {
+  padding: 20px 10px;
+  text-align: center;
+  font-size: 12.5px;
+}
+
+/* --- the dialog's own furniture ----------------------------------------------------- */
+
+.dlg-input {
+  height: 32px;
+  padding: 0 10px;
+  width: 100%;
+  background: var(--bg-app);
+  color: var(--text-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 13px;
+}
+.dlg-input::placeholder {
+  color: var(--text-4);
+}
+textarea.dlg-input {
+  height: auto;
+  min-height: 88px;
+  padding: 9px 10px;
+  line-height: 1.55;
+  resize: vertical;
+  font-family: var(--font-brand);
+  font-size: 12.5px;
+}
+
+.dlg-section + .dlg-section {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-1);
+}
+.dlg-legend {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 9px;
+}
+.dlg-namerow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.dlg-namerow .dlg-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The field: one input that filters what is here and offers to add what is not. */
+.dlg-field {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.dlg-field-grow {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: block;
+}
+.dlg-field .dlg-input {
+  padding-left: 31px;
+  background: var(--bg-panel);
+  height: 34px;
+}
+.dlg-mag {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  display: flex;
+  color: var(--text-4);
+}
+
+/* The viewer/editor pair. One component, on a row and beside the field alike. */
+.dlg-lvl {
+  display: inline-flex;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.dlg-lvl button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--bg-app);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.dlg-lvl button + button {
+  border-left: 1px solid var(--line-1);
+}
+.dlg-lvl button.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+.dlg-lvl button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.dlg-field .dlg-lvl button {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.dlg-pasteline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+.dlg-pasteline span {
+  font-size: 11.5px;
+  color: var(--text-4);
+}
+
+.dlg-offer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--line-1));
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  flex-wrap: wrap;
+}
+.dlg-offer-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.dlg-bulk {
+  margin-top: 11px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line-1));
+  border-radius: var(--radius-lg);
+  background: var(--bg-soft);
+}
+.dlg-bulk-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 500;
+}
+.dlg-bulk-opts {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+
+.dlg-listhead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 16px 0 2px;
+  font-family: var(--font-brand);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+
+/* One row per person: face and name on the left, level and remove on the right. On a phone
+   the two halves stack — see the @container block, which is where the wrapping below is
+   actually used. */
+.dlg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-1) 60%, transparent);
+  /* Anything given a full-width basis gets its own line rather than becoming a third item
+     competing with the other two. Without this the phone's stacked `.dlg-acts` would sit
+     beside `.dlg-who` and starve it to a 60px column — which, with `overflow-wrap: anywhere`
+     below, breaks a name one letter per line. */
+  flex-wrap: wrap;
+}
+.dlg-row:last-child {
+  border-bottom: 0;
+}
+.dlg-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dlg-nm {
+  min-width: 0;
+}
+.dlg-nm b {
+  display: block;
+  font-weight: 500;
+  font-size: 13px;
+  /* An EVE name has no hyphens to break on and the box is narrow. Better a broken word than
+     a row that pushes the level control off the edge. */
+  overflow-wrap: anywhere;
+}
+.dlg-nm small {
+  display: block;
+  color: var(--text-4);
+  font-size: 10.5px;
+  font-family: var(--font-brand);
+}
+.dlg-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+/* Round, matching `.portrait` in the header bar. A character's face is drawn one way in this
+   application and this is it — a rounded square here would read as a different kind of thing. */
+.dlg-av {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--line-1);
+  object-fit: cover;
+}
+/* Not a person yet: the `+` in the offer panel, where the name in the field is somebody the
+   team does not have. Dashed says "would be" rather than "is". No grant row uses this any
+   more — every one of those names a character the game resolved. */
+.dlg-av.unknown {
+  background: none;
+  border-style: dashed;
+  color: var(--text-4);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-brand);
+  font-size: 12px;
+}
+
+/* One result of a pasted batch. */
+.dlg-rr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  flex-wrap: wrap;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-1) 55%, transparent);
+}
+.dlg-rr:last-child {
+  border-bottom: 0;
+}
+.dlg-rr-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.dlg-rr.bad .dlg-rr-name {
+  color: var(--text-3);
+}
+/* Why one pasted name did not land — the server's own sentence. A full basis so it takes the
+   line under the name it belongs to, and no margin to overflow the row with. */
+.dlg-rr-why {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* Three classes, for the reason spelled out at `.dialog .btn.dialog-close`. At 26px this one
+   was worse: `padding: 0 11px` left 4px of content box, so the remove control was a dot
+   beside a name that had been squeezed into a column narrow enough to break one letter per
+   line. */
+.dialog .btn.dlg-x {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--radius-md);
+  display: inline-grid;
+  place-items: center;
+}
+
+/* --- the phone sheet -----------------------------------------------------------------
+ *
+ * Two queries, and they cannot be one. An element cannot be styled by a container query it is
+ * itself the container for, so everything about the *box* — full bleed, no border, no radius —
+ * has to come from @media, and only what is *inside* the box can come from @container. Same
+ * number in both so the two can never disagree about what a phone is.
+ */
+
+@media (max-width: 460px) {
+  .dialog {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+@container (max-width: 460px) {
+  .dialog-head {
+    padding: 14px 15px;
+  }
+  .dialog-title {
+    font-size: 17px;
+  }
+  .dialog-body {
+    padding: 14px 15px 18px;
+  }
+  .dialog-foot {
+    padding: 12px 15px;
+  }
+  .dialog .btn.dialog-close {
+    width: 38px;
+    height: 38px;
+  }
+
+  /* 40px, not the 26px a mouse is happy with. Remove sits next to the level control; that is
+     exactly the tap you cannot afford to miss. */
+  .dialog .btn {
+    height: 40px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+  .dialog .btn.sm {
+    height: 36px;
+    padding: 0 11px;
+    font-size: 12px;
+  }
+  /* 16px, because below it iOS Safari zooms the page on focus and never zooms back. */
+  .dlg-input,
+  .dlg-field .dlg-input {
+    height: 44px;
+    font-size: 16px;
+  }
+  .dlg-lvl button,
+  .dlg-field .dlg-lvl button {
+    height: 40px;
+    padding: 0 16px;
+    font-size: 13px;
+    flex: 1;
+  }
+  .dialog .btn.dlg-x {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* The field stacks: the input takes its own line, the level and Add share the next. */
+  .dlg-field {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .dlg-field-grow {
+    flex-basis: 100%;
+  }
+  .dlg-field .dlg-lvl {
+    flex: 1;
+  }
+  .dlg-field .btn {
+    flex: 0 0 88px;
+  }
+  .dlg-namerow {
+    flex-wrap: wrap;
+  }
+  .dlg-namerow .dlg-input {
+    flex-basis: 100%;
+  }
+  .dlg-namerow .btn {
+    flex: 1;
+  }
+  .dlg-offer .btn {
+    flex: 1;
+  }
+
+  /* No bulk paste on a phone. Provisioning forty people is a desk job — the names are in a
+     spreadsheet on the other machine — and one at a time is what a phone is for. `display:
+     none` rather than a JS branch: it takes the control out of the tab order and out of the
+     accessibility tree both, and it follows a resize with nothing to keep in step. The
+     matching half is in TeamSettingsDialog, which measures the dialog before deciding what a
+     multi-line paste means. */
+  .dlg-pasteline {
+    display: none;
+  }
+
+  /* The row stacks: the person on one line, what you can do about them on the next.
+   *
+   * Not a nicety. At 390px the controls take about 200px of a 360px row — two 40px-tall level
+   * buttons and a 40px remove — which leaves a name roughly 115px to live in. `overflow-wrap:
+   * anywhere` then does what it is told, and "John LiWang" comes out as three lines of four
+   * letters beside a squashed ×. The touch targets are the ones a thumb needs and the name is
+   * the thing being read, so neither gives way; the row gets taller instead.
+   *
+   * The second line of the name (`added 3 days ago`) still goes. Two lines of controls plus
+   * two lines of person is more row than a phone can spend on one teammate, and the timestamp
+   * is the part nobody scrolls to find. */
+  .dlg-nm small {
+    display: none;
+  }
+  .dlg-nm b {
+    font-size: 14px;
+  }
+  .dlg-row {
+    padding: 7px 0;
+    /* Was `center`, which is meaningless once the two halves are on separate lines and would
+       centre a short `.dlg-acts` against nothing. */
+    align-items: flex-start;
+    row-gap: 8px;
+  }
+  .dlg-who {
+    flex-basis: 100%;
+  }
+  /* Indented to the portrait's far edge (34px + the row's 10px gap) so the controls line up
+     under the name rather than under the face. `calc(100% - 44px)`, not `100%`: a full basis
+     *plus* a margin overflows the row by exactly the margin — invisible on a desktop, a
+     sideways scrollbar on a phone. */
+  .dlg-acts {
+    flex-basis: calc(100% - 44px);
+    margin-left: 44px;
+    justify-content: flex-start;
+  }
+  /* Fills the line it now has to itself, with remove at the end of it. */
+  .dlg-acts .dlg-lvl {
+    flex: 1 1 auto;
+  }
+  .dlg-acts .btn.dlg-x {
+    margin-left: auto;
+  }
+  .dlg-av {
+    width: 34px;
+    height: 34px;
+  }
+  .dlg-listhead {
+    margin-top: 14px;
+  }
+}

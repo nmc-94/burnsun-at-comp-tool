@@ -6,18 +6,34 @@ export const apiBase = import.meta.env.VITE_API_BASE?.trim() || ''
 export class ApiError extends Error {
   status: number
   bodyText: string
+  /**
+   * The server's own sentence, when it sent one. Kept apart from `message`, which prefixes
+   * the status line: `message` is for a log, this is for a person. Undefined when the body
+   * was not JSON or carried FastAPI's validation array instead of a string.
+   */
+  detail?: string
 
   constructor(status: number, statusText: string, bodyText: string, detail?: string) {
     super(`${status} ${statusText}${detail ? `: ${detail}` : ''}`)
     this.name = 'ApiError'
     this.status = status
     this.bodyText = bodyText
+    this.detail = detail
   }
 }
 
-/** What to show a user about a failed call, whether or not it came from the API. */
+/**
+ * What to show a user about a failed call, whether or not it came from the API.
+ *
+ * The server's sentence alone when there is one. A route that has bothered to write "EVE has
+ * no character called 'Kadrri'." has said the whole thing, and prefixing it with
+ * "400 Bad Request:" adds only noise the reader has to skip. Anything else — a network
+ * failure, an unhandled 500, a validation array — falls back to the status line, which is at
+ * least a fact.
+ */
 export function messageFor(problem: unknown): string {
-  return problem instanceof ApiError ? problem.message : String(problem)
+  if (problem instanceof ApiError) return problem.detail ?? problem.message
+  return String(problem)
 }
 
 function detailFrom(bodyText: string): string | undefined {

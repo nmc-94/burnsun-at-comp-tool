@@ -13,7 +13,6 @@ import { fetchSession } from './session'
 import ShareView from './share/ShareView'
 import SignInScreen from './SignInScreen'
 import TeamList from './teams/TeamList'
-import TeamScreen from './teams/TeamScreen'
 import { readThemePref, resolveTheme } from './theme'
 import WorkspaceScreen from './workspace/WorkspaceScreen'
 
@@ -148,9 +147,13 @@ function renderRoute(route: Route, characterName: string | null) {
       // a real board rather than to nothing, which is what keeps a shared link from rotting.
       return <WorkspaceScreen teamId={route.teamId} boardId={route.boardId} />
     case 'team-settings':
-      return (
-        <TeamScreen teamId={route.teamId} onBack={() => navigate(workspaceRoute(route.teamId))} />
-      )
+      // Settings is a dialog over the board, not a page — so this address renders the board
+      // and opens the dialog on it. The same component as the case above, deliberately: React
+      // reconciles by position and type, so moving between a board and its settings does not
+      // remount the workspace, and the board behind the dialog is the one that was already
+      // there rather than a fresh load of it.
+      return <WorkspaceScreen teamId={route.teamId} boardId={null} openSettings />
+
     case 'pick-ban':
       return (
         <PickBanScreen

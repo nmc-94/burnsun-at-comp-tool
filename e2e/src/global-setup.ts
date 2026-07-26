@@ -18,7 +18,7 @@ or, against a local checkout:
   npm --prefix web run build
   python -m uvicorn comptool.main:app --host 127.0.0.1 --port 8000
 
-with COMPTOOL_DEV_AUTH_ENABLED, COMPTOOL_DEV_AUTH_SECRET and
+with COMPTOOL_DEV_AUTH_ENABLED, COMPTOOL_DEV_AUTH_SECRET, COMPTOOL_DEV_RESOLVE_ENABLED and
 COMPTOOL_SESSION_COOKIE_SECURE=false set. Point the suite elsewhere with E2E_BASE_URL.`
 
 export default async function globalSetup(config: FullConfig): Promise<void> {
@@ -28,6 +28,20 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     const health = await api.get('/api/health').catch(() => null)
     if (!health?.ok()) {
       throw new Error(`No app answering at ${baseURL}.\n${HOW_TO_START}`)
+    }
+
+    // The second seam, and it fails in a way that would send you looking at the wrong thing.
+    // Without it every character lookup goes to ESI, which a test deployment does not have
+    // configured, so every add answers 503 — and the symptom is a fixture throwing "expected
+    // 201" from three specs' setup, which reads as a broken API rather than a missing switch.
+    const { dev_resolve: devResolve } = (await health.json()) as { dev_resolve?: boolean }
+    if (devResolve !== true) {
+      throw new Error(
+        `${baseURL} reports dev_resolve: ${String(devResolve)}. Set ` +
+          `COMPTOOL_DEV_RESOLVE_ENABLED=true on the server and restart it — without it a ` +
+          `character name is looked up against EVE, which this deployment cannot reach, and ` +
+          `every grant is refused with 503.\n${HOW_TO_START}`,
+      )
     }
 
     // Probe the seam itself, once, rather than discovering it is off inside every fixture.

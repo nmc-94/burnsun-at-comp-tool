@@ -1,8 +1,11 @@
 // The development sign-in mints an identity, not a skeleton key.
 //
-// Worth having in any case, and doubly so while the grant seam is deferred: the only thing
-// standing between "a back door for tests" and "a back door" is that what comes out of it is
-// an ordinary character with ordinary reach. That is what this asserts.
+// The only thing standing between "a back door for tests" and "a back door" is that what
+// comes out of it is an ordinary character with ordinary reach. That is what this asserts.
+//
+// It matters more now that there are two of them: comptool/dev_resolve.py will hand a name
+// from this table to a grant, so team-settings.spec.ts can prove that granting somebody works.
+// This is the other half — that until somebody is granted, they reach nothing.
 
 import { expect, test } from '../src/fixtures'
 

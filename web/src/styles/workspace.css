@@ -185,6 +185,36 @@
   cursor: default;
 }
 
+/* The way into team settings, sitting beside the pick/ban link at the strip's right edge and
+   drawn to match it — the two are the same kind of thing, a control that is not a board.
+   Deliberately not `.ftab-pickban` reused: that one is an anchor and this one is a button,
+   and a shared class across two elements that behave differently is how a hover state ends up
+   on something you cannot click. */
+.ftab-settings {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-right: 10px;
+  padding: 0 10px;
+  min-height: 26px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.ftab-settings:hover {
+  background: var(--bg-soft);
+  color: var(--text-1);
+}
+
 /* library rail */
 .ws {
   flex: 1 1 auto;

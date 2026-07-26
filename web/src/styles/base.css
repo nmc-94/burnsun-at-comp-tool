@@ -4,6 +4,7 @@
 @import "./pick-ban.css";
 @import "./share.css";
 @import "./entry.css";
+@import "./dialog.css";
 
 * {
   box-sizing: border-box;

@@ -15,6 +15,16 @@ export interface Team {
   readonly id: string
   readonly name: string
   readonly yourLevel: string
+  readonly ownerCharacterName: string | null
+}
+
+/** Access granted to a character. Always resolved: the server refuses anything else. */
+export interface Grant {
+  readonly id: string
+  readonly subjectId: number
+  /** The game's spelling, which may differ from what was asked for. */
+  readonly subjectName: string
+  readonly level: string
 }
 
 export interface CompSlot {
@@ -64,6 +74,26 @@ export class Api {
 
   createTeam(name: string): Promise<Team> {
     return this.json(this.http.post('/api/v1/teams', { data: { name } }), 201)
+  }
+
+  listGrants(teamId: string): Promise<Grant[]> {
+    return this.json(this.http.get(`/api/v1/teams/${teamId}/grants`))
+  }
+
+  /**
+   * Grant access by character name.
+   *
+   * **The name must belong to a character that has signed in.** The server refuses a name it
+   * cannot resolve, and against a test deployment resolution reads this database's sign-in
+   * history (comptool/dev_resolve.py) — so `asSomeoneElse(...)` first, then this with the
+   * identity it returns. An invented name throws here with the server's 400, which is the
+   * right failure: it says the fixture asked for somebody who does not exist.
+   */
+  addGrant(teamId: string, characterName: string, level = 'viewer'): Promise<Grant> {
+    return this.json(
+      this.http.post(`/api/v1/teams/${teamId}/grants`, { data: { characterName, level } }),
+      201,
+    )
   }
 
   createComp(teamId: string, name: string, rulesetSlug: string): Promise<Comp> {

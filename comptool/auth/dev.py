@@ -26,11 +26,12 @@ Three things keep it out of a deployment, and they are meant to be read together
   confirms that this build carries a back door. See ``_refuse`` for why that trade runs the
   opposite way from ``routes._require_sso``'s 503.
 
-What it deliberately does *not* solve: a grant is written by name, and turning a name into an
-id still goes through ``comptool/esi.py`` and the public service a headless browser cannot
-reach either. So a second character can be signed in, but cannot be given access to a team.
-That was left alone on purpose — the permission matrix is covered in ``tests/`` — and what an
-end-to-end run can still prove is the negative: a stranger reaches nothing.
+What it does not solve on its own: a grant is asked for by name, and turning a name into an
+id goes through ``comptool/esi.py`` and the public service a headless browser cannot reach
+either. So a second character could be signed in and still not be given access to a team.
+That is now answered by ``comptool/dev_resolve.py``, a sibling back door on the same terms —
+which is what lets an end-to-end run prove the positive (grant a character, and they reach
+the team) and not only the negative (a stranger reaches nothing).
 
 Removing the feature is this file, its two lines in ``main.py``, its two settings and
 validator in ``settings.py``, and one key in ``health.py``.
@@ -51,7 +52,7 @@ from sqlalchemy.orm import Session
 from ..db import get_session
 from ..settings import Settings, get_settings, is_development_environment
 from . import sessions
-from .routes import refresh_grant_names
+from .routes import refresh_character_names
 
 logger = logging.getLogger("comptool")
 
@@ -170,10 +171,10 @@ def dev_login(
         ttl_seconds=settings.session_ttl_seconds,
     )
     # The same reconciliation a real sign-in does, for the same reason: this character has
-    # just asserted an id and a name together. A no-op while grants cannot be resolved
-    # without EVE, and here anyway — the claim this module makes is that everything
-    # downstream is identical, and a step skipped is that claim weakened.
-    refresh_grant_names(session, body.character_id, body.character_name)
+    # just asserted an id and a name together. Not the no-op it once was — with
+    # dev_resolve.py reading this same table, the row this writes is what a later grant by
+    # name will find.
+    refresh_character_names(session, body.character_id, body.character_name)
     session.commit()
     # Deliberately no purge_expired. /login runs one because it is rare and is the only thing
     # that creates login attempts; this creates none, an end-to-end run calls it many times

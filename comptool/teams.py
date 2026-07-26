@@ -16,9 +16,15 @@ without this switch; see ``comptool/share.py``.
 and reported identically, because answering them separately is precisely what turns a 404
 into "wrong team id" and a 403 into "right team id, keep trying".
 
-**Grants are written by name and matched by id.** A name that does not resolve is stored
-anyway, as a pending invitation that displays and grants nothing — never rejected, and
-never silently dropped.
+**Grants are written by name and matched by id, and a name that does not resolve is
+refused.** This used to go the other way: an unresolved name was stored as a "pending
+invitation", on the argument that adding someone must never fail because a third-party
+service was slow. The argument was wrong in its premise. Such a row grants nobody
+anything and can never begin to — it is not a lenient fallback, it is a false receipt,
+and the operator who reads "pending" has been told their teammate is on the way when in
+fact nothing is on the way and nothing ever will be. The availability worry it was built
+for is answered without it: the name is still in the box, so trying again is pressing Add
+again. So a grant is either a resolved grant or a 400 with a sentence saying why.
 """
 
 from __future__ import annotations
@@ -31,7 +37,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from pydantic.alias_generators import to_camel
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from .access import authorize, live
@@ -84,6 +90,10 @@ class TeamSummary(_Response):
     id: uuid.UUID
     name: str
     owner_character_id: int
+    #: The owner's name, or null for a team created before the column existed. Null means
+    #: "not known yet", never "no owner" — ``owner_character_id`` is not nullable. It fills
+    #: itself the next time that character signs in.
+    owner_character_name: str | None
     #: What the requesting character holds. The SPA gates its controls on this rather
     #: than guessing from ownership.
     your_level: str
@@ -112,14 +122,12 @@ class GrantChange(_Request):
 class GrantDetail(_Response):
     id: uuid.UUID
     subject_kind: str
-    subject_id: int | None
+    #: Never null. ``add_grant`` refuses a name it could not resolve and 0008 made the
+    #: column NOT NULL, so every grant that exists names a character the game knows.
+    subject_id: int
+    #: The game's spelling, not what was typed.
     subject_name: str
     level: str
-    #: The name has not been resolved to an id, so this grants nothing yet.
-    pending: bool
-    #: Why the last lookup left it pending — present only on the response that *was* that
-    #: lookup. Never stored: a listed grant reports null rather than a stale reason.
-    resolution: str | None = None
     created_at: datetime
 
 
@@ -128,6 +136,7 @@ def _summary(team: Team, level: AccessLevel) -> TeamSummary:
         id=team.id,
         name=team.name,
         owner_character_id=team.owner_character_id,
+        owner_character_name=team.owner_character_name,
         your_level=_LEVEL_NAMES[level],
         archived=team.archived_at is not None,
         created_at=team.created_at,
@@ -135,15 +144,13 @@ def _summary(team: Team, level: AccessLevel) -> TeamSummary:
     )
 
 
-def _grant(grant: TeamGrant, resolution: Resolution | None = None) -> GrantDetail:
+def _grant(grant: TeamGrant) -> GrantDetail:
     return GrantDetail(
         id=grant.id,
         subject_kind=grant.subject_kind,
         subject_id=grant.subject_id,
         subject_name=grant.subject_name,
         level=_LEVEL_NAMES[AccessLevel(grant.level)],
-        pending=grant.subject_id is None,
-        resolution=resolution.value if resolution is not None else None,
         created_at=grant.created_at,
     )
 
@@ -165,12 +172,10 @@ def list_teams(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> list[TeamSummary]:
-    """The teams that are mine: owned, or granted to me and resolved.
+    """The teams that are mine: owned, or granted to me.
 
     Not everything readable. A team left world-readable should be reachable by its link,
-    not enumerable by everyone — and a pending invitation confers nothing, so it must not
-    make a team appear here either. The join predicate gives that second part for free,
-    since a null subject id never equals a character id.
+    not enumerable by everyone.
     """
     granted = and_(
         TeamGrant.team_id == Team.id,
@@ -200,6 +205,10 @@ def create_team(
     team = Team(
         name=body.name,
         owner_character_id=viewer.character_id,
+        # Captured here for the same reason ``Comp.created_by_name`` is: ownership is an id,
+        # and an id is not something to show anyone. Kept current on later sign-ins by
+        # ``auth.routes.refresh_character_names``.
+        owner_character_name=viewer.character_name,
         # Spelled out rather than left to the column's server default: until the row is
         # flushed the attribute is None, and the resolver turns None into an error rather
         # than into a private team.
@@ -286,19 +295,26 @@ def add_grant(
     viewer: Viewer = Depends(current_viewer),
     resolve: CharacterResolver = Depends(get_character_resolver),
 ) -> GrantDetail:
-    """Invite a character by name.
+    """Add a character by name, or refuse and say why.
 
-    The lookup can fail in four ways and only one of them is a hit, but none of them stop
-    the grant being created: the row exists either way, showing the name that was entered
-    and granting nothing until an id is attached. Access must never hinge on whether a
-    third-party service answered.
+    The lookup has four outcomes and only one of them creates a row. The other three are
+    reported to the operator in a sentence, because each is something they can act on and
+    none of them is something the application can carry forward: a name EVE does not know
+    will not start working later, and a name that matched several characters has to be
+    disambiguated by the person who knows which one they meant.
+
+    The detail is a plain string rather than FastAPI's 422 array, deliberately. The SPA's
+    ``messageFor`` shows a string detail as the message; anything else surfaces as the raw
+    status line, which is the failure ``FirstTeam.tsx`` still carries a comment about.
     """
     access = authorize(session, team_id, viewer, AccessLevel.OWNER)
     team = live(access)
     name = body.character_name
 
     found = resolve(name)
-    if found.resolution is Resolution.RESOLVED and found.character_id == team.owner_character_id:
+    if found.resolution is not Resolution.RESOLVED or found.character_id is None:
+        raise _refusal(name, found.resolution)
+    if found.character_id == team.owner_character_id:
         raise HTTPException(status_code=409, detail=f"{name!r} already owns this team")
 
     _refuse_duplicate(session, team, name, found.character_id)
@@ -306,14 +322,37 @@ def add_grant(
         team_id=team.id,
         subject_kind=SubjectKind.CHARACTER,
         subject_id=found.character_id,
-        # The game's spelling when there is one; otherwise what was typed, so the owner
-        # can recognize their own typo.
+        # The game's spelling, not what was typed. Case and spacing come back from EVE
+        # canonical, so "john liwang" is stored as "John LiWang".
         subject_name=found.name or name,
         level=_GRANTABLE[body.level],
     )
     session.add(grant)
     session.commit()
-    return _grant(grant, found.resolution)
+    return _grant(grant)
+
+
+def _refusal(name: str, resolution: Resolution) -> HTTPException:
+    """Why a name was not added, in words the person who typed it can use.
+
+    503 for ``UNAVAILABLE`` and 400 for the rest, because the two ask for different things:
+    one says try again, the other says the request itself was wrong. The SPA leaves the name
+    in the box either way, so "try again" means pressing Add again — which is why losing the
+    old pending row costs nothing.
+    """
+    if resolution is Resolution.UNAVAILABLE:
+        return HTTPException(
+            status_code=503,
+            detail="Cannot reach EVE right now, so the name could not be checked. Try again "
+            "in a moment.",
+        )
+    if resolution is Resolution.AMBIGUOUS:
+        return HTTPException(
+            status_code=400,
+            detail=f"More than one character matched {name!r}. Type the full name exactly as "
+            f"it appears in game.",
+        )
+    return HTTPException(status_code=400, detail=f"EVE has no character called {name!r}.")
 
 
 @router.patch("/{team_id}/grants/{grant_id}", response_model=GrantDetail)
@@ -344,67 +383,19 @@ def remove_grant(
     return Response(status_code=204)
 
 
-@router.post("/{team_id}/grants/{grant_id}/resolve", response_model=GrantDetail)
-def resolve_grant(
-    team_id: uuid.UUID,
-    grant_id: uuid.UUID,
-    session: Session = Depends(get_session),
-    viewer: Viewer = Depends(current_viewer),
-    resolve: CharacterResolver = Depends(get_character_resolver),
-) -> GrantDetail:
-    """Try a pending invitation's name again.
+def _refuse_duplicate(session: Session, team: Team, name: str, character_id: int) -> None:
+    """One grant per character.
 
-    Idempotent: a grant that already carries an id is left exactly as it is rather than
-    re-looked-up, so a stray retry cannot repoint an existing grant at a different
-    character. Stale *names* on resolved grants are refreshed at sign-in instead, where
-    the character has just proved both their id and their name.
+    Matched on the id, never the name, which is now the only honest test: two spellings of
+    the same character resolve to one id, and a rename makes the stored name disagree with
+    the typed one while the id keeps agreeing. The database enforces this too, but only
+    after the fact and only in its own words — this exists so the answer names the person
+    instead of a constraint.
     """
-    access = authorize(session, team_id, viewer, AccessLevel.OWNER)
-    grant = _find_grant(session, live(access), grant_id)
-    if grant.subject_id is not None:
-        return _grant(grant, Resolution.RESOLVED)
-
-    found = resolve(grant.subject_name)
-    if found.resolution is not Resolution.RESOLVED:
-        return _grant(grant, found.resolution)
-    if found.character_id == access.team.owner_character_id:
-        raise HTTPException(
-            status_code=409, detail=f"{grant.subject_name!r} already owns this team"
-        )
-
-    _refuse_duplicate(session, access.team, grant.subject_name, found.character_id, skip=grant.id)
-    grant.subject_id = found.character_id
-    grant.subject_name = found.name or grant.subject_name
-    session.commit()
-    return _grant(grant, Resolution.RESOLVED)
-
-
-def _refuse_duplicate(
-    session: Session,
-    team: Team,
-    name: str,
-    character_id: int | None,
-    skip: uuid.UUID | None = None,
-) -> None:
-    """One grant per character, and one pending invitation per name.
-
-    The database enforces both, but only after the fact and only in its own words. This
-    exists so the answer names the person instead of a constraint.
-    """
-    clash = (
-        TeamGrant.subject_id == character_id
-        if character_id is not None
-        # Matched case-insensitively, which the partial unique index cannot do: an
-        # expression index reflects back from Postgres with casts that make the drift
-        # check permanently unhappy.
-        else and_(
-            TeamGrant.subject_id.is_(None), func.lower(TeamGrant.subject_name) == name.lower()
-        )
+    clash = select(TeamGrant).where(
+        TeamGrant.team_id == team.id,
+        TeamGrant.subject_kind == SubjectKind.CHARACTER,
+        TeamGrant.subject_id == character_id,
     )
-    stmt = select(TeamGrant).where(
-        TeamGrant.team_id == team.id, TeamGrant.subject_kind == SubjectKind.CHARACTER, clash
-    )
-    if skip is not None:
-        stmt = stmt.where(TeamGrant.id != skip)
-    if session.scalar(stmt) is not None:
+    if session.scalar(clash) is not None:
         raise HTTPException(status_code=409, detail=f"{name!r} already has access to this team")

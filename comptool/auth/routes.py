@@ -20,11 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
 from ..db import get_session
-from ..models import AuthEsiToken, AuthSession, SubjectKind, TeamGrant
+from ..models import AuthEsiToken, AuthSession, SubjectKind, Team, TeamGrant
 from ..settings import Settings, get_settings
 from . import crypto, sessions
 from .dependencies import current_session, optional_session, sso_client
@@ -80,12 +80,21 @@ def _require_sso(settings: Settings) -> None:
         raise HTTPException(status_code=503, detail="EVE SSO is not configured")
 
 
-def refresh_grant_names(session: Session, character_id: int, character_name: str) -> None:
-    """Keep the name shown beside a grant current.
+def refresh_character_names(session: Session, character_id: int, character_name: str) -> None:
+    """Keep every name stored beside this character's id current.
 
     Grants are entered by name and matched by id, so a rename leaves the stored name
     stale. The signed-in character has just proved both, which makes this the cheapest
     possible moment to reconcile them — and it needs no lookup service at all.
+
+    Two places hold such a name. Grants hold ``subject_name``, and a team holds
+    ``owner_character_name`` — ownership is a column rather than a grant row, so the owner
+    is not in the first sweep and would otherwise never be reconciled at all.
+
+    The team half doubles as the backfill for 0007, which had no honest value to write:
+    ``!=`` does not match NULL in SQL, so the null case is spelled out rather than left to
+    it. A team whose owner has not signed in since the migration keeps its null, and the
+    UI says "The team owner" until they do.
 
     Public because there are now two sign-in paths and both owe this: the callback below,
     and the development sign-in in ``dev.py``.
@@ -98,6 +107,17 @@ def refresh_grant_names(session: Session, character_id: int, character_name: str
             TeamGrant.subject_name != character_name,
         )
         .values(subject_name=character_name)
+    )
+    session.execute(
+        update(Team)
+        .where(
+            Team.owner_character_id == character_id,
+            or_(
+                Team.owner_character_name.is_(None),
+                Team.owner_character_name != character_name,
+            ),
+        )
+        .values(owner_character_name=character_name)
     )
 
 
@@ -189,7 +209,7 @@ def callback(
                 ),
             )
         )
-    refresh_grant_names(session, identity.character_id, identity.name)
+    refresh_character_names(session, identity.character_id, identity.name)
     session.commit()
 
     logger.info(

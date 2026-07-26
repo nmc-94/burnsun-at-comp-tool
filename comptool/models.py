@@ -154,6 +154,15 @@ class Team(Base):
     name: Mapped[str] = mapped_column(String(200))
     # An EVE character id. Wide enough for the game's id space, which exceeds 32 bits.
     owner_character_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    # The owner's name, kept beside the id the way ``Comp.created_by_name`` and
+    # ``CompComment.author_name`` are. Ownership is a column rather than a grant row, so
+    # without this there is nothing to *show* an owner as — only an integer.
+    #
+    # Nullable, though in practice rarely null: 0007 backfills it from ``auth_session``, and
+    # ``auth.routes.refresh_character_names`` keeps it current on every later sign-in. What
+    # is left over is a team whose owner has no session row at all, and there is no honest
+    # name to invent for one — so the column says nothing rather than guessing.
+    owner_character_name: Mapped[str | None] = mapped_column(String(200))
     # What someone with no matching grant gets. Teams are private by default.
     base_level: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
     # Put away rather than deleted: a team's comps are other people's work and a season's
@@ -175,9 +184,14 @@ class Team(Base):
 class TeamGrant(Base):
     """Access granted to an in-game character, corporation or alliance.
 
-    Access is granted by *name*, because that is what a captain knows. The name is kept
-    for display and re-resolution; matching happens on ``subject_id``, which stays null
-    until the name has been resolved against the game's identity service.
+    Access is *asked for* by name, because that is what a captain knows, but it is granted
+    by id: ``teams.add_grant`` resolves the name first and refuses anything that does not
+    come back as exactly one character. So ``subject_id`` is not nullable, and the name
+    beside it is the game's own spelling, kept for display and refreshed at sign-in.
+
+    It was nullable until 0008, which is what made a "pending invitation" possible — a row
+    granting nobody anything, indistinguishable to its reader from access. NOT NULL is the
+    part of removing that state which cannot be undone by a later branch forgetting.
     """
 
     __tablename__ = "team_grant"
@@ -185,19 +199,6 @@ class TeamGrant(Base):
         UniqueConstraint("team_id", "subject_kind", "subject_id"),
         # The lookup every login performs: which teams does this identity reach?
         Index("ix_team_grant_subject", "subject_kind", "subject_id"),
-        # Postgres counts NULLs as distinct, so the constraint above lets the same
-        # *unresolved* name be invited over and over. One pending invitation per name.
-        # Plain columns rather than lower(subject_name): an expression index reflects
-        # back from Postgres with casts the drift check cannot match, and would report
-        # permanent drift. Case-insensitivity is enforced where it can explain itself.
-        Index(
-            "uq_team_grant_one_pending_name",
-            "team_id",
-            "subject_kind",
-            "subject_name",
-            unique=True,
-            postgresql_where=text("subject_id IS NULL"),
-        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -205,7 +206,7 @@ class TeamGrant(Base):
         ForeignKey("team.id", ondelete="CASCADE"), index=True
     )
     subject_kind: Mapped[str] = mapped_column(String(16))
-    subject_id: Mapped[int | None] = mapped_column(BigInteger)
+    subject_id: Mapped[int] = mapped_column(BigInteger)
     subject_name: Mapped[str] = mapped_column(String(200))
     level: Mapped[int] = mapped_column(SmallInteger)
     created_at: Mapped[datetime] = _created_at()

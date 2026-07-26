@@ -33,6 +33,9 @@
      button and a wash behind the page. Derived from `--accent` so a rebrand carries them. */
   --halo: rgba(196, 122, 30, 0.18);
   --halo-far: rgba(196, 122, 30, 0.045);
+  /* The app dimmed behind a dialog. Warm ink rather than black: this theme's page is cream,
+     and a neutral black scrim over it reads as a grey sheet someone left there. */
+  --scrim: rgba(24, 18, 8, 0.34);
 
   --success: #4a9a6a;
   --danger: #c05050;
@@ -106,6 +109,9 @@
   --on-accent: #120c02;
   --halo: rgba(232, 164, 74, 0.22);
   --halo-far: rgba(232, 164, 74, 0.055);
+  /* Heavier than the light theme's, because it has further to go: dimming an already-dark
+     panel by a third leaves it legible enough to compete with what is in front of it. */
+  --scrim: rgba(2, 4, 9, 0.62);
 
   /* Dark carries a real shadow, because there is no border contrast to lean on. */
   --shadow-1: 0 12px 28px rgba(0, 0, 0, 0.28);

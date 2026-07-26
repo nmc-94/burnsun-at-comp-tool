@@ -287,7 +287,12 @@ def test_resharing_after_a_withdrawal_mints_a_different_slug(client, sign_in, pu
     assert client.get(f"/api/v1/share/{second}").status_code == 200
 
 
-def test_only_an_editor_may_mint_or_withdraw(client, sign_in, publish):
+def test_only_an_editor_may_mint_or_withdraw(client, sign_in, publish, resolver):
+    # The ``resolver`` fixture is load-bearing and was missing. Without it the name did not
+    # resolve, the grant was created pending, and it conferred nothing — so this test used
+    # to assert that a character with *no* access gets a 404, twice, and called one of them
+    # a viewer. Now the viewer is a viewer, which is the case that was meant to be covered.
+    resolver.knows("Viewer", VIEWER)
     publish()
     sign_in(OWNER)
     team = make_team(client)

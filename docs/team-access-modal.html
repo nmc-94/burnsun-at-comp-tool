@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark light" />
+<title>Team access · modal · AT Comp Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Azeret+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================================
+   SUPERSEDED IN ONE RESPECT — the shipped dialog has no pending state.
+
+   Everything about the box, the field, the paste drawer and the phone sheet
+   below is what was built. The pending rows are not: a grant whose name did
+   not resolve granted nobody anything and read as "on the way", so the server
+   now refuses such a name outright and every row here is a character EVE
+   knows. Ignore the `pending`, `REASON` and retry machinery when reading this
+   as the design of record; see comptool/teams.py's add_grant.
+
+   Access as a MODAL. 01's one field, plus 02's explicit paste drawer, in a box
+   that is only as wide as it needs to be.
+
+   Three decisions this file is arguing:
+
+   · A dialog, not a page. A grant list is nine short rows; a page gave it a 2K
+     window and it spent the difference on nothing. The dialog is capped at
+     520px (switchable in the bar) and the app stays visible behind it, so
+     managing access reads as a thing you do *to* the team rather than a place
+     you navigate to and have to find your way back from.
+
+   · The field still does two jobs — filter what is here, offer to add what is
+     not — and a multi-line paste still flips it into the bulk flow. But bulk is
+     now behind a named button under the field, so it is discoverable without
+     having to guess that pasting does something.
+
+   · No paste on mobile, at all. The button is not hidden-but-reachable, it is
+     not rendered, and a multi-line paste keeps only the first name. Provisioning
+     forty people is a desk job. The phone sheet is also stripped: no hint line,
+     no description, no per-row second line, one line per person.
+
+   Responsiveness is `@container` on the dialog, not the viewport — the same
+   dialog becomes the phone sheet, so there is one component, not two.
+
+   NOT done here, and it must be in the real thing: a focus trap, and returning
+   focus to the trigger on close. Omitted only because this preview shows two
+   dialogs at once and trapping focus in one would break the other. Escape,
+   aria-modal, the labelled title and the scrim click are all here.
+
+   Tokens are web/src/styles/tokens.css verbatim; data-testid values match the
+   ones TeamScreen.tsx already ships.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-brand: "Azeret Mono", ui-monospace, monospace;
+  --bg-app: #f5f0e8; --bg-panel: #ffffff; --bg-panel-alt: #ede8df; --bg-soft: #f2ece2;
+  --line-1: #c8bfb0; --line-2: #d8d0c4;
+  --text-1: #0d1220; --text-2: #8a7f6e; --text-3: #9b8f7d; --text-4: #b8aea0; --text-5: #d9d1c7;
+  --accent: #c47a1e; --accent-soft: rgba(196,122,30,.12); --accent-strong: #9f6519;
+  --on-accent: #1c1305;
+  --success: #4a9a6a; --danger: #c05050;
+  --radius-sm: 4px; --radius-md: 5px; --radius-lg: 6px;
+  --fit-tag-bg-sat: 60%; --fit-tag-bg-light: 92%;
+  --fit-tag-border-sat: 50%; --fit-tag-border-light: 70%;
+  --fit-tag-text-sat: 55%; --fit-tag-text-light: 28%;
+  --scrim: rgba(24, 18, 8, .34);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-app: #080b12; --bg-panel: #0d1220; --bg-panel-alt: #141c2e; --bg-soft: #11182a;
+  --line-1: #2a3550; --line-2: #3a4866;
+  --text-1: #f5f0e8; --text-2: #b8c4d8; --text-3: #8897b2; --text-4: #5f6d87; --text-5: #39455f;
+  --accent: #e8a44a; --accent-soft: rgba(232,164,74,.14); --accent-strong: #f0c070;
+  --on-accent: #120c02;
+  --fit-tag-bg-sat: 50%; --fit-tag-bg-light: 17%;
+  --fit-tag-border-sat: 55%; --fit-tag-border-light: 30%;
+  --fit-tag-text-sat: 80%; --fit-tag-text-light: 75%;
+  --scrim: rgba(2, 4, 9, .62);
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { margin: 0; background: var(--bg-app); color: var(--text-1); font-family: var(--font-sans);
+  font-size: 13px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+h1,h2,h3,h4 { margin: 0; font-family: var(--font-brand); font-weight: 500; }
+button, input, select, textarea { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --- harness -------------------------------------------------------------- */
+.bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px clamp(12px,3vw,26px); border-bottom: 1px solid var(--line-1);
+  background: var(--bg-panel); position: sticky; top: 0; z-index: 60; }
+.mark { color: var(--accent); flex: 0 0 auto; }
+.wordmark { font-family: var(--font-brand); font-weight: 500; font-size: 15px; }
+.wordmark span { color: var(--text-3); font-weight: 300; }
+.prod { font-size: 10px; font-weight: 500; letter-spacing: .13em; text-transform: uppercase; color: var(--text-3); }
+.bar-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ctl { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
+.swm { display: inline-flex; border: 1px solid var(--line-1); border-radius: var(--radius-md); overflow: hidden; }
+.swm button { height: 24px; padding: 0 9px; border: 0; background: var(--bg-panel); color: var(--text-3); font-size: 11px; cursor: pointer; }
+.swm button + button { border-left: 1px solid var(--line-1); }
+.swm button.on { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+
+.note-strip { margin: 0; padding: 9px clamp(12px,3vw,26px); background: var(--bg-panel-alt);
+  border-bottom: 1px solid var(--line-1); font-size: 12px; color: var(--text-2); }
+.note-strip b { color: var(--text-1); font-weight: 500; }
+
+.stage { padding: 18px clamp(12px,3vw,26px) 60px; }
+.cap { display: flex; align-items: baseline; gap: 8px; margin: 0 0 9px 2px; }
+.cap b { font-family: var(--font-brand); font-size: 10px; font-weight: 500; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--text-3); }
+.cap span { font-size: 11px; color: var(--text-5); }
+.hide { display: none !important; }
+
+/* --- the app behind the dialog -------------------------------------------- */
+.mock { position: relative; border: 1px solid var(--line-1); border-radius: 12px; overflow: hidden;
+  background: var(--bg-app); min-height: 520px; }
+.mock-bar { display: flex; align-items: center; gap: 9px; padding: 9px 14px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--line-1); }
+.mock-bar .wordmark { font-size: 13px; }
+.mock-tabs { display: flex; gap: 0; padding: 0 10px; background: var(--bg-panel); border-bottom: 1px solid var(--line-1); }
+.mock-tab { min-height: 33px; padding: 0 11px; font-size: 11px; color: var(--text-3);
+  border-bottom: 2px solid transparent; display: inline-flex; align-items: center; }
+.mock-tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+.mock-grid { padding: 13px; display: grid; grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: 10px; align-content: start; }
+.mock-tile { background: var(--bg-panel); border: 1px solid var(--line-1); border-radius: var(--radius-lg);
+  padding: 10px; display: flex; flex-direction: column; gap: 7px; }
+.mock-tile h4 { font-size: 12px; }
+.mock-tile .meta { display: flex; font-family: var(--font-brand); font-size: 10.5px; color: var(--text-4); }
+.mock-tile .bar2 { height: 3px; border-radius: 2px; background: var(--bg-panel-alt); overflow: hidden; }
+.mock-tile .bar2 i { display: block; height: 100%; background: var(--accent); }
+.mock-tile .slots { display: flex; gap: 3px; flex-wrap: wrap; }
+.mock-tile .slot { width: 15px; height: 15px; border-radius: 3px; border: 1px solid var(--line-1); background: var(--bg-soft); }
+
+/* --- the dialog ----------------------------------------------------------- */
+.scrim { position: absolute; inset: 0; background: var(--scrim); z-index: 5; }
+.modal-wrap { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; padding: 26px 18px; pointer-events: none; }
+.modal {
+  container-type: inline-size;
+  pointer-events: auto;
+  width: 100%; max-width: var(--modal-w, 520px);
+  max-height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg-panel); border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden;
+}
+.modal-head { display: flex; align-items: center; gap: 9px; padding: 13px 16px;
+  border-bottom: 1px solid var(--line-1); flex: 0 0 auto; }
+.modal-head h2 { font-size: 14.5px; }
+.modal-body { flex: 1 1 auto; overflow-y: auto; padding: 15px 16px 16px; min-height: 0; }
+.modal-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 9px;
+  padding: 11px 16px; border-top: 1px solid var(--line-1); background: var(--bg-panel-alt); }
+.modal-foot .n { font-size: 11.5px; color: var(--text-3); }
+.icox { width: 28px; height: 28px; padding: 0; border-radius: var(--radius-md); flex: 0 0 auto; }
+
+/* The phone. The same .modal, filling the frame instead of floating in it. */
+.phone { width: 390px; max-width: 100%; margin: 0 auto; border: 1px solid var(--line-2);
+  border-radius: 22px; overflow: hidden; background: var(--bg-app); }
+.phone .modal-wrap { position: static; padding: 0; }
+.phone .modal { max-width: none; border: 0; border-radius: 0; height: 640px; }
+.phone .mock-mini { padding: 14px; }
+
+/* --- shared parts --------------------------------------------------------- */
+.av { --s: 30px; width: var(--s); height: var(--s); flex: 0 0 auto; border-radius: calc(var(--s)/4);
+  display: grid; place-items: center; font-family: var(--font-brand); font-weight: 500;
+  font-size: calc(var(--s)*.34); user-select: none;
+  background: hsl(var(--h) var(--fit-tag-bg-sat) var(--fit-tag-bg-light));
+  color: hsl(var(--h) var(--fit-tag-text-sat) var(--fit-tag-text-light));
+  border: 1px solid hsl(var(--h) var(--fit-tag-border-sat) var(--fit-tag-border-light)); }
+.av.unknown { background: none; color: var(--text-4); border: 1px dashed var(--line-1); }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-brand);
+  font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3);
+  border: 1px solid var(--line-1); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.pill.owner { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+.pill.warn { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.pill.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
+
+.btn { height: 28px; padding: 0 11px; background: var(--bg-panel-alt); color: var(--text-2);
+  border: 1px solid var(--line-1); border-radius: var(--radius-md); font-size: 12px; cursor: pointer;
+  white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background .12s, color .12s; }
+.btn:hover:not(:disabled) { background: var(--bg-soft); color: var(--text-1); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.accent { background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+  font-family: var(--font-brand); font-weight: 500; }
+.btn.accent:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
+.btn.subtle { background: none; border-color: transparent; color: var(--text-3); }
+.btn.subtle:hover:not(:disabled) { background: var(--bg-soft); color: var(--text-1); }
+.btn.danger:hover:not(:disabled) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.btn.sm { height: 25px; padding: 0 8px; font-size: 11px; }
+
+.inp { height: 34px; padding: 0 10px; width: 100%; background: var(--bg-app); color: var(--text-1);
+  border: 1px solid var(--line-1); border-radius: var(--radius-md); font-size: 13px; }
+.inp::placeholder { color: var(--text-4); }
+textarea.inp { height: auto; padding: 9px 10px; line-height: 1.55; resize: vertical;
+  font-family: var(--font-brand); font-size: 12.5px; }
+.muted { color: var(--text-3); }
+
+/* The field: search and add in one input. */
+.field { display: flex; gap: 7px; align-items: center; }
+.field .grow { flex: 1; min-width: 0; position: relative; }
+.field .inp { padding-left: 31px; background: var(--bg-panel); }
+.field .mag { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+
+/* The paste trigger — a named button, from 02, on its own line so the field row
+   stays three controls wide. Not rendered at all on the phone. */
+.pasteline { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.pasteline .t { font-size: 11.5px; color: var(--text-4); }
+
+.offer { display: flex; align-items: center; gap: 9px; margin-top: 10px; padding: 9px 11px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--line-1)); border-radius: var(--radius-lg);
+  background: var(--accent-soft); flex-wrap: wrap; }
+.offer .t { flex: 1; min-width: 0; font-size: 12.5px; }
+.offer .t b { font-weight: 500; }
+
+.notice { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: var(--radius-lg);
+  font-size: 12px; background: var(--bg-soft); border: 1px solid var(--line-1); color: var(--text-2); margin-top: 10px; }
+.notice.warn { background: color-mix(in srgb, var(--danger) 8%, transparent); border-color: color-mix(in srgb, var(--danger) 32%, transparent); }
+.notice.good { background: color-mix(in srgb, var(--success) 9%, transparent); border-color: color-mix(in srgb, var(--success) 32%, transparent); }
+.notice svg { flex: 0 0 auto; margin-top: 1px; }
+
+.bulk { margin-top: 11px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line-1));
+  border-radius: var(--radius-lg); background: var(--bg-soft); }
+.bulk textarea { min-height: 88px; background: var(--bg-panel); }
+.bulk .opts { display: flex; gap: 8px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
+.rr { display: flex; align-items: center; gap: 8px; padding: 7px 0; flex-wrap: wrap;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-1) 55%, transparent); }
+.rr:last-child { border-bottom: 0; }
+.rr .nm { flex: 1; min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.rr.bad .nm { color: var(--text-3); }
+.rr .why { flex-basis: 100%; font-size: 11.5px; color: var(--text-3); }
+
+.listhead { display: flex; align-items: baseline; gap: 8px; margin: 16px 0 2px; }
+.listhead .t { font-family: var(--font-brand); font-size: 10px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--text-4); }
+
+/* One row. Desktop keeps a second line; the phone drops it — see the container rule. */
+.row { display: flex; align-items: center; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-1) 60%, transparent); }
+.row:last-child { border-bottom: 0; }
+.row .who { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
+.row .nm { min-width: 0; }
+.row .nm b { display: block; font-weight: 500; font-size: 13px; overflow-wrap: anywhere; }
+.row .nm small { display: block; color: var(--text-4); font-size: 10.5px; font-family: var(--font-brand); }
+.row .acts { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.row.pending .nm b { color: var(--text-2); }
+.row .why { flex-basis: 100%; margin: 0 0 3px 40px; font-size: 11.5px; color: var(--text-3);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.lvl { display: inline-flex; border: 1px solid var(--line-1); border-radius: var(--radius-md); overflow: hidden; flex: 0 0 auto; }
+.lvl button { height: 26px; padding: 0 10px; border: 0; background: var(--bg-app); color: var(--text-3);
+  font-size: 11.5px; cursor: pointer; }
+.lvl button + button { border-left: 1px solid var(--line-1); }
+.lvl button.on { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.lvl button:disabled { cursor: default; opacity: .55; }
+.field .lvl button { height: 34px; padding: 0 12px; font-size: 12px; }
+
+.x { width: 26px; height: 26px; padding: 0; border-radius: var(--radius-md); }
+.empty { padding: 20px 10px; text-align: center; color: var(--text-4); font-size: 12.5px; }
+
+/* --------------------------------------------------------------------------
+   The phone. Everything below fires on the dialog's own width, so the same
+   component is the sheet — and the desk-width version is never touched.
+   -------------------------------------------------------------------------- */
+@container (max-width: 460px) {
+  .modal-head { padding: 14px 15px; }
+  .modal-head h2 { font-size: 17px; }
+  .modal-body { padding: 14px 15px 18px; }
+  .modal-foot { padding: 12px 15px; }
+  .icox { width: 38px; height: 38px; }
+
+  .inp { height: 44px; font-size: 16px; }        /* 16px stops iOS Safari zooming on focus */
+  .btn { height: 42px; padding: 0 14px; font-size: 13px; }
+  .btn.sm { height: 36px; padding: 0 11px; font-size: 12px; }
+
+  /* The field stacks: full-width input, then level and Add sharing a line. */
+  .field { flex-wrap: wrap; gap: 8px; }
+  .field .grow { flex-basis: 100%; }
+  .field .lvl { flex: 1; }
+  .field .lvl button { flex: 1; height: 42px; font-size: 13px; }
+  .field .btn { flex: 0 0 84px; }
+
+  /* Cut from the phone outright: the paste trigger, the explanation under the
+     title, the hint line, and the second line on every row. What is left is a
+     name, a level and a way to remove it. */
+  .pasteline, .subline, .hintline { display: none; }
+  .row .nm small { display: none; }
+
+  .row { padding: 5px 0; }
+  .row .who { gap: 11px; }
+  .row .nm b { font-size: 14px; }
+  .lvl button { height: 38px; padding: 0 12px; font-size: 12.5px; }
+  .x { width: 38px; height: 38px; }
+  .row .why { margin-left: 41px; }
+  .listhead { margin-top: 14px; }
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <svg class="mark" width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="4.4" fill="currentColor"/>
+    <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+      <path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8 6.9 6.9M17.1 17.1l2.1 2.1M19.2 4.8 17.1 6.9M6.9 17.1 4.8 19.2"/>
+    </g></svg>
+  <span class="wordmark">Burn<span>Sun</span></span>
+  <span class="prod">Team access · modal</span>
+  <div class="bar-right">
+    <span class="ctl">Dialog
+      <span class="swm" id="mw" role="group" aria-label="Dialog width">
+        <button type="button" data-act="mw" data-val="440">440</button>
+        <button type="button" data-act="mw" data-val="520">520</button>
+        <button type="button" data-act="mw" data-val="600">600</button>
+      </span></span>
+    <span class="ctl">Show
+      <span class="swm" id="show" role="group" aria-label="Which previews to show">
+        <button type="button" data-act="show" data-val="both">Both</button>
+        <button type="button" data-act="show" data-val="d">Desktop</button>
+        <button type="button" data-act="show" data-val="m">Mobile</button>
+      </span></span>
+    <span class="ctl">You are
+      <span class="swm" id="you" role="group" aria-label="Your level on this team">
+        <button type="button" data-act="you" data-val="owner">Owner</button>
+        <button type="button" data-act="you" data-val="editor">Editor</button>
+      </span></span>
+    <button class="btn sm" id="theme" type="button">Light</button>
+  </div>
+</header>
+
+<p class="note-strip"><b>01 + 02, as a dialog.</b> The field filters and offers to add; the paste drawer is a named button under it.
+  The phone gets the same dialog full-screen, with the paste trigger, the description and the per-row second line removed.</p>
+
+<div class="stage">
+  <section id="pane-d">
+    <p class="cap"><b>Desktop</b><span>the app stays behind it — this box is as wide as your window</span></p>
+    <div class="mock" id="mock-d"></div>
+  </section>
+  <section id="pane-m" style="margin-top:26px">
+    <p class="cap"><b>Mobile</b><span>390px · same dialog, full-screen, no paste</span></p>
+    <div class="phone" id="mock-m"></div>
+  </section>
+</div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   One set of grants, shared by both previews. Shapes match teams/types.ts.
+   --------------------------------------------------------------------------- */
+
+let ID = 0;
+const G = (name, level, o = {}) => ({
+  id: ++ID, name, level,
+  pending: !!o.pending, resolution: o.pending || null,
+  added: o.added || '12 Jun', addedBy: o.addedBy || 'Vael Ostrakon',
+  seen: o.seen === undefined ? 300 : o.seen, owner: !!o.owner,
+});
+
+const SAMPLE = 'Sable Ix\nJarek Molde\nNadia Cross\nTeo Marchetti';
+
+const state = {
+  show: 'both', you: 'owner', mw: 520, team: 'Sun Reavers', lastPane: 'd',
+  grants: [
+    G('Vael Ostrakon', 'owner', { owner: true, seen: 4, added: '2 May', addedBy: '—' }),
+    G('Mirren Kask', 'editor', { seen: 26 }),
+    G('Doru Vantalis', 'editor', { seen: 55 }),
+    G('Ilsa Torvenn', 'editor', { seen: 140 }),
+    G('Ada Petrescu', 'editor', { seen: 320, added: '19 Jun' }),
+    G('Katra Vin', 'viewer', { seen: 90 }),
+    G('Rhoan Sedge', 'viewer', { seen: 210 }),
+    G('Tam Okonkwo', 'viewer', { seen: 1500, added: '19 Jun' }),
+    G('Wren Aldaris', 'viewer', { seen: 2600, added: '3 Jul' }),
+    G('Halden Roque', 'viewer', { pending: 'unavailable', seen: null, added: '25 Jul' }),
+  ],
+  /* Per-preview UI state, so the phone can sit in one state while the desktop
+     dialog sits in another. */
+  ui: {
+    d: { open: true, q: '', level: 'viewer', bulk: false, paste: SAMPLE, resolved: null, msg: null, err: null },
+    m: { open: true, q: '', level: 'viewer', bulk: false, paste: SAMPLE, resolved: null, msg: null, err: null },
+  },
+};
+
+const REASON = {
+  not_found: 'No character by that name — check the spelling.',
+  ambiguous: 'More than one character matched that name.',
+  unavailable: 'The character lookup was unreachable. The invitation is saved; try again.',
+};
+
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const byId = (id) => state.grants.find((g) => g.id === id);
+const U = (p) => state.ui[p];
+const can = () => state.you === 'owner';
+
+function hue(n) { let h = 0; for (let i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) % 360; return h; }
+const initials = (n) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+function av(g, size = 30) {
+  if (g.pending) return `<div class="av unknown" style="--s:${size}px" aria-hidden="true">?</div>`;
+  return `<div class="av" style="--s:${size}px;--h:${hue(g.name)}" aria-hidden="true">${esc(initials(g.name))}</div>`;
+}
+function ago(m) { if (m === null) return 'never signed in'; if (m < 60) return m + 'm ago'; if (m < 1440) return Math.round(m / 60) + 'h ago'; return Math.round(m / 1440) + 'd ago'; }
+const sub = (g) => g.pending ? `invited ${g.added} by ${g.addedBy}` : ago(g.seen);
+const sorted = () => [...state.grants].sort((a, b) => (b.owner - a.owner) || (a.pending - b.pending) || a.name.localeCompare(b.name));
+const match = (q) => { const t = q.trim().toLowerCase(); return t ? sorted().filter((g) => g.name.toLowerCase().includes(t)) : sorted(); };
+const exists = (n) => state.grants.some((g) => g.name.toLowerCase() === n.trim().toLowerCase());
+const live = () => state.grants.filter((g) => !g.pending).length;
+
+/* What the lookup would say. One word is ambiguous, a digit is not a name — the
+   same two rules the paste drawer uses, so the two can never disagree. */
+function lookup(name) {
+  const n = name.trim();
+  if (!n) return null;
+  if (exists(n)) return 'dupe';
+  if (n.split(/\s+/).length < 2) return 'ambiguous';
+  if (/[0-9]/.test(n)) return 'not_found';
+  return null;
+}
+const addable = (q) => q.trim().length > 1 && !exists(q);
+
+function add(p, name, level) {
+  const n = name.trim(); if (!n) return;
+  const u = U(p);
+  if (exists(n)) { u.err = `${n} already has access.`; return; }
+  const why = lookup(n);
+  state.grants.push(G(n, level, { pending: why, seen: null, added: 'today', addedBy: 'you' }));
+  u.msg = why ? `${n} was saved, but the name did not resolve — it grants nothing yet.`
+              : `${n} can now open ${state.team}.`;
+  u.q = '';
+}
+
+function resolveList(text) {
+  const seen = new Set();
+  return text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean).filter((n) => {
+    const k = n.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true;
+  }).map((name) => { const why = lookup(name); return why ? { name, ok: false, why } : { name, ok: true }; });
+}
+
+/* --- pieces --------------------------------------------------------------- */
+
+const icoSearch = () => `<svg class="mag" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+  <circle cx="7" cy="7" r="4.6" fill="none" stroke="var(--text-4)" stroke-width="1.5"/>
+  <path d="M10.6 10.6 14 14" stroke="var(--text-4)" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+const icoPaste = () => `<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+  <rect x="3.2" y="2.4" width="9.6" height="11.2" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+  <path d="M6 5.4h4M6 8h4M6 10.6h2.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+const icoX = (s = 12) => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true">
+  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+
+function levelToggle(g) {
+  if (g.owner) return `<span class="pill owner" data-testid="grant-level">owner</span>`;
+  const dis = can() ? '' : ' disabled';
+  return `<span class="lvl" role="group" aria-label="Access level for ${esc(g.name)}" data-testid="grant-level">
+    ${['viewer', 'editor'].map((l) => `<button type="button" class="${g.level === l ? 'on' : ''}"${dis}
+      aria-pressed="${g.level === l}" data-act="level" data-id="${g.id}" data-val="${l}">${l}</button>`).join('')}</span>`;
+}
+function pickLevel(p) {
+  const u = U(p);
+  return `<span class="lvl" role="group" aria-label="Access level for the person being added">
+    ${['viewer', 'editor'].map((l) => `<button type="button" class="${u.level === l ? 'on' : ''}"
+      aria-pressed="${u.level === l}" data-act="pick-level" data-val="${l}">${l}</button>`).join('')}</span>`;
+}
+function row(g) {
+  return `<div class="row ${g.pending ? 'pending' : ''}" data-testid="grant-list-item">
+    <span class="who">${av(g)}<span class="nm"><b data-testid="grant-subject">${esc(g.name)}</b><small>${esc(sub(g))}</small></span></span>
+    <span class="acts">
+      ${g.pending ? '<span class="pill warn">pending</span>' : ''}
+      ${levelToggle(g)}
+      ${can() && !g.owner ? `<button class="btn subtle danger x" data-act="remove" data-id="${g.id}"
+        data-testid="grant-remove" aria-label="Remove ${esc(g.name)}">${icoX()}</button>` : ''}
+    </span>
+    ${g.pending ? `<span class="why"><span data-testid="grant-pending-reason">${esc(REASON[g.resolution])}</span>
+      ${can() ? `<button class="btn sm" data-act="retry" data-id="${g.id}" data-testid="grant-retry"
+        aria-label="Retry lookup for ${esc(g.name)}">Retry</button>` : ''}</span>` : ''}
+  </div>`;
+}
+function msgs(p) {
+  const u = U(p); let out = '';
+  if (!can()) out += bar('Only the team owner can change who has access.', '', 'team-readonly-notice');
+  if (u.err) out += bar(u.err, 'warn', 'team-screen-error', 'alert');
+  if (u.msg) out += bar(u.msg, u.msg.includes('did not resolve') ? 'warn' : 'good', 'team-flash', 'status');
+  return out;
+  function bar(text, cls, testid, role) {
+    return `<p class="notice ${cls}"${role ? ` role="${role}"` : ''} data-testid="${testid}" style="margin-bottom:2px">
+      <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M8 4.6v4.2M8 11.2v.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>${esc(text)}</span></p>`;
+  }
+}
+
+/* The dialog itself — one component for both previews. `phone` decides only what
+   is *not* rendered; everything else is the container query's job. */
+function dialog(p, phone) {
+  const u = U(p), list = match(u.q);
+  const pend = state.grants.filter((g) => g.pending).length;
+  return `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="dlg-${p}" data-testid="access-dialog">
+    <div class="modal-head">
+      <h2 id="dlg-${p}">Access</h2>
+      <span class="pill">${live()} ${live() === 1 ? 'person' : 'people'}</span>
+      ${pend ? `<span class="pill warn">${pend} pending</span>` : ''}
+      <button class="btn subtle icox" style="margin-left:auto" data-act="close" aria-label="Close">${icoX(13)}</button>
+    </div>
+
+    <div class="modal-body">
+      ${can() ? '' : ''}
+      <p class="subline muted" style="margin:0 0 11px;font-size:12px">Who can open <b>${esc(state.team)}</b>. Editors build and change comps; viewers read and comment.</p>
+
+      <div class="field">
+        <span class="grow">${icoSearch()}
+          <input class="inp" id="q-${p}" data-in="q" value="${esc(u.q)}"
+            placeholder="${phone ? 'Search or add a name' : 'Search, or type a name to add…'}"
+            aria-label="Search names, or type a character name to add"
+            autocomplete="off" data-testid="grant-invite-name"></span>
+        ${can() ? pickLevel(p) : ''}
+        ${can() ? `<button class="btn accent" data-act="add"${addable(u.q) ? '' : ' disabled'}
+          data-testid="grant-invite-submit">Add</button>` : ''}
+      </div>
+
+      ${!phone && can() && !u.bulk ? `<div class="pasteline">
+        <span class="t">Adding several at once?</span>
+        <button class="btn sm" data-act="bulk-open" data-testid="grant-bulk-open">${icoPaste()}Paste a list</button>
+      </div>` : ''}
+
+      ${!phone && u.bulk ? bulkPanel(p) : ''}
+      ${offer(p)}
+      ${msgs(p)}
+
+      <div class="listhead"><span class="t">${u.q.trim() ? 'Matching' : 'Has access'}</span>
+        <span class="muted" style="font-size:11px">${list.length}</span></div>
+      <div data-testid="grant-list">
+        ${list.length ? list.map(row).join('') : `<p class="empty">Nobody matches “${esc(u.q)}”.</p>`}
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <span class="n">${can() ? 'Changes save as you make them.' : 'You have read-only access here.'}</span>
+      <button class="btn" style="margin-left:auto" data-act="close">Done</button>
+    </div>
+  </div>`;
+}
+
+function offer(p) {
+  const u = U(p);
+  if (!can() || !addable(u.q)) return '';
+  const why = lookup(u.q);
+  return `<div class="offer">
+    <div class="av unknown" style="--s:24px" aria-hidden="true">+</div>
+    <span class="t">Not on the team. Add <b>${esc(u.q.trim())}</b> as ${esc(u.level)}?
+      ${why === 'ambiguous' ? '<br><span class="muted" style="font-size:11.5px">One word rarely resolves to a single character — a full name is safer.</span>' : ''}</span>
+    <button class="btn accent" data-act="add">Add</button>
+  </div>`;
+}
+
+function bulkPanel(p) {
+  const u = U(p);
+  const n = u.paste.split(/[\n,;]+/).filter((s) => s.trim()).length;
+  return `<div class="bulk">
+    <div style="display:flex;align-items:center;gap:8px">
+      <b style="font-family:var(--font-brand);font-size:12px">Paste a list of character names</b>
+      <button class="btn subtle x" style="margin-left:auto" data-act="bulk-close" aria-label="Close the paste panel">${icoX(11)}</button>
+    </div>
+    <p class="muted" style="margin:3px 0 8px;font-size:11.5px">One per line, or comma separated. Anyone already here is skipped.</p>
+    <textarea class="inp" id="paste-${p}" data-in="paste" aria-label="Character names, one per line">${esc(u.paste)}</textarea>
+    <div class="opts">
+      ${pickLevel(p)}
+      <button class="btn accent" data-act="resolve"${n ? '' : ' disabled'}>Look up ${n} name${n === 1 ? '' : 's'}</button>
+    </div>
+    ${u.resolved ? `<div style="margin-top:11px">
+      ${u.resolved.map((x, i) => `<div class="rr ${x.ok ? '' : 'bad'}">
+        ${x.ok ? `<div class="av" style="--s:22px;--h:${hue(x.name)}" aria-hidden="true">${esc(initials(x.name))}</div>`
+               : '<div class="av unknown" style="--s:22px" aria-hidden="true">!</div>'}
+        <span class="nm">${esc(x.name)}</span>
+        ${x.ok ? '<span class="pill ok">found</span>' : `<span class="pill warn">${esc(x.why === 'dupe' ? 'already here' : x.why.replace('_', ' '))}</span>`}
+        <button class="btn subtle x" data-act="drop" data-val="${i}" aria-label="Drop ${esc(x.name)}">${icoX(10)}</button>
+        ${x.ok ? '' : `<span class="why">${esc(x.why === 'dupe' ? 'Already has access — nothing to do.' : REASON[x.why])}</span>`}
+      </div>`).join('')}
+      <div class="opts">
+        <span class="muted" style="font-size:11.5px">${u.resolved.filter((x) => x.ok).length} to add, ${u.resolved.filter((x) => !x.ok).length} held back.</span>
+        <button class="btn accent" style="margin-left:auto" data-act="commit"${u.resolved.some((x) => x.ok) ? '' : ' disabled'}>Add as ${esc(u.level)}</button>
+      </div></div>` : ''}
+  </div>`;
+}
+
+/* --- the app behind ------------------------------------------------------- */
+
+const TILES = [
+  { n: 'Vindi Wall v4', a: 'Brawl', p: 140 }, { n: 'Vindi Wall v3', a: 'Brawl', p: 152 },
+  { n: 'Kiter, no logi', a: 'Kite', p: 171 }, { n: 'Prelim safe', a: 'Control', p: 128 },
+  { n: 'Guardian pair', a: 'Control', p: 166 }, { n: 'Scratch', a: 'Kite', p: 94 },
+];
+
+function desktopMock() {
+  const u = U('d');
+  return `<div class="mock-bar">
+      <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--accent)">
+        <circle cx="12" cy="12" r="4.4" fill="currentColor"/></svg>
+      <span class="wordmark">Burn<span>Sun</span></span>
+      <span class="muted" style="font-size:11px;margin-left:6px">${esc(state.team)}</span>
+      <button class="btn sm" style="margin-left:auto" data-act="open" data-testid="open-access">Manage access</button>
+    </div>
+    <div class="mock-tabs"><span class="mock-tab on">Main board</span><span class="mock-tab">Prelims</span><span class="mock-tab">Scratch</span></div>
+    <div class="mock-grid">${TILES.map((t) => `<div class="mock-tile">
+      <h4>${esc(t.n)}</h4>
+      <div class="meta">${esc(t.a)}<span style="margin-left:auto">${t.p}/200</span></div>
+      <div class="bar2"><i style="width:${(t.p / 200) * 100}%"></i></div>
+      <div class="slots">${Array.from({ length: 10 }, () => '<span class="slot"></span>').join('')}</div>
+    </div>`).join('')}</div>
+    ${u.open ? `<div class="scrim" data-act="close"></div><div class="modal-wrap">${dialog('d', false)}</div>` : ''}`;
+}
+
+function mobileMock() {
+  const u = U('m');
+  if (u.open) return dialog('m', true);
+  return `<div class="mock-mini">
+    <div style="display:flex;align-items:center;gap:8px">
+      <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--accent)"><circle cx="12" cy="12" r="4.4" fill="currentColor"/></svg>
+      <span class="wordmark" style="font-size:13px">Burn<span>Sun</span></span>
+    </div>
+    <h3 style="margin-top:16px;font-size:17px">${esc(state.team)}</h3>
+    <p class="muted" style="font-size:12.5px;margin:4px 0 16px">${live()} people have access.</p>
+    <button class="btn accent" style="width:100%;height:44px" data-act="open" data-testid="open-access">Manage access</button>
+  </div>`;
+}
+
+/* --- harness -------------------------------------------------------------- */
+
+function renderChrome() {
+  [['#mw', state.mw], ['#show', state.show], ['#you', state.you]].forEach(([sel, val]) =>
+    $(sel).querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.val === String(val))));
+  $('#pane-d').classList.toggle('hide', state.show === 'm');
+  $('#pane-m').classList.toggle('hide', state.show === 'd');
+  document.documentElement.style.setProperty('--modal-w', state.mw + 'px');
+}
+
+function render() {
+  const a = document.activeElement;
+  const keep = a && a.id && /INPUT|TEXTAREA/.test(a.tagName) ? { id: a.id, pos: a.selectionStart } : null;
+  renderChrome();
+  $('#mock-d').innerHTML = desktopMock();
+  $('#mock-m').innerHTML = mobileMock();
+  if (keep) {
+    const el = document.getElementById(keep.id);
+    if (el) { el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (e) {} }
+  }
+}
+
+/* Which preview an event happened in, and the last one touched. The real app has
+   one dialog and needs neither — Escape there is unambiguous. Here there are two
+   in one document, so Escape has to be told which one it means, and "the one you
+   last touched" is the only answer that matches what a hand expects. */
+const paneOf = (el) => { const p = el.closest('#mock-m') ? 'm' : 'd'; state.lastPane = p; return p; };
+/* Whether *this* dialog is phone-shaped. Read from the box rather than from a
+   flag, so it stays true if the dialog is ever put somewhere narrow on a desktop. */
+const isPhone = (p) => {
+  const el = $('#mock-' + p)?.querySelector('.modal');
+  return el ? el.getBoundingClientRect().width <= 460 : p === 'm';
+};
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act, val = el.dataset.val;
+  const id = el.dataset.id ? +el.dataset.id : null;
+  const g = id ? byId(id) : null;
+
+  if (act === 'mw') { state.mw = +val; render(); return; }
+  if (act === 'show') { state.show = val; render(); return; }
+  if (act === 'you') { state.you = val; render(); return; }
+
+  const p = paneOf(el), u = U(p);
+  u.err = null; u.msg = null;
+
+  switch (act) {
+    case 'open': u.open = true; break;
+    case 'close': u.open = false; u.bulk = false; u.resolved = null; u.q = ''; break;
+
+    case 'level': if (g && !g.owner && can()) g.level = val; break;
+    case 'pick-level': u.level = val; break;
+    case 'add': add(p, u.q, u.level); break;
+
+    case 'remove':
+      if (!g || !can()) break;
+      if (g.owner) { u.err = 'The owner cannot be removed from their own team.'; break; }
+      state.grants = state.grants.filter((x) => x.id !== id);
+      u.msg = `${g.name} no longer has access.`;
+      break;
+    case 'retry':
+      if (!g || !can()) break;
+      // Honest about what a retry can fix: an unreachable lookup, always; a
+      // misspelling, never. Anything else is a coin toss on the name still existing.
+      if (g.resolution === 'unavailable' || Math.random() > 0.5) { g.pending = false; g.resolution = null; g.seen = 3; u.msg = `${g.name} resolved.`; }
+      else u.err = `${g.name} still did not resolve. ${REASON[g.resolution]}`;
+      break;
+
+    case 'bulk-open': if (isPhone(p)) break; u.bulk = true; u.resolved = null; if (!u.paste.trim()) u.paste = SAMPLE; break;
+    case 'bulk-close': u.bulk = false; u.resolved = null; break;
+    case 'resolve': u.resolved = resolveList(u.paste); break;
+    case 'drop': u.resolved.splice(+val, 1); break;
+    case 'commit': {
+      const ok = u.resolved.filter((x) => x.ok);
+      ok.forEach((x) => state.grants.push(G(x.name, u.level, { seen: null, added: 'today', addedBy: 'you' })));
+      u.msg = `${ok.length} ${ok.length === 1 ? 'person' : 'people'} added as ${u.level}.`;
+      u.resolved = null; u.bulk = false;
+      break;
+    }
+  }
+  render();
+});
+
+document.addEventListener('input', (e) => {
+  const el = e.target.closest('[data-in]');
+  if (!el) return;
+  const p = paneOf(el), u = U(p);
+  if (el.dataset.in === 'paste') { u.paste = el.value; return; }  // no re-render: it fights the caret
+  u.q = el.value; u.err = null; u.msg = null;
+  render();
+});
+
+/* Paste is still the shortcut on a desk — several names flip the field into the
+   drawer. On the phone there is no drawer to flip into, so keep the first name
+   and say so, rather than dropping a newline-joined blob into a one-line input. */
+document.addEventListener('paste', (e) => {
+  const el = e.target.closest('[data-in="q"]');
+  if (!el || !can()) return;
+  const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+  const names = text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+  if (names.length < 2) return;
+  e.preventDefault();
+  const p = paneOf(el), u = U(p);
+  if (isPhone(p)) {
+    u.q = names[0];
+    u.msg = `Pasted ${names.length} names — kept “${names[0]}”. Add people one at a time here.`;
+  } else {
+    u.paste = names.join('\n'); u.bulk = true; u.resolved = null;
+    u.msg = `${names.length} names pasted — look them up before adding.`;
+  }
+  render();
+});
+
+document.addEventListener('submit', (e) => e.preventDefault());
+
+document.addEventListener('keydown', (e) => {
+  const f = document.activeElement || document.body;
+  if (e.key === 'Escape') {
+    // The drawer first, then the dialog — Escape undoes one layer, not all of them.
+    const p = f.closest?.('#mock-m') ? 'm' : f.closest?.('#mock-d') ? 'd' : state.lastPane;
+    const u = U(p);
+    if (u.bulk) { u.bulk = false; u.resolved = null; } else u.open = false;
+    render(); return;
+  }
+  if (e.key === 'Enter' && /^q-/.test(f.id || '')) {
+    e.preventDefault();
+    const p = paneOf(f), u = U(p);
+    if (can() && addable(u.q)) { add(p, u.q, u.level); render(); }
+  }
+});
+
+$('#theme').addEventListener('click', () => {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+  $('#theme').textContent = dark ? 'Dark' : 'Light';
+});
+
+render();
+</script>
+</body>
+</html>

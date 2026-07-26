@@ -4,10 +4,13 @@ Access is granted by name, because a name is what a captain knows, but names cha
 ids do not — so a grant stores both and matches on the id. This module is the one place
 that turns the first into the second.
 
-Every outcome other than a clean hit leaves the grant *pending*: a row that displays the
-name and grants nothing. That is deliberate and load-bearing. Adding someone to a team
-must never fail because a third-party service was slow, so the failure mode of this module
-is "not resolved yet", never an error the caller has to handle.
+Every outcome other than a clean hit stops the grant being created. That used to go the
+other way — the miss was stored as a "pending invitation" so that adding someone could not
+fail because a third-party service was slow. It is not worth it. Such a row grants nobody
+anything and never becomes able to, so what the leniency actually bought was an operator
+being told their teammate was added when they were not. This module therefore reports
+*why*, in four words the caller has to handle, and ``teams.add_grant`` turns each into a
+sentence.
 
 Only the SSO half of the app talks to ``login.eveonline.com``; this talks to the public,
 unauthenticated API and needs no token.
@@ -22,9 +25,11 @@ from enum import StrEnum
 
 import httpx
 from fastapi import Depends
+from sqlalchemy.orm import Session
 
 from . import __version__
-from .settings import Settings, get_settings
+from .db import get_session
+from .settings import Settings, get_settings, is_development_environment
 
 logger = logging.getLogger("comptool")
 
@@ -32,7 +37,8 @@ logger = logging.getLogger("comptool")
 #: entity at once — which is why the reader below is so narrow.
 UNIVERSE_IDS_PATH = "/latest/universe/ids/"
 DATASOURCE = "tranquility"
-#: Short: a name lookup sits on a request path, and a pending grant is a fine answer.
+#: Short: a name lookup sits on a request path an operator is waiting on, and "try again"
+#: arriving in three seconds beats a correct answer arriving in thirty.
 HTTP_TIMEOUT = httpx.Timeout(3.0, connect=2.0)
 
 
@@ -49,9 +55,9 @@ def user_agent(settings: Settings) -> str:
 class Resolution(StrEnum):
     """What a lookup produced.
 
-    Only ``RESOLVED`` yields an id. Every other outcome is a reason to show the operator,
-    not an error: the grant is still created, still visible, and simply grants nothing
-    until the name resolves.
+    Only ``RESOLVED`` yields an id. The other three are kept apart rather than collapsed
+    into one failure because they ask the operator for three different things: fix the
+    spelling, disambiguate, or wait a moment and retry.
     """
 
     RESOLVED = "resolved"
@@ -90,9 +96,9 @@ def _read(payload: object, wanted: str) -> tuple[int, str] | None:
     ]
     if len(exact) != 1:
         return None
-    # Read the id defensively rather than trusting the shape: this runs outside the
-    # request's error handling, and the whole point of this module is that a lookup
-    # leaves a grant pending instead of failing.
+    # Read the id defensively rather than trusting the shape: a body that is the right
+    # JSON but the wrong shape must come back as NOT_FOUND, which the caller knows how to
+    # phrase, rather than as a TypeError five frames up.
     entry = exact[0]
     identifier = entry.get("id")
     if not isinstance(identifier, int) or identifier <= 0:
@@ -113,6 +119,11 @@ def resolve_character(
         return Character(Resolution.NOT_FOUND)
     if not settings.esi_enabled:
         # Nothing to call, and pretending otherwise would put a timeout on every grant.
+        # This is now visible instead of silent: with lookups switched off every add is
+        # refused with "cannot reach EVE", where it used to store a grant that resolved to
+        # nothing and looked like a success. That difference is not hypothetical — a
+        # server started without this setting is exactly how the pending state came to be
+        # mistaken for "waiting for them to log in".
         return Character(Resolution.UNAVAILABLE)
 
     url = f"{settings.esi_api_base_url}{UNIVERSE_IDS_PATH}"
@@ -151,12 +162,33 @@ def resolve_character(
 CharacterResolver = Callable[[str], Character]
 
 
-def get_character_resolver(settings: Settings = Depends(get_settings)) -> CharacterResolver:
+def get_character_resolver(
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_session),
+) -> CharacterResolver:
     """The dependency routes take, so no route imports an HTTP client.
 
     Tests override this with a dictionary; nothing downstream can tell the difference,
     and no test can accidentally reach the network.
+
+    The development branch is a back door and is documented as one in
+    ``comptool/dev_resolve.py``. It is chosen here rather than inside ``resolve_character``
+    so that the one function which talks to CCP has no idea the alternative exists, and so
+    that swapping it is a decision made once, per request, in the open.
     """
+    if settings.dev_resolve_enabled and is_development_environment(settings.environment):
+        # Both conditions re-checked here rather than trusted from boot: Settings
+        # .model_copy does not re-run validators, which is how the test suite overrides
+        # configuration, so the boot-time refusal is a guarantee no test can exercise.
+        # Same argument, at length, in comptool/auth/dev.py.
+        # Imported here, not at module scope: dev_resolve builds this module's Character
+        # and Resolution, so the dependency only runs one way if this end is deferred.
+        from .dev_resolve import resolve_from_sessions
+
+        def resolve_dev(name: str) -> Character:
+            return resolve_from_sessions(name, session)
+
+        return resolve_dev
 
     def resolve(name: str) -> Character:
         return resolve_character(name, settings)

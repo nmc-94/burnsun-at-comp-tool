@@ -143,9 +143,15 @@ export function isPublic(route: Route): boolean {
   return route.kind === 'share'
 }
 
-/** Whether a route wants the whole window rather than the centred column. */
+/**
+ * Whether a route wants the whole window rather than the centred column.
+ *
+ * `team-settings` is one, because it renders the workspace with a dialog over it rather than
+ * a page of its own. Left out, the board behind the dialog would be laid out as a card in a
+ * centred column — the same workspace, in the wrong shell.
+ */
 export function isWide(route: Route): boolean {
-  return route.kind === 'workspace'
+  return route.kind === 'workspace' || route.kind === 'team-settings'
 }
 
 /**

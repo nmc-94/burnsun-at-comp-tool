@@ -46,5 +46,9 @@ def health(
         # itself the reassurance. Top level rather than inside `build`, which is build
         # metadata while this is runtime configuration.
         "dev_auth": settings.dev_auth_enabled,
+        # The other back door, reported for the same reason and on the same terms: an
+        # instance answering true is resolving character names from its own sign-in history
+        # rather than from EVE, which is worth being able to ask about without shell access.
+        "dev_resolve": settings.dev_resolve_enabled,
         "build": build_payload(settings.environment),
     }

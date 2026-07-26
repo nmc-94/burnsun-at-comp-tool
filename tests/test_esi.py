@@ -1,8 +1,8 @@
 """Resolving a character name to the id a grant matches on.
 
-The rule these enforce is that a lookup never raises: every way it can go wrong is an
-outcome the caller stores as a pending invitation. No network — a mock transport answers
-in ESI's shape.
+The rule these enforce is that a lookup never raises: every way it can go wrong comes back
+as one of four outcomes, which ``teams.add_grant`` turns into a status and a sentence. No
+network — a mock transport answers in ESI's shape.
 """
 
 from __future__ import annotations

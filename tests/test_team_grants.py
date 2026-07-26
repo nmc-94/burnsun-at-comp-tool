@@ -1,9 +1,12 @@
 """Granting access by character name.
 
-The behaviour worth protecting is what happens when the name does *not* resolve. A grant
-is still created, it is visibly pending, and it grants nothing — so an owner sees their
-typo instead of wondering why someone cannot get in, and an outage in a service this app
-does not run cannot stop a team being put together.
+The behaviour worth protecting is what happens when the name does *not* resolve: nothing
+is written, and the owner is told which of the three things went wrong. This file used to
+assert the opposite — that a miss was stored as a visibly pending invitation — on the
+argument that a team should be assemblable while a third-party service was down. What that
+actually produced was a row granting nobody anything, badged in a way its reader took to
+mean "on the way". So the tests below check both halves of every refusal: the status, and
+that the access list is still empty afterwards.
 """
 
 from __future__ import annotations
@@ -25,6 +28,10 @@ def add_grant(client, team: dict, name: str, level: str = "viewer"):
     )
 
 
+def grants_of(client, team: dict) -> list[dict]:
+    return client.get(f"/api/v1/teams/{team['id']}/grants").json()
+
+
 def test_a_grant_by_name_stores_the_resolved_id_and_the_name(client, sign_in, resolver):
     resolver.knows("Kadir", GUEST)
     sign_in(OWNER)
@@ -36,8 +43,6 @@ def test_a_grant_by_name_stores_the_resolved_id_and_the_name(client, sign_in, re
     assert grant["subjectId"] == GUEST
     assert grant["subjectName"] == "Kadir"
     assert grant["level"] == "editor"
-    assert grant["pending"] is False
-    assert grant["resolution"] == "resolved"
 
 
 def test_the_games_spelling_wins_over_what_was_typed(client, sign_in, resolver):
@@ -60,82 +65,68 @@ def test_a_resolved_grant_lets_the_named_character_read_the_team(client, sign_in
     assert client.get(f"/api/v1/teams/{team['id']}").status_code == 200
 
 
-def test_a_name_that_does_not_resolve_is_stored_as_a_pending_invitation(client, sign_in, resolver):
-    sign_in(OWNER)
-
-    response = add_grant(client, make_team(client), "Kadrri")
-
-    # Created, not rejected: the owner needs to see their typo written down.
-    assert response.status_code == 201
-    grant = response.json()
-    assert grant["subjectId"] is None
-    assert grant["subjectName"] == "Kadrri"
-    assert grant["pending"] is True
-    assert grant["resolution"] == "not_found"
-
-
-def test_a_pending_grant_gives_nobody_access(client, sign_in, resolver):
+def test_a_name_the_game_does_not_know_is_refused_and_stores_nothing(client, sign_in, resolver):
     sign_in(OWNER)
     team = make_team(client)
-    add_grant(client, team, "Kadir")
 
-    sign_in(GUEST)
+    response = add_grant(client, team, "Kadrri")
 
-    assert client.get(f"/api/v1/teams/{team['id']}").status_code == 404
+    assert response.status_code == 400
+    # The name is quoted back, because the operator's next move is to look at their typing.
+    assert "Kadrri" in response.json()["detail"]
+    assert grants_of(client, team) == []
 
 
-def test_a_grant_entered_while_the_lookup_is_down_is_still_created(client, sign_in, resolver):
-    # Putting a team together must not depend on a third party being reachable.
+def test_a_lookup_that_is_down_is_a_503_and_stores_nothing(client, sign_in, resolver):
+    # 503 rather than 400: the request was fine, the world was not, and the two ask the
+    # operator for different things.
     resolver.is_unreachable("Kadir")
     sign_in(OWNER)
+    team = make_team(client)
 
-    response = add_grant(client, make_team(client), "Kadir")
+    response = add_grant(client, team, "Kadir")
 
-    assert response.status_code == 201
-    assert response.json()["pending"] is True
-    assert response.json()["resolution"] == "unavailable"
+    assert response.status_code == 503
+    assert "again" in response.json()["detail"]
+    assert grants_of(client, team) == []
 
 
-def test_an_ambiguous_name_is_pending_rather_than_a_guess(client, sign_in, resolver):
+def test_retrying_after_an_outage_is_simply_adding_again(client, sign_in, resolver):
+    # What replaces the retry endpoint. The name never left the operator's box, so a
+    # recovered service costs one more press of Add.
+    resolver.is_unreachable("Kadir")
+    sign_in(OWNER)
+    team = make_team(client)
+    assert add_grant(client, team, "Kadir").status_code == 503
+
+    resolver.knows("Kadir", GUEST)
+
+    assert add_grant(client, team, "Kadir").status_code == 201
+    sign_in(GUEST)
+    assert client.get(f"/api/v1/teams/{team['id']}").status_code == 200
+
+
+def test_an_ambiguous_name_is_refused_rather_than_guessed(client, sign_in, resolver):
     resolver.finds_several("Kadir")
     sign_in(OWNER)
-
-    grant = add_grant(client, make_team(client), "Kadir").json()
-
-    assert grant["pending"] is True
-    assert grant["resolution"] == "ambiguous"
-    assert grant["subjectId"] is None
-
-
-def test_a_listed_grant_reports_no_stale_reason(client, sign_in, resolver):
-    # The reason belongs to the lookup that produced it, not to the row.
-    sign_in(OWNER)
     team = make_team(client)
-    add_grant(client, team, "Kadrri")
 
-    listed = client.get(f"/api/v1/teams/{team['id']}/grants").json()
+    response = add_grant(client, team, "Kadir")
 
-    assert listed[0]["pending"] is True
-    assert listed[0]["resolution"] is None
+    assert response.status_code == 400
+    assert "More than one" in response.json()["detail"]
+    assert grants_of(client, team) == []
 
 
-def test_the_same_pending_name_cannot_be_invited_twice(client, sign_in, resolver):
+def test_a_refusal_is_a_sentence_rather_than_a_field_list(client, sign_in, resolver):
+    # The SPA renders a string ``detail`` as the message and anything else as the bare
+    # status line, so the shape here is the difference between a readable failure and
+    # "400 Bad Request" on screen.
     sign_in(OWNER)
-    team = make_team(client)
-    add_grant(client, team, "Kadrri")
 
-    again = add_grant(client, team, "Kadrri")
+    detail = add_grant(client, make_team(client), "Kadrri").json()["detail"]
 
-    assert again.status_code == 409
-    assert "already has access" in again.json()["detail"]
-
-
-def test_the_same_pending_name_differing_only_in_case_is_refused(client, sign_in, resolver):
-    sign_in(OWNER)
-    team = make_team(client)
-    add_grant(client, team, "Kadrri")
-
-    assert add_grant(client, team, "kadrri").status_code == 409
+    assert isinstance(detail, str)
 
 
 def test_granting_the_same_character_twice_is_refused(client, sign_in, resolver):
@@ -147,6 +138,21 @@ def test_granting_the_same_character_twice_is_refused(client, sign_in, resolver)
 
     # Same character, different name: caught on the id, which is the thing that matters.
     assert add_grant(client, team, "Kadir Renamed").status_code == 409
+
+
+def test_the_same_character_typed_in_another_case_is_refused(client, sign_in, resolver):
+    # Nothing here compares names. Both spellings resolve to one id, and the id is what
+    # the duplicate check reads — which is why case-insensitivity needs no rule of its own.
+    resolver.knows("Kadir", GUEST)
+    resolver.knows("kadir", GUEST, spelled="Kadir")
+    sign_in(OWNER)
+    team = make_team(client)
+    add_grant(client, team, "Kadir")
+
+    again = add_grant(client, team, "kadir")
+
+    assert again.status_code == 409
+    assert "already has access" in again.json()["detail"]
 
 
 def test_the_owner_cannot_be_granted_access_to_their_own_team(client, sign_in, resolver):
@@ -161,55 +167,14 @@ def test_the_owner_cannot_be_granted_access_to_their_own_team(client, sign_in, r
     assert "already owns this team" in response.json()["detail"]
 
 
-def test_the_same_name_can_be_invited_by_two_different_teams(client, sign_in, resolver):
+def test_the_same_character_can_be_granted_by_two_different_teams(client, sign_in, resolver):
+    resolver.knows("Kadir", GUEST)
     sign_in(OWNER)
     first = make_team(client, "Aurora Vanguard")
     second = make_team(client, "Nightfall Syndicate")
 
-    assert add_grant(client, first, "Kadrri").status_code == 201
-    assert add_grant(client, second, "Kadrri").status_code == 201
-
-
-def test_re_resolving_a_pending_grant_fills_in_the_id(client, sign_in, resolver):
-    sign_in(OWNER)
-    team = make_team(client)
-    grant = add_grant(client, team, "Kadir").json()
-    resolver.knows("Kadir", GUEST)
-
-    retried = client.post(f"/api/v1/teams/{team['id']}/grants/{grant['id']}/resolve").json()
-
-    assert retried["pending"] is False
-    assert retried["subjectId"] == GUEST
-
-    sign_in(GUEST)
-    assert client.get(f"/api/v1/teams/{team['id']}").status_code == 200
-
-
-def test_re_resolving_a_name_that_still_does_not_resolve_reports_why(client, sign_in, resolver):
-    sign_in(OWNER)
-    team = make_team(client)
-    grant = add_grant(client, team, "Kadrri").json()
-    resolver.is_unreachable("Kadrri")
-
-    retried = client.post(f"/api/v1/teams/{team['id']}/grants/{grant['id']}/resolve").json()
-
-    assert retried["pending"] is True
-    assert retried["resolution"] == "unavailable"
-
-
-def test_re_resolving_an_already_resolved_grant_changes_nothing(client, sign_in, resolver):
-    # Idempotent on purpose: a stray retry must not repoint an existing grant at whoever
-    # happens to hold that name now.
-    resolver.knows("Kadir", GUEST)
-    sign_in(OWNER)
-    team = make_team(client)
-    grant = add_grant(client, team, "Kadir").json()
-    resolver.knows("Kadir", 90_000_777)
-
-    retried = client.post(f"/api/v1/teams/{team['id']}/grants/{grant['id']}/resolve").json()
-
-    assert retried["subjectId"] == GUEST
-    assert retried["resolution"] == "resolved"
+    assert add_grant(client, first, "Kadir").status_code == 201
+    assert add_grant(client, second, "Kadir").status_code == 201
 
 
 def test_a_viewer_can_see_who_is_on_the_team(client, sign_in, resolver):
@@ -219,9 +184,21 @@ def test_a_viewer_can_see_who_is_on_the_team(client, sign_in, resolver):
     add_grant(client, team, "Kadir")
 
     sign_in(GUEST)
-    listed = client.get(f"/api/v1/teams/{team['id']}/grants").json()
 
-    assert [grant["subjectName"] for grant in listed] == ["Kadir"]
+    assert [grant["subjectName"] for grant in grants_of(client, team)] == ["Kadir"]
+
+
+def test_every_listed_grant_carries_an_id(client, sign_in, resolver):
+    # The shape the SPA now relies on: no row anywhere is waiting to become real, so the
+    # client has no null branch and no placeholder portrait.
+    resolver.knows("Kadir", GUEST)
+    resolver.knows("Renn", 90_000_004)
+    sign_in(OWNER)
+    team = make_team(client)
+    add_grant(client, team, "Kadir")
+    add_grant(client, team, "Renn")
+
+    assert [grant["subjectId"] for grant in grants_of(client, team)] == [GUEST, 90_000_004]
 
 
 def test_an_editor_cannot_change_the_access_list(client, sign_in, resolver):
@@ -232,6 +209,8 @@ def test_an_editor_cannot_change_the_access_list(client, sign_in, resolver):
 
     sign_in(GUEST)
 
+    # 404 rather than a refusal about the name: permission is answered before the lookup,
+    # so a stranger cannot use this route to ask whether a character exists.
     assert add_grant(client, team, "Somebody Else").status_code == 404
     assert client.delete(f"/api/v1/teams/{team['id']}/grants/{grant['id']}").status_code == 404
 
@@ -273,15 +252,16 @@ def test_removing_a_grant_removes_the_access(client, sign_in, resolver):
 
 
 def test_a_grant_belonging_to_another_team_is_not_reachable(client, sign_in, resolver):
+    resolver.knows("Kadir", GUEST)
     sign_in(OWNER)
     mine = make_team(client, "Aurora Vanguard")
     other = make_team(client, "Nightfall Syndicate")
-    grant = add_grant(client, other, "Kadrri").json()
+    grant = add_grant(client, other, "Kadir").json()
 
     stolen = client.delete(f"/api/v1/teams/{mine['id']}/grants/{grant['id']}")
 
     assert stolen.status_code == 404
-    assert len(client.get(f"/api/v1/teams/{other['id']}/grants").json()) == 1
+    assert len(grants_of(client, other)) == 1
 
 
 def test_an_unknown_grant_is_a_404(client, sign_in):
@@ -289,6 +269,26 @@ def test_an_unknown_grant_is_a_404(client, sign_in):
     team = make_team(client)
 
     assert client.delete(f"/api/v1/teams/{team['id']}/grants/{uuid.uuid4()}").status_code == 404
+
+
+def test_there_is_no_way_to_re_resolve_a_grant(client, sign_in, resolver):
+    """The retry endpoint is gone, and its absence is the point.
+
+    It existed to fill in a pending row's id later, and a route that repoints an existing
+    grant at whoever holds a name *now* is a liability once nothing needs it. Asserted
+    rather than assumed, because deleting a route is exactly the kind of change a merge
+    can quietly bring back.
+    """
+    resolver.knows("Kadir", GUEST)
+    sign_in(OWNER)
+    team = make_team(client)
+    grant = add_grant(client, team, "Kadir").json()
+
+    retried = client.post(f"/api/v1/teams/{team['id']}/grants/{grant['id']}/resolve")
+
+    # 405, not 404: the SPA catch-all matches the path and answers about the method, which
+    # is the same thing every unregistered /api path does here.
+    assert retried.status_code in (404, 405)
 
 
 def test_owner_is_not_a_grantable_role(client, sign_in, resolver):

@@ -239,7 +239,8 @@ class FakeResolver:
     """Stands in for the character lookup.
 
     Nothing resolves unless a test says so, which means a test that forgets to register a
-    name gets a pending invitation rather than an accidental network call.
+    name gets a 400 rather than an accidental network call — noisy in the right direction,
+    since the failure names the missing ``knows`` line instead of hanging on a socket.
     """
 
     def __init__(self):

@@ -38,8 +38,13 @@ def _subject_id_for(kind: str, viewer: Viewer) -> int | None:
 
 
 def _matches(grant: TeamGrant, viewer: Viewer) -> bool:
-    # A grant whose name has not been resolved to an id yet matches nobody; it is a
-    # pending invitation, not access.
+    # 0008 made subject_id NOT NULL, so this branch is unreachable through the schema.
+    # Kept anyway, because of what is on the other side of it: ``_subject_id_for`` returns
+    # None for a viewer with no corporation or alliance, and ``None == None`` is True. A
+    # null grant would therefore match every character who belongs to nothing — not fail
+    # closed, but hand access to strangers. That is a bad enough failure that the check
+    # earns its place as a second lock rather than as live logic, and if the column is ever
+    # made nullable again this is what stands between that change and an incident.
     if grant.subject_id is None:
         return False
     return grant.subject_id == _subject_id_for(grant.subject_kind, viewer)

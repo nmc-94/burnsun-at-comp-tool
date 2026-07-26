@@ -60,22 +60,3 @@ export function changeGrant(
 export function removeGrant(teamId: string, grantId: string): Promise<void> {
   return request<void>(`/api/v1/teams/${teamId}/grants/${grantId}`, { method: 'DELETE' })
 }
-
-/** Try a pending invitation's name again. Idempotent on an already-resolved grant. */
-export function resolveGrant(teamId: string, grantId: string): Promise<Grant> {
-  return request<Grant>(`/api/v1/teams/${teamId}/grants/${grantId}/resolve`, { method: 'POST' })
-}
-
-/** What to tell an owner about a grant that did not resolve. */
-export function pendingReason(grant: Grant): string {
-  switch (grant.resolution) {
-    case 'not_found':
-      return 'No character by that name — check the spelling.'
-    case 'ambiguous':
-      return 'More than one character matched that name.'
-    case 'unavailable':
-      return 'The character lookup was unreachable. The invitation is saved; try again.'
-    default:
-      return 'Waiting on the character lookup.'
-  }
-}

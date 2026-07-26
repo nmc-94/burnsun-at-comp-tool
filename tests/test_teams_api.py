@@ -37,6 +37,42 @@ def test_creating_a_team_makes_the_creator_its_owner(client, sign_in):
     assert team["archived"] is False
 
 
+def test_a_team_remembers_its_owners_name_not_only_their_id(client, sign_in):
+    # Ownership is a column rather than a grant row, so without this the one person who
+    # certainly has access is the one the access list cannot name.
+    sign_in(OWNER, "Kadir")
+
+    team = make_team(client)
+
+    assert team["ownerCharacterName"] == "Kadir"
+    # And on the way back out, not just in the create response.
+    assert client.get(f"/api/v1/teams/{team['id']}").json()["ownerCharacterName"] == "Kadir"
+
+
+def test_a_team_made_before_the_column_existed_reports_a_null_owner_name(client, sign_in):
+    # 0007 had nothing honest to backfill with. Null has to survive the round trip and mean
+    # "not known yet" — the SPA renders "The team owner" rather than inventing one.
+    sign_in(OWNER)
+    team = make_team(client)
+    _forget_owner_name(team["id"])
+
+    assert client.get(f"/api/v1/teams/{team['id']}").json()["ownerCharacterName"] is None
+
+
+def _forget_owner_name(team_id: str) -> None:
+    """Put a row back the way 0007 leaves every team that predates it."""
+    from comptool.db import get_session
+    from comptool.models import Team
+
+    opened = get_session()
+    session = next(opened)
+    try:
+        session.get(Team, team_id).owner_character_name = None
+        session.commit()
+    finally:
+        opened.close()
+
+
 def test_a_new_team_is_private(client, sign_in):
     sign_in(OWNER)
     team = make_team(client)
@@ -73,16 +109,6 @@ def test_my_teams_omits_a_team_i_have_no_grant_on(client, sign_in):
     make_team(client)
 
     sign_in(STRANGER)
-
-    assert client.get("/api/v1/teams").json() == []
-
-
-def test_my_teams_omits_a_team_where_my_invitation_is_still_pending(client, sign_in, resolver):
-    # A pending grant confers nothing, so it must not make the team appear either.
-    sign_in(OWNER)
-    grant_to(client, make_team(client), "Kadir")
-
-    sign_in(GUEST)
 
     assert client.get("/api/v1/teams").json() == []
 

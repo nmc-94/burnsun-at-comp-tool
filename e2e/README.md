@@ -6,13 +6,23 @@ from `web/src`, so the only contract it depends on is the published one —
 
 ## Running it
 
-The app has to be up, with the development sign-in switched on. Add to the repo-root `.env`:
+The app has to be up, with both development seams switched on. Add to the repo-root `.env`:
 
 ```
 COMPTOOL_DEV_AUTH_ENABLED=true
 COMPTOOL_DEV_AUTH_SECRET=<32+ characters>
+COMPTOOL_DEV_RESOLVE_ENABLED=true
 COMPTOOL_SESSION_COOKIE_SECURE=false
 ```
+
+The second one is what lets a spec grant somebody access. A grant is asked for by name and
+the server refuses a name it cannot resolve, so without it every add is a 503 — the lookup
+would go to ESI, which a test deployment has no credentials for.
+`COMPTOOL_DEV_RESOLVE_ENABLED` answers from this database's own sign-in history instead, and
+refuses to boot outside a development environment. See `comptool/dev_resolve.py`.
+
+The consequence for specs: **a name you grant must belong to a character that has signed in.**
+Use `asSomeoneElse(...)` and pass its `identity.characterName`.
 
 Then, from this directory:
 

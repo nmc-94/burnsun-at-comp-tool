@@ -19,7 +19,9 @@ import { toEngineComp } from '../comps/tile-model'
 import { loadRulesetVersion } from '../rulesets/cache'
 import { chooseRulesetSlug } from '../rulesets/choose'
 import type { RulesetVersionDetail } from '../rulesets/types'
+import { workspaceRoute } from '../router/route'
 import { navigate } from '../router/useRoute'
+import TeamSettingsDialog from '../teams/TeamSettingsDialog'
 import BoardGrid from './BoardGrid'
 import BoardTabs from './BoardTabs'
 import { seedCards } from './comp-cards'
@@ -50,9 +52,12 @@ interface Props {
   readonly teamId: string
   /** Null means "whichever board the saved layout says was active". */
   readonly boardId: string | null
+  /** True on `/teams/:id/settings`, which is the account menu's Team settings item and the
+   *  address the settings page used to have. Both are answered by opening the dialog. */
+  readonly openSettings?: boolean
 }
 
-export default function WorkspaceScreen({ teamId, boardId }: Props) {
+export default function WorkspaceScreen({ teamId, boardId, openSettings = false }: Props) {
   const [comps, setComps] = useState<readonly CompDetail[] | null>(null)
   const [layout, setLayout] = useState<WorkspaceLayout | null>(null)
   const [layoutState, setLayoutState] = useState<LayoutState>('idle')
@@ -60,6 +65,26 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
   const [creating, setCreating] = useState(false)
   const [newCompId, setNewCompId] = useState<string | null>(null)
   const [railOpen, setRailOpen] = useState(false)
+  // Component state, for the same reason the rail's own open/closed is: a modal does not
+  // change where you are, and the board behind it is still the page. Mounted only while open,
+  // so opening always reads a fresh list and it costs nothing shut.
+  //
+  // `/teams/:id/settings` still opens it, which is not a contradiction — that address is the
+  // account menu's Team settings item and the one the old settings *page* had, and answering
+  // it by opening the thing it names beats bouncing somebody off it. An effect rather than an
+  // initial value: this component does not remount when the route changes between the board
+  // and settings, which is the point — the board behind stays exactly as it was.
+  const [settingsOpen, setSettingsOpen] = useState(openSettings)
+  useEffect(() => {
+    if (openSettings) setSettingsOpen(true)
+  }, [openSettings])
+
+  /** Shutting it puts the URL back, so it stops naming a dialog that is no longer open.
+   *  `replace`, so Back goes wherever the visitor came from rather than reopening it. */
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false)
+    if (openSettings) navigate(workspaceRoute(teamId), { replace: true })
+  }, [openSettings, teamId])
 
   // What has been arranged but not yet written. Read by the debounce and by the page-hide
   // flush, which is why it is a ref rather than derived from `layout` at flush time.
@@ -387,6 +412,7 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
             arrange(next)
             if (next.activeBoardId) navigate(boardRoute(teamId, next.activeBoardId))
           }}
+          onOpenSettings={() => setSettingsOpen(true)}
           onRename={(id, name) => arrange(withBoardRenamed(layout, id, name))}
           onClose={(id) => {
             const next = withBoardClosed(layout, id)
@@ -429,6 +455,8 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
           </p>
         )}
       </div>
+
+      {settingsOpen && <TeamSettingsDialog teamId={teamId} onClose={closeSettings} />}
     </div>
   )
 }

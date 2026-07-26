@@ -27,6 +27,7 @@ function tabs(overrides: Partial<Parameters<typeof BoardTabs>[0]> = {}) {
       onAdd={vi.fn()}
       onRename={vi.fn()}
       onClose={vi.fn()}
+      onOpenSettings={vi.fn()}
       {...overrides}
     />,
   )
@@ -107,6 +108,30 @@ describe('board tabs', () => {
     fireEvent.blur(field, { target: { value: 'Angel doctrines' } })
 
     expect(onRename).not.toHaveBeenCalledWith('b1', 'Half typ')
+  })
+
+  it('offers a way into team settings, which is the only one there is', () => {
+    // Not a small thing to pin: before this control existed, /teams/:id/settings was reachable
+    // by typing the URL and by nothing else, so a captain could not give anybody access.
+    const onOpenSettings = vi.fn()
+    tabs({ onOpenSettings })
+
+    const control = screen.getByRole('button', { name: 'Team settings' })
+    expect(control.getAttribute('data-testid')).toBe('team-settings-open')
+    // A modal is not a disclosure: it says a dialog is coming, not that something is expanded.
+    expect(control.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(control.getAttribute('aria-expanded')).toBeNull()
+
+    fireEvent.click(control)
+
+    expect(onOpenSettings).toHaveBeenCalled()
+  })
+
+  it('keeps settings out of the Boards landmark, because it is not a board', () => {
+    tabs()
+
+    const nav = screen.getByRole('navigation', { name: 'Boards' })
+    expect(within(nav).queryByRole('button', { name: 'Team settings' })).toBeNull()
   })
 
   it('stops offering a new board at the ceiling the server would refuse anyway', () => {

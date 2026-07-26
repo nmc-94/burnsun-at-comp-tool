@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api'
-import { addGrant, createTeam, getTeam, listTeams, pendingReason, removeGrant } from './api'
+import { addGrant, createTeam, getTeam, listTeams, removeGrant } from './api'
 import type { Grant } from './types'
 
 function respond(body: unknown, status = 200) {
@@ -30,11 +30,9 @@ function grant(overrides: Partial<Grant> = {}): Grant {
   return {
     id: 'a-grant-id',
     subjectKind: 'character',
-    subjectId: null,
-    subjectName: 'Kadrri',
+    subjectId: 90_000_003,
+    subjectName: 'Kadir',
     level: 'viewer',
-    pending: true,
-    resolution: null,
     createdAt: '2026-07-24',
     ...overrides,
   }
@@ -93,15 +91,22 @@ describe('teams api', () => {
   })
 })
 
-describe('pendingReason', () => {
-  it('explains each way a name can fail to resolve', () => {
-    expect(pendingReason(grant({ resolution: 'not_found' }))).toMatch(/spelling/)
-    expect(pendingReason(grant({ resolution: 'ambiguous' }))).toMatch(/more than one/i)
-    // The invitation is kept either way — that is the point of saying so.
-    expect(pendingReason(grant({ resolution: 'unavailable' }))).toMatch(/saved/)
+describe('a refused add', () => {
+  // These replace the `pendingReason` cases. There is no client-side vocabulary for why a
+  // name did not resolve any more: the server refuses it and writes the sentence, because
+  // the server is the only end that knows which of the three things happened.
+  it('carries the server sentence through, without the status line', async () => {
+    vi.stubGlobal('fetch', respond({ detail: "EVE has no character called 'Kadrri'." }, 400))
+
+    await expect(addGrant('a-team-id', 'Kadrri', 'viewer')).rejects.toMatchObject({
+      status: 400,
+      detail: "EVE has no character called 'Kadrri'.",
+    })
   })
 
-  it('says something sensible for a grant listed without a reason', () => {
-    expect(pendingReason(grant({ resolution: null }))).toMatch(/lookup/)
+  it('reports an unreachable lookup as a 503 the caller can tell apart', async () => {
+    vi.stubGlobal('fetch', respond({ detail: 'Cannot reach EVE right now.' }, 503))
+
+    await expect(addGrant('a-team-id', 'Kadir', 'viewer')).rejects.toMatchObject({ status: 503 })
   })
 })
