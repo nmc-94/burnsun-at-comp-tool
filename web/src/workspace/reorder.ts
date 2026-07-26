@@ -29,6 +29,7 @@
 // cancelled first, and every question about the cursor is asked of those instead. Transforms
 // then cannot reach the answer at all.
 
+import type { Reorder } from './carry'
 import { measure, play as flip } from './flip'
 import type { Box } from './flip'
 import { moveTile } from './layout'
@@ -39,28 +40,11 @@ import { moveTile } from './layout'
 // builds them.
 export type { Box }
 
-export interface Reorder {
-  /** The comp whose tile is being carried. */
-  carried: string
-  /** Say where the cursor is, in the grid's content. True when the arrangement changed. */
-  over: (x: number, y: number) => boolean
-  /**
-   * Put the tiles back where they started, without letting go. True when anything moved.
-   *
-   * For a cursor that has left the board's own business — over the new-comp tile, where letting
-   * go forks rather than moves. A preview left frozen part-way there would keep promising a
-   * rearrangement that is no longer what a drop would do.
-   */
-  home: () => boolean
-  /** Whether the tiles are anywhere but where they started. */
-  moved: () => boolean
-  /** The order the tiles are drawn in now, which is where a drop would put them. */
-  order: () => readonly string[]
-  /** Leave the tiles where they are being shown, for the commit to catch up with. */
-  settle: () => void
-  /** Put them back where they came from, visibly. */
-  cancel: () => void
-}
+// The contract is `carry.ts`'s, shared with the canvas's engine so that everything the *board*
+// asks of a tile in hand — where is the cursor, put it back, did anything move, let go — is one
+// interface rather than two that happen to agree. Re-exported because this file's callers have
+// always imported it from here.
+export type { Reorder }
 
 /**
  * Where the carried tile would land, given where the cursor is.

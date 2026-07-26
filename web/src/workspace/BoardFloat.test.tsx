@@ -17,7 +17,7 @@
 // animate with; and no `matchMedia`, so `useWide` answers "wide" unless a test says otherwise.
 // Each of those is leant on deliberately below.
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
@@ -25,6 +25,7 @@ import { resetRulesetCache } from '../rulesets/cache'
 import BoardControls from './BoardControls'
 import BoardGrid from './BoardGrid'
 import { resetCompCards } from './comp-cards'
+import { gripOf } from './float-drag'
 import { FALLBACK_H, GAP, MIN_TILE_W, PAD } from './place'
 import type { Place } from './types'
 
@@ -215,26 +216,173 @@ describe('a tile that arrives without a place', () => {
   })
 })
 
-describe('carrying things on a canvas', () => {
-  it('does not arm a tile for dragging yet', () => {
-    // A canvas has no drag engine of its own yet, so a press must not make the tile draggable
-    // and hand the *grid's* engine a gesture it would answer in indices.
-    canvas(['a', 'b'], placesOf(['a', 0, 0], ['b', 400, 0]), { onReorder: vi.fn() })
+describe('carrying a tile across a canvas', () => {
+  /**
+   * Pick a tile up by its header, move the cursor, and let go.
+   *
+   * Unlike the grid's equivalent, where the events land makes no difference — a canvas answers
+   * from the cursor's own coordinates rather than from other tiles' boxes, so the numbers below
+   * are the whole input and jsdom's lack of layout does not defeat them.
+   */
+  function carry(compId: string, to: { x: number; y: number }, grip = { x: 0, y: 0 }) {
+    const held = tile(compId)
+    const header = held.querySelector('[data-testid="comp-header"]') ?? held
+    fireEvent.mouseDown(header, { button: 0, clientX: grip.x, clientY: grip.y })
+    fireEvent.dragStart(held)
+    fireEvent(
+      held,
+      new MouseEvent('dragover', {
+        bubbles: true,
+        cancelable: true,
+        clientX: to.x,
+        clientY: to.y,
+      }),
+    )
+    return {
+      drop: () => {
+        fireEvent.drop(held)
+        fireEvent.dragEnd(held)
+      },
+      giveUp: () => fireEvent.dragEnd(held),
+    }
+  }
+
+  it('marks the board and says where a drop would land', async () => {
+    // What a driver reads instead of pixel-peeping the outline.
+    const onPlace = vi.fn()
+    canvas(['a'], placesOf(['a', 0, 0]), { onPlace, snap: false })
+    await settled(['Alpha'])
+
+    carry('a', { x: 451, y: 401 })
+
+    const board = screen.getByTestId('board-grid')
+    expect(board.dataset.floating).toBe('true')
+    expect(board.dataset.landing).toBe('451,401')
+    expect(screen.getByTestId('board-landing')).toBeTruthy()
+    // A frame late on purpose, so the picture the browser takes of the tile is not the dimmed
+    // one — the same bargain the grid's engine makes, for the same reason.
+    expect(tile('a').dataset.lifted).toBe('false')
+    await waitFor(() => expect(tile('a').dataset.lifted).toBe('true'))
+  })
+
+  it('commits exactly where it said it would', async () => {
+    const onPlace = vi.fn()
+    canvas(['a'], placesOf(['a', 0, 0]), { onPlace, snap: false })
+    await settled(['Alpha'])
+
+    carry('a', { x: 300, y: 200 }).drop()
+
+    expect(onPlace).toHaveBeenCalledWith('a', { x: 300, y: 200 })
+  })
+
+  it('lands on the step when the board says to, and does not when it does not', async () => {
+    const snapped = vi.fn()
+    canvas(['a'], placesOf(['a', 0, 0]), { onPlace: snapped, snap: true })
+    await settled(['Alpha'])
+    carry('a', { x: 451, y: 401 }).drop()
+    cleanup()
+
+    const loose = vi.fn()
+    canvas(['a'], placesOf(['a', 0, 0]), { onPlace: loose, snap: false })
+    await settled(['Alpha'])
+    carry('a', { x: 451, y: 401 }).drop()
+
+    // Imported rather than written down, so the two cannot drift apart.
+    expect(snapped).toHaveBeenCalledWith('a', { x: 460, y: 400 })
+    expect(loose).toHaveBeenCalledWith('a', { x: 451, y: 401 })
+  })
+
+  // Where the grip is *checked*: `gripOf` below, over a box with real numbers in it, and
+  // `dropAt` in `place.test.ts` for the subtraction. It cannot be checked through a rendered
+  // board here, because jsdom reports every box as zero-sized and `gripOf` clamps to the tile
+  // — so every press in this file grips the corner however far into the tile it lands.
+  // `board-float.spec.ts` carries a tile by its header in a browser that does layout.
+
+  it('commits nothing for a tile put back where it came from', async () => {
+    // A drag that ends where it started is not a rearrangement, and the board says so rather
+    // than handing a no-op down to the debounce to notice later.
+    const onPlace = vi.fn()
+    canvas(['a'], placesOf(['a', 0, 0]), { onPlace, snap: false })
+    await settled(['Alpha'])
+
+    carry('a', { x: 0, y: 0 }).drop()
+
+    expect(onPlace).not.toHaveBeenCalled()
+  })
+
+  it('commits nothing and clears every mark when the drag is given up', async () => {
+    const onPlace = vi.fn()
+    canvas(['a'], placesOf(['a', 0, 0]), { onPlace, snap: false })
+    await settled(['Alpha'])
+
+    carry('a', { x: 300, y: 200 }).giveUp()
+
+    expect(onPlace).not.toHaveBeenCalled()
+    const board = screen.getByTestId('board-grid')
+    expect(board.dataset.floating).toBeUndefined()
+    expect(board.dataset.landing).toBeUndefined()
+    expect(tile('a').dataset.lifted).toBe('false')
+    expect(screen.queryByTestId('board-landing')).toBeNull()
+  })
+
+  it('will not be carried at all by a board that cannot place it', async () => {
+    // The idiom the grid already uses: a board given no callback for a gesture does not
+    // half-perform it, it simply does not offer it.
+    canvas(['a'], placesOf(['a', 0, 0]))
+    await settled(['Alpha'])
 
     const held = tile('a')
-    held.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    fireEvent.mouseDown(held.querySelector('[data-testid="comp-header"]')!, { button: 0 })
 
     expect(held.draggable).toBe(false)
   })
 
-  it('still takes a comp forked onto the new-comp tile', async () => {
-    // The gesture that is not a rearrangement, and the one thing the ghost tile is for besides
-    // being a button. It has to keep working outside the scroller.
-    const onPort = vi.fn()
-    canvas(['a'], placesOf(['a', 0, 0]), { onPort, onFork: vi.fn() })
+  it('does not pick the tile up when a hull row leaves it', async () => {
+    // The boundary that matters most, and the one a new engine is likeliest to break: a hull
+    // row is draggable, it sits inside a tile that is also draggable, and `dragstart` bubbles.
+    const onPlace = vi.fn()
+    canvas(['a'], placesOf(['a', 0, 0]), { onPlace })
     await settled(['Alpha'])
 
-    expect(screen.getByTestId('board-new-comp').dataset.receiving).toBe('false')
+    const rows = tile('a').querySelector('[data-testid="comp-rows"]')!
+    fireEvent.mouseDown(rows, { button: 0 })
+
+    expect(tile('a').draggable).toBe(false)
+    expect(screen.getByTestId('board-grid').dataset.floating).toBeUndefined()
+  })
+
+  it('withdraws the landing while the cursor is over the new-comp tile', async () => {
+    // Letting go there forks rather than moves, so an outline left promising a landing would
+    // be promising something a drop is not going to do.
+    canvas(['a'], placesOf(['a', 0, 0]), { onPlace: vi.fn(), onFork: vi.fn(), snap: false })
+    await settled(['Alpha'])
+    carry('a', { x: 300, y: 200 })
+    expect(screen.getByTestId('board-grid').dataset.landing).toBe('300,200')
+
+    fireEvent.dragOver(screen.getByTestId('board-new-comp'))
+
+    expect(screen.getByTestId('board-grid').dataset.landing).toBe('0,0')
+  })
+})
+
+describe('gripOf', () => {
+  /** A tile with a real box, since jsdom gives everything a zero-sized one. */
+  function boxed(left: number, top: number, width: number, height: number) {
+    const element = document.createElement('div')
+    element.getBoundingClientRect = () => new DOMRect(left, top, width, height)
+    return element
+  }
+
+  it('is how far into the tile the press landed', () => {
+    // Without it the tile jumps on drop, so that wherever it was held becomes its corner.
+    expect(gripOf(boxed(100, 200, 320, 350), 160, 212)).toEqual({ x: 60, y: 12 })
+  })
+
+  it('cannot come out larger than the tile it is on', () => {
+    // A press on a child drawn outside its parent's box would otherwise throw the landing off
+    // by however far outside it was.
+    expect(gripOf(boxed(100, 200, 320, 350), 900, 900)).toEqual({ x: 320, y: 350 })
+    expect(gripOf(boxed(100, 200, 320, 350), 0, 0)).toEqual({ x: 0, y: 0 })
   })
 })
 

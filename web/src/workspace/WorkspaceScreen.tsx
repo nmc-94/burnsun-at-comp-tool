@@ -45,6 +45,7 @@ import {
   withCompClosed,
   withCompOpened,
   withTileMoved,
+  withTilePlaced,
   withTilesPlaced,
 } from './layout'
 import { packed, readingOrder, trackCount, trackWidth } from './place'
@@ -285,6 +286,26 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
   /** The board element, so "tidy up" measures exactly what is drawn. */
   const boardRef = useRef<HTMLElement>(null)
 
+  /**
+   * Where a tile was put down.
+   *
+   * The same route as opening, closing or reordering one — the arrangement is convenience
+   * state, so a drop is another save behind the same debounce and needs no request of its own.
+   *
+   * Raised to the front as it lands. The tiles are drawn in list order and the last one paints
+   * on top, so stacking is the list rather than a second field to keep in step with it; and
+   * because a canvas hands its order back to the grid by *reading* the arrangement, raising a
+   * tile here cannot disturb the order the grid would show.
+   */
+  const placeTile = useCallback(
+    (compId: string, place: Place) => {
+      if (!layout || !board) return
+      const raised = withTileMoved(layout, board.id, compId, board.tiles.length - 1)
+      arrange(withTilePlaced(raised, board.id, compId, place))
+    },
+    [layout, board, arrange],
+  )
+
   const placeTiles = useCallback(
     (next: ReadonlyMap<string, Place>) => {
       if (!layout || !board) return
@@ -522,7 +543,13 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
           mode={mode}
           places={places}
           boardRef={boardRef}
+          snap={board ? boardSnap(board) : true}
+          // Only while the board is actually being drawn as a canvas. A narrow viewport
+          // therefore *cannot* write a position — the same idiom as a board given no
+          // `onReorder`, which simply cannot be rearranged, rather than a guard somewhere
+          // downstream that has to remember to ask.
           onPlaceMany={mode === 'floating' ? placeTiles : undefined}
+          onPlace={mode === 'floating' ? placeTile : undefined}
         />
 
         {/* The strip under the board: how it draws itself on the left, whether that has been

@@ -734,6 +734,25 @@
   min-height: 64px;
 }
 
+/* Where a tile would land if it were let go of now.
+ *
+ * An outline rather than a filled shape, and behind everything: what is being read while the
+ * decision is made is the board underneath it. It is drawn at the *snapped* position, which is
+ * the whole value of having a snap — you see where it will go before you commit to it.
+ *
+ * Moved with `transform`, never with `left`/`top`, because those two belong to React and to
+ * the saved place. Different properties, so neither can undo the other. */
+.board-landing {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  border: 1px dashed var(--accent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
 /* Centred in what is visible rather than sitting at the top-left of a canvas that is mostly
  * off screen. */
 .wsboard > .board-empty {

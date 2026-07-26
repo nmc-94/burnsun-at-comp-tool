@@ -15,19 +15,30 @@ import type { TagVocabulary } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import { inTextField, isPaste } from '../lib/keys'
 import { canvasFor, tileHeights, useBoardSize } from './board-metrics'
+import type { Canvas } from './board-metrics'
+import type { Carried, Float, Reorder } from './carry'
 import { measure, play } from './flip'
 import type { Box } from './flip'
+import { beginFloat, gripOf } from './float-drag'
 import GhostTile from './GhostTile'
 import type { TileFork } from './GhostTile'
 import { getCopied } from './hull-transfer'
 import type { CarriedRows } from './hull-transfer'
-import { FALLBACK_H, nextFreePlace } from './place'
+import { FALLBACK_H, MAX_COORD, MIN_TILE_W, nextFreePlace } from './place'
+import type { Bounds } from './place'
 import { beginReorder } from './reorder'
-import type { Reorder } from './reorder'
 import type { BoardMode, Place } from './types'
 
 /** Shared so an empty board does not build a new map on every render and re-run the memo. */
 const EMPTY_PLACES: ReadonlyMap<string, Place> = new Map()
+
+/** Where a tile may go before the canvas has been measured — everywhere the server will
+ *  store. Only reachable on the first frame of a board that has not laid out yet. */
+const EVERYWHERE: Bounds = { minX: 0, minY: 0, maxX: MAX_COORD, maxY: MAX_COORD }
+
+/** Which engine has hold of the tile. The one question `carry.ts` deliberately does not
+ *  answer, asked in the one place that has to know: the drop. */
+const isFloat = (held: Carried): held is Float => 'place' in held
 
 interface Props {
   readonly boardId: string
@@ -93,6 +104,15 @@ interface Props {
    * anyone can be asked to save where.
    */
   readonly onPlaceMany?: (places: ReadonlyMap<string, Place>) => void
+  /**
+   * Where a tile was put down.
+   *
+   * The canvas's counterpart to `onReorder`, and optional the same way: a floating board given
+   * neither still draws every tile, it simply cannot be rearranged.
+   */
+  readonly onPlace?: (compId: string, place: Place) => void
+  /** Whether a tile put down lands on the step. */
+  readonly snap?: boolean
 }
 
 export default function BoardGrid({
@@ -112,6 +132,8 @@ export default function BoardGrid({
   places,
   boardRef,
   onPlaceMany,
+  onPlace,
+  snap = true,
 }: Props) {
   const grid = useRef<HTMLElement>(null)
   /**
@@ -135,9 +157,21 @@ export default function BoardGrid({
    *  halves of a FLIP that spans a mode change. */
   const boxes = useRef<Map<string, Box> | null>(null)
   const drawnMode = useRef<BoardMode>(mode)
+  /**
+   * Where the last press landed inside the tile it landed on.
+   *
+   * Read at `mousedown`, which bubbles here from the cell, because that is the only moment the
+   * offset from the cursor to the tile's corner exists — `dragstart` fires afterwards and
+   * `TileDrag.lift` carries no coordinates. Doing it here rather than widening that interface
+   * is what keeps `CompTileHost` untouched by the whole of this.
+   */
+  const gripped = useRef<Place | null>(null)
+  /** The canvas as of the last render, for the engine to read at the moment of a lift — a
+   *  gesture starts in an event handler, which the render's own `canvas` is not in scope of. */
+  const canvasRef = useRef<Canvas | null>(null)
   /** The tile being carried, if one is. A ref and not state: the whole point of `reorder.ts`
    *  is that dragging one tile over twenty others re-renders none of them. */
-  const carrying = useRef<Reorder | null>(null)
+  const carrying = useRef<Reorder | Float | null>(null)
   /** That tile's cell's flush, travelling with it. Only one of the two landings needs it —
    *  a fork reads the comp's rows on the server — but it is handed over at the lift, because
    *  which landing this turns out to be is not known until it is let go of. */
@@ -157,6 +191,7 @@ export default function BoardGrid({
     () => (floating ? canvasFor(size, places ?? EMPTY_PLACES, tileHeights(grid.current)) : null),
     [floating, size, places, grid],
   )
+  canvasRef.current = canvas
 
   /**
    * Where each tile is *drawn*: where it was last put down, and for one that has only just
@@ -252,14 +287,27 @@ export default function BoardGrid({
    * gesture is the drop.
    */
   const tileDrag = useMemo<TileDrag | undefined>(() => {
-    // Grid only for now. A canvas has its own engine, and until it has one a tile there is
-    // drawn where it was put down and moved by tidying up — which is a whole board rather
-    // than an unfinished one.
-    if (!onReorder || floating) return undefined
+    // One object either way, and the only thing that differs is which engine takes hold. What
+    // the board does with a tile in flight — `dragover`, the drop guard, handing it to the
+    // new-comp tile to fork — is `carry.ts`'s interface and branches nowhere.
+    if (floating ? !onPlace : !onReorder) return undefined
     return {
       lift(compId, settle) {
         if (!grid.current) return false
-        carrying.current = beginReorder(grid.current, compId)
+        carrying.current = floating
+          ? beginFloat(grid.current, compId, {
+              snap,
+              bounds: canvasRef.current?.extent.bounds ?? EVERYWHERE,
+              // Recorded at `mousedown`, several events before anything asks: the offset from
+              // the cursor to the tile's corner is only knowable while the press is happening,
+              // and without it the tile jumps so that its corner meets the cursor on drop.
+              grip: gripped.current,
+              tile: {
+                width: canvasRef.current?.tileWidth ?? MIN_TILE_W,
+                height: FALLBACK_H,
+              },
+            })
+          : beginReorder(grid.current, compId)
         settling.current = settle
         return carrying.current !== null
       },
@@ -271,7 +319,7 @@ export default function BoardGrid({
         settling.current = null
       },
     }
-  }, [onReorder, floating])
+  }, [onReorder, onPlace, floating, snap, grid])
 
   /**
    * The other place a carried tile can be let go of: the new-comp tile, where it forks.
@@ -306,7 +354,24 @@ export default function BoardGrid({
   /** Let go of, wherever on the board that was. */
   const drop = useCallback(() => {
     const held = carrying.current
-    if (!held || !onReorder) return false
+    if (!held) return false
+
+    if (isFloat(held)) {
+      // Where, rather than which slot — the whole of the difference between the two boards,
+      // and the only place in this file that has to know which one it is on.
+      const moved = held.moved()
+      const at = held.place()
+      held.settle()
+      carrying.current = null
+      settling.current = null
+      // Raised as it lands, not as it is picked up: the tiles are drawn in list order and the
+      // last one paints on top, so "bring to front" is the move that already exists. One
+      // commit, both facts — the arrangement and the stacking are the same list.
+      if (moved) onPlace?.(held.carried, at)
+      return true
+    }
+
+    if (!onReorder) return false
     const toIndex = held.order().indexOf(held.carried)
     // A tile picked up and put back down where it was is not a rearrangement, and this is the
     // board saying so rather than handing the question upstream. The layout it would produce
@@ -323,7 +388,7 @@ export default function BoardGrid({
     settling.current = null
     if (moved && toIndex !== -1) onReorder(held.carried, toIndex)
     return true
-  }, [onReorder])
+  }, [onReorder, onPlace])
 
   useEffect(() => {
     // A board that cannot fork has nowhere to paste to, and takes no listener at all.
@@ -395,6 +460,16 @@ export default function BoardGrid({
       data-reordering="false"
       aria-label={boardName}
       ref={attach}
+      onMouseDown={(event) => {
+        // Bubbles up from the cell, where `byHandle` has already decided whether this press
+        // arms a drag at all. Recorded either way and read only if one starts, so this stays a
+        // measurement rather than a second opinion about what a press means.
+        const tile =
+          event.target instanceof Element
+            ? event.target.closest<HTMLElement>('[data-comp-id]')
+            : null
+        gripped.current = tile ? gripOf(tile, event.clientX, event.clientY) : null
+      }}
       onDragOver={(event) => {
         // Every `dragover` in the whole gesture arrives here, whether it started on a tile or
         // in one of the gaps between them — a board of unequal tiles has a lot of grid that is
