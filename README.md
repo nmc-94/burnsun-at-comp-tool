@@ -242,40 +242,51 @@ await expect(tile.getByTestId('comp-save-state')).toHaveAttribute('data-save-sta
 await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-layout-state', 'idle')
 ```
 
-Moving hulls between comps is scriptable the same way, and without a drag: the drag is a
-shortcut over these controls rather than the only way to reach them. Clicking a row picks
-it; ctrl- or shift-clicking a second adds to or extends the selection. Each row also keeps
-a checkbox named for the hull *and its slot* — because a comp legitimately holds three of
-the same hull — which is what the keyboard reaches, but it is visually clipped, so a
-pointer-driven script should click the row.
+Moving hulls out of a comp starts by picking rows out. Clicking a row picks it; ctrl- or
+shift-clicking a second adds to or extends the selection, and dragging any row in the selection
+takes the whole selection with it. Each row also keeps a checkbox named for the hull *and its
+slot* — because a comp legitimately holds three of the same hull — which is visually clipped
+but is what says whether the pick landed.
+
+Where they are put down is what it means. On another tile it is a **copy**: the hulls are
+appended to a comp that already exists, and this one needs a real drag, which Playwright's
+`dragTo` raises and jsdom cannot. On the dashed new-comp tile at the end of the board it is a
+**port**: those rows become a comp of their own. **Ctrl+C then Ctrl+V** is the same port
+without a pointer — one row or several, and the paste lands on whichever board is open.
 
 ```javascript
 await tile.getByTestId('comp-row').nth(0).click()
 await tile.getByTestId('comp-row').nth(1).click({ modifiers: ['ControlOrMeta'] })
-await expect(tile.getByTestId('comp-selection-status')).toHaveText('2 hulls selected')
+await expect(tile.getByTestId('comp-row-select').nth(1)).toBeChecked()
 
 // Out into a comp of their own. One POST to /fork: the server takes those rows out of its own
-// copy, so the new comp keeps this one's ruleset version and records it as its parent.
-await tile.getByRole('button', { name: 'Port to a new comp' }).click()
+// copy, so the new comp keeps this one's ruleset version and records it as its parent. The
+// tile's outstanding edits are written first — the fork asks for rows *by number*, and the
+// server drops numbers it has not been told about rather than refusing them.
+await tile.getByTestId('comp-row').nth(0).dragTo(page.getByTestId('board-new-comp'))
 await expect(page.getByTestId('board-grid')).toHaveAttribute('data-comp-count', '2')
 
-// Or into a comp that already exists. The destination is named, so twenty are twenty
-// controls; hovering or focusing one previews the cost *in that comp*, against the ruleset
-// version it is pinned to, which may not be the one these hulls were priced under.
-await tile.getByRole('button', { name: 'Copy to another comp' }).click()
-// `exact` matters: porting rows out of a comp makes an "Armor Brawl (partial)" beside it.
-const target = page.getByTestId('board-tile').filter({ has: page.getByLabel('Armor Brawl', { exact: true }) })
-await tile.getByRole('button', { name: 'Copy to Armor Brawl' }).hover()
-await expect(target.getByTestId('board-tile-preview')).toContainText('costs')
-await tile.getByRole('button', { name: 'Copy to Armor Brawl' }).click()
+// Or the same thing from the keyboard. Both keystrokes are ignored while the caret is in a
+// field, and the copy is let go of if the rows it names move — row numbers renumber when a row
+// is removed, so a copy held across an edit would paste hulls nobody picked.
+await page.keyboard.press('ControlOrMeta+c')
+await page.keyboard.press('ControlOrMeta+v')
 
-await expect(tile.getByTestId('board-tile-transfer')).toHaveText('Copied 2 hulls to Armor Brawl')
+// Or into a comp that already exists. Dragging over the destination previews the cost *in
+// that comp*, against the ruleset version it is pinned to, which may not be the one these
+// hulls were priced under. `tileNamed` matches exactly: porting rows out of a comp makes an
+// "Armor Brawl (partial)" beside it.
+const target = tileNamed(page, 'Armor Brawl')
+await tile.getByTestId('comp-row').nth(0).dragTo(target)
 await expect(target.getByTestId('comp-save-state')).toHaveAttribute('data-save-state', 'idle')
 ```
 
 The copy always lands. If it breaks a rule the target says so through its own
 `comp-issue-flag`, and a hull the target's ruleset version never listed arrives as
 `Unknown hull <typeId>` with an `unlisted-hull` violation rather than being refused.
+
+Copying into a comp that already exists is still the drag and only the drag — there is no way
+to say *which* comp without pointing at one.
 
 **Forking a whole comp** is the same mechanism with no rows named, from the fork control in
 the tile's foot. The new comp keeps the parent's ruleset version — a fork exists to be

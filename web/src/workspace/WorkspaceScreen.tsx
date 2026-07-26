@@ -12,7 +12,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { messageFor } from '../api'
 import { createComp, forkComp, listComps } from '../comps/api'
-import type { CopyTarget } from '../comps/CompTileHost'
 import { vocabularyOf } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import { evaluate } from '../engine'
@@ -211,22 +210,6 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
     [board],
   )
 
-  /**
-   * Where a tile's hulls can be copied to: the other comps on this board, in board order.
-   *
-   * Only the comps a person can write to, because a destination that would refuse the copy
-   * is not a destination. The names here are the ones the board loaded with; each tile's
-   * own leaf keeps up with a rename through the card store, the way the rail does.
-   */
-  const copyTargets = useMemo<readonly CopyTarget[]>(() => {
-    const named = new Map((comps ?? []).map((comp) => [comp.id, comp]))
-    return (board?.tiles ?? []).flatMap((tile) => {
-      const comp = named.get(tile.compId)
-      if (!comp || (comp.yourLevel !== 'editor' && comp.yourLevel !== 'owner')) return []
-      return [{ id: comp.id, name: comp.name }]
-    })
-  }, [board, comps])
-
   useEffect(() => {
     // The URL is authoritative for which board is on screen; the layout records it so a
     // later bare team URL lands where the person left off rather than on the first board.
@@ -386,7 +369,6 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
           onClose={closeComp}
           onCreate={() => void create()}
           onPort={(compId, positions) => void fork(compId, positions)}
-          copyTargets={copyTargets}
           onFork={(compId) => void fork(compId)}
           vocabulary={vocabulary}
           onCompChanged={recordChange}

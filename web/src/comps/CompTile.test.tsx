@@ -37,9 +37,8 @@ interface Says {
 /** Render the tile over `slots`, re-judging on every change the way CompScreen does. */
 function mount(slots: CompSlot[], editable = true, says: Says = {}) {
   const onChange = vi.fn()
-  const onPortRows = vi.fn()
-  const onCopyRows = vi.fn()
   const onDragRows = vi.fn()
+  const onCopyRows = vi.fn()
   const onSaveTags = vi.fn()
   const onToggleComments = vi.fn()
   const onFork = vi.fn()
@@ -60,9 +59,8 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
       saveState="idle"
       onChange={onChange}
       onRename={vi.fn()}
-      onPortRows={onPortRows}
-      onCopyRows={onCopyRows}
       onDragRows={onDragRows}
+      onCopyRows={onCopyRows}
       onSaveTags={says.interactive ? onSaveTags : undefined}
       onToggleComments={says.interactive ? onToggleComments : undefined}
       onFork={says.interactive ? onFork : undefined}
@@ -71,9 +69,8 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
   const view = render(tile(slots))
   return {
     onChange,
-    onPortRows,
-    onCopyRows,
     onDragRows,
+    onCopyRows,
     onSaveTags,
     onToggleComments,
     onFork,
@@ -127,6 +124,26 @@ function row(index: number) {
   const found = screen.getAllByTestId('comp-row')[index]
   if (!found) throw new Error(`the tile has no row ${index}`)
   return found
+}
+
+/**
+ * Which rows are picked out, read off the boxes rather than off a class.
+ *
+ * The tray that used to say "2 hulls selected" is gone — dragging the rows is what acts on
+ * them now — so the tile's own answer to "what is picked" is the checked state of the boxes,
+ * which is the same thing a screen reader is told. Asserting on the `.picked` class instead
+ * would be checking a stylesheet.
+ */
+function pickedRows(): number[] {
+  return screen
+    .getAllByTestId('comp-row-select')
+    .flatMap((box, at) => ((box as HTMLInputElement).checked ? [at] : []))
+}
+
+/** The row numbers a drag starting on `index` would carry. */
+function dragFrom(onDragRows: ReturnType<typeof vi.fn>, index: number): number[] {
+  fireEvent.dragStart(row(index))
+  return onDragRows.mock.calls.at(-1)?.[0] as number[]
 }
 
 describe('the scaffold', () => {
@@ -591,49 +608,45 @@ describe('picking rows out by clicking them', () => {
 
     fireEvent.click(row(1))
 
-    expect(screen.getByTestId('comp-selection-status').textContent).toBe('1 hull selected')
     // The box a screen reader reads is the same state, not a second one keeping its own score.
     expect((tick('Select Rifter in slot 2') as HTMLInputElement).checked).toBe(true)
+    expect(pickedRows()).toEqual([1])
   })
 
   it('replaces the selection on a plain click, the way a file list does', () => {
-    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+    mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
     fireEvent.click(row(0))
     fireEvent.click(row(2))
-    fireEvent.click(screen.getByRole('button', { name: 'Copy to another comp' }))
 
-    expect(onCopyRows).toHaveBeenCalledWith([{ typeId: SHIP.orthrus, isFlagship: false }])
+    expect(pickedRows()).toEqual([2])
   })
 
   it('adds to the selection when control or command is held', () => {
-    const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+    mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
     fireEvent.click(row(0))
     fireEvent.click(row(2), { ctrlKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
 
-    expect(onPortRows).toHaveBeenCalledWith([0, 2])
+    expect(pickedRows()).toEqual([0, 2])
   })
 
   it('honours command as well as control, so a Mac needs no separate gesture', () => {
-    const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+    mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
     fireEvent.click(row(0))
     fireEvent.click(row(1), { metaKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
 
-    expect(onPortRows).toHaveBeenCalledWith([0, 1])
+    expect(pickedRows()).toEqual([0, 1])
   })
 
   it('extends a range from the row clicked last when shift is held', () => {
-    const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus, SHIP.svipul))
+    mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus, SHIP.svipul))
 
     fireEvent.click(row(1))
     fireEvent.click(row(3), { shiftKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
 
-    expect(onPortRows).toHaveBeenCalledWith([1, 2, 3])
+    expect(pickedRows()).toEqual([1, 2, 3])
   })
 
   it('picks the row out when the hull name is clicked, now that the name is only text', () => {
@@ -643,7 +656,7 @@ describe('picking rows out by clicking them', () => {
 
     fireEvent.click(screen.getAllByTestId('comp-row-name')[1]!)
 
-    expect(screen.getByTestId('comp-selection-status').textContent).toBe('1 hull selected')
+    expect(pickedRows()).toEqual([1])
     expect(within(row(1)).queryByTestId('ship-search-input')).toBeNull()
   })
 
@@ -655,7 +668,7 @@ describe('picking rows out by clicking them', () => {
     fireEvent.click(within(row(1)).getByTestId('comp-row-search'))
 
     expect(within(row(1)).getByTestId('ship-search-input')).toBeTruthy()
-    expect(screen.queryByTestId('comp-selection')).toBeNull()
+    expect(pickedRows()).toEqual([])
   })
 
   it('does not pick rows out of a comp the viewer cannot edit', () => {
@@ -663,7 +676,8 @@ describe('picking rows out by clicking them', () => {
 
     fireEvent.click(row(0))
 
-    expect(screen.queryByTestId('comp-selection')).toBeNull()
+    // No boxes at all on a viewer's tile, so there is nothing for a click to have ticked.
+    expect(screen.queryAllByTestId('comp-row-select')).toEqual([])
   })
 
   it('lets go when the click lands anywhere outside the tile', () => {
@@ -671,11 +685,11 @@ describe('picking rows out by clicking them', () => {
     // tile, so a click that lands outside it is the end of the gesture.
     mount(slots(SHIP.abaddon, SHIP.rifter))
     fireEvent.click(row(0))
-    expect(screen.getByTestId('comp-selection')).toBeTruthy()
+    expect(pickedRows()).toEqual([0])
 
     fireEvent.mouseDown(document.body)
 
-    expect(screen.queryByTestId('comp-selection')).toBeNull()
+    expect(pickedRows()).toEqual([])
   })
 
   it('holds on when the click lands somewhere else in the same tile', () => {
@@ -684,7 +698,7 @@ describe('picking rows out by clicking them', () => {
 
     fireEvent.mouseDown(screen.getByTestId('comp-rows'))
 
-    expect(screen.getByTestId('comp-selection')).toBeTruthy()
+    expect(pickedRows()).toEqual([0])
   })
 
   it('lets go on Escape', () => {
@@ -693,7 +707,7 @@ describe('picking rows out by clicking them', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' })
 
-    expect(screen.queryByTestId('comp-selection')).toBeNull()
+    expect(pickedRows()).toEqual([])
   })
 
   it('leaves Escape to a swap search while one is open', () => {
@@ -704,85 +718,45 @@ describe('picking rows out by clicking them', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' })
 
-    expect(screen.getByTestId('comp-selection')).toBeTruthy()
+    expect(pickedRows()).toEqual([0])
   })
 })
 
 describe('picking rows out', () => {
-  it('ports the picked rows as row numbers, in row order, however they were picked', () => {
-    // Row numbers rather than hulls, because a port is a fork and the server takes the rows out
-    // of its own copy — which is what lets the new comp keep the parent's ruleset version. The
-    // numbers are the positions the slots were stored at: dense, from zero.
-    const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+  it('hands over row numbers, in row order, however they were picked', () => {
+    // Row numbers rather than hulls, and for both of the places a drag can land. A copy could
+    // make do with the hulls; a port is a fork and the server takes the rows out of its own
+    // copy — which is what lets the new comp keep the parent's ruleset version. The numbers
+    // are the positions the slots were stored at: dense, from zero, in row order whatever
+    // order they were ticked in.
+    const { onDragRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
     fireEvent.click(tick('Select Orthrus in slot 3'))
     fireEvent.click(tick('Select Abaddon in slot 1'))
-    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
 
-    expect(onPortRows).toHaveBeenCalledWith([0, 2])
+    expect(dragFrom(onDragRows, 0)).toEqual([0, 2])
   })
 
   it('extends a range when shift is held', () => {
-    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus, SHIP.svipul))
+    const { onDragRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus, SHIP.svipul))
 
     fireEvent.click(tick('Select Rifter in slot 2'))
     fireEvent.click(tick('Select Svipul in slot 4'), { shiftKey: true })
-    fireEvent.click(screen.getByRole('button', { name: 'Copy to another comp' }))
 
-    expect(onCopyRows.mock.calls[0]?.[0].map((slot: CompSlot) => slot.typeId)).toEqual([
-      SHIP.rifter,
-      SHIP.orthrus,
-      SHIP.svipul,
-    ])
-  })
-
-  it('carries the flagship out on a copy, because a subset holds at most one', () => {
-    // Copying still hands over hulls: it is an edit of another comp, and only what the rows
-    // *are* means anything at the far end. Porting is the one that hands over row numbers.
-    const three: CompSlot[] = [
-      { typeId: SHIP.vindicator, isFlagship: true },
-      { typeId: SHIP.abaddon, isFlagship: false },
-      { typeId: SHIP.rifter, isFlagship: false },
-    ]
-    const { onCopyRows } = mount(three)
-
-    fireEvent.click(tick('Select Vindicator in slot 1'))
-    fireEvent.click(screen.getByRole('button', { name: 'Copy to another comp' }))
-
-    expect(onCopyRows).toHaveBeenCalledWith([{ typeId: SHIP.vindicator, isFlagship: true }])
+    expect(dragFrom(onDragRows, 1)).toEqual([1, 2, 3])
   })
 
   it('forgets the selection when the rows change underneath it', () => {
     // Row numbers renumber when a row is removed. Held across an edit, a selection would
-    // come to mean different hulls than the ones with ticks beside them.
+    // come to mean different hulls than the ones with ticks beside them — and a drag would
+    // then carry hulls nobody picked.
     const { rerenderWith } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
     fireEvent.click(tick('Select Orthrus in slot 3'))
-    expect(screen.getByTestId('comp-selection')).toBeTruthy()
+    expect(pickedRows()).toEqual([2])
 
     rerenderWith(slots(SHIP.rifter, SHIP.orthrus))
 
-    expect(screen.queryByTestId('comp-selection')).toBeNull()
-  })
-
-  it('says how many are picked without putting the number in a control name', () => {
-    // A name that moves with state cannot be matched by anything looking for it.
-    mount(slots(SHIP.abaddon, SHIP.rifter))
-
-    fireEvent.click(tick('Select Abaddon in slot 1'))
-    expect(screen.getByTestId('comp-selection-status').textContent).toBe('1 hull selected')
-
-    fireEvent.click(tick('Select Rifter in slot 2'))
-    expect(screen.getByTestId('comp-selection-status').textContent).toBe('2 hulls selected')
-    expect(screen.getByRole('button', { name: 'Port to a new comp' })).toBeTruthy()
-  })
-
-  it('puts them down again', () => {
-    mount(slots(SHIP.abaddon))
-
-    fireEvent.click(tick('Select Abaddon in slot 1'))
-    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }))
-
-    expect(screen.queryByTestId('comp-selection')).toBeNull()
+    expect(pickedRows()).toEqual([])
   })
 
   it('drags the whole selection when the row dragged is part of it', () => {
@@ -790,23 +764,87 @@ describe('picking rows out', () => {
 
     fireEvent.click(tick('Select Abaddon in slot 1'))
     fireEvent.click(tick('Select Orthrus in slot 3'))
-    fireEvent.dragStart(row(0))
 
-    expect(onDragRows.mock.calls[0]?.[0].map((slot: CompSlot) => slot.typeId)).toEqual([
-      SHIP.abaddon,
-      SHIP.orthrus,
-    ])
+    expect(dragFrom(onDragRows, 0)).toEqual([0, 2])
   })
 
   it('drags just the one row when it is not part of the selection', () => {
     const { onDragRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
     fireEvent.click(tick('Select Abaddon in slot 1'))
-    fireEvent.dragStart(row(1))
 
-    expect(onDragRows.mock.calls[0]?.[0].map((slot: CompSlot) => slot.typeId)).toEqual([
-      SHIP.rifter,
-    ])
+    expect(dragFrom(onDragRows, 1)).toEqual([1])
+  })
+})
+
+describe('copying the picked rows with the keyboard', () => {
+  it('hands over the same row numbers a drag would', () => {
+    // The same payload, because a paste and a drop on the new-comp tile are one operation
+    // reached two ways — see BoardTransfer.test.tsx for the other end of it.
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+
+    fireEvent.click(row(0))
+    fireEvent.click(row(2), { ctrlKey: true })
+    fireEvent.keyDown(document, { key: 'c', ctrlKey: true })
+
+    expect(onCopyRows).toHaveBeenCalledWith([0, 2])
+  })
+
+  it('takes one row as readily as several', () => {
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.click(row(1))
+    fireEvent.keyDown(document, { key: 'c', ctrlKey: true })
+
+    expect(onCopyRows).toHaveBeenCalledWith([1])
+  })
+
+  it('honours command as well as control, so a Mac needs no separate gesture', () => {
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.click(row(0))
+    fireEvent.keyDown(document, { key: 'c', metaKey: true })
+
+    expect(onCopyRows).toHaveBeenCalledWith([0])
+  })
+
+  it('leaves the keystroke alone when nothing is picked out', () => {
+    // No selection, no listener at all — Ctrl+C in a tile means what it always meant.
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.keyDown(document, { key: 'c', ctrlKey: true })
+
+    expect(onCopyRows).not.toHaveBeenCalled()
+  })
+
+  it('leaves it alone when the caret is in a field', () => {
+    // Somebody typing in the comp's name means the text in it, whatever is picked out behind
+    // them. Clicking a row does not clear a field's focus, so the two really can overlap.
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter))
+    fireEvent.click(row(0))
+
+    fireEvent.keyDown(screen.getByTestId('comp-name'), { key: 'c', ctrlKey: true })
+
+    expect(onCopyRows).not.toHaveBeenCalled()
+  })
+
+  it('leaves a bare c alone, which is a letter somebody is typing', () => {
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter))
+    fireEvent.click(row(0))
+
+    fireEvent.keyDown(document, { key: 'c' })
+
+    expect(onCopyRows).not.toHaveBeenCalled()
+  })
+
+  it('does not copy out of a comp the viewer cannot edit', () => {
+    // There is nothing to copy: rows cannot be picked out at all without an editor's tile.
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter), false)
+
+    fireEvent.click(row(0))
+    fireEvent.keyDown(document, { key: 'c', ctrlKey: true })
+
+    expect(onCopyRows).not.toHaveBeenCalled()
   })
 })
 

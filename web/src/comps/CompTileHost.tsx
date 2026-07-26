@@ -11,7 +11,7 @@
 // edit of *its own* comp — so no comp's slots are ever held anywhere but in the cell that
 // owns them, which is the whole of §6.7.
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { CompSlot, Violation } from '../engine'
 import CommentThread from './CommentThread'
@@ -21,26 +21,22 @@ import type { Lineage } from './CompTile'
 import { EMPTY_VOCABULARY } from './tag-model'
 import type { TagVocabulary } from './tag-model'
 import { hrefFor } from '../router/route'
-import { getCard, publishCard, subscribeCard } from '../workspace/comp-cards'
+import { publishCard } from '../workspace/comp-cards'
 import {
+  forgetCopiedFrom,
   getDragged,
   offerHulls,
   peekTransfer,
   propose,
+  setCopied,
   setDragged,
   subscribeTransfer,
   takeOffer,
 } from '../workspace/hull-transfer'
-import type { HullOffer } from '../workspace/hull-transfer'
-import { introducedBy, previewHulls, withHullsAdded } from './tile-model'
+import type { CarriedRows } from '../workspace/hull-transfer'
+import { introducedBy, previewHulls, slotsAt, withHullsAdded } from './tile-model'
 import type { CompDetail } from './types'
 import { useCompDocument } from './useCompDocument'
-
-/** A comp this one's hulls can be copied into: its id, and the name the board loaded it with. */
-export interface CopyTarget {
-  readonly id: string
-  readonly name: string
-}
 
 interface Props {
   readonly compId: string
@@ -49,12 +45,13 @@ interface Props {
   /** Put the cursor in the name, for the tile the ghost tile has just created. */
   readonly autoFocusName?: boolean
   /**
-   * Optional, all of them. A cell rendered with nothing but an id and a way to close it is
-   * still a whole tile — it simply offers no way to move hulls out of it.
+   * Fork the whole comp. What happens to the new comp is the board's business — and so is a
+   * *partial* fork, which is a drag landing on the board's new-comp tile and never reaches
+   * this cell as a callback at all.
+   *
+   * Optional, like the two below it: a cell rendered with nothing but an id and a way to close
+   * it is still a whole tile.
    */
-  readonly onPort?: (compId: string, positions: readonly number[]) => void
-  readonly copyTargets?: readonly CopyTarget[]
-  /** Fork the whole comp. What happens to the new comp is the board's business. */
   readonly onFork?: (compId: string) => void
   /** The team's two tag vocabularies, derived once by the board from its comp listing. */
   readonly vocabulary?: TagVocabulary
@@ -66,8 +63,6 @@ export default function CompTileHost({
   compId,
   onClose,
   autoFocusName,
-  onPort,
-  copyTargets,
   onFork,
   vocabulary,
   onCompChanged,
@@ -86,16 +81,12 @@ export default function CompTileHost({
     patchShare,
     flush,
   } = useCompDocument(compId, onCompChanged)
-  const [carried, setCarried] = useState<readonly CompSlot[] | null>(null)
-  const [sent, setSent] = useState<string | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   // The thread's own count, once it has loaded one. The listing's number is a snapshot from
   // when the board opened, and posting a comment should move the figure beside the control
   // that opened the panel rather than only the panel.
   const [threadCount, setThreadCount] = useState<number | null>(null)
-  const proposedTo = useRef<string | null>(null)
-  const anchor = useRef<HTMLDivElement>(null)
 
   // Subscribed for this comp and no other, the way the rail's leaf is. A store every tile
   // listened to would be board state under another name, and one copy would re-render twenty
@@ -150,74 +141,46 @@ export default function CompTileHost({
 
   const name = comp?.name ?? 'Loading comp'
 
-  const offerOf = useCallback(
-    (rows: readonly CompSlot[]): HullOffer => ({
-      fromCompId: compId,
-      fromName: name,
-      typeIds: rows.map((row) => row.typeId),
-    }),
-    [compId, name],
-  )
-
-  /** Ask one destination what these hulls would cost there; null withdraws the question. */
-  const previewAt = useCallback(
-    (targetId: string | null) => {
-      const asked = proposedTo.current
-      if (asked && asked !== targetId) propose(asked, null)
-      proposedTo.current = targetId
-      if (targetId && carried) propose(targetId, offerOf(carried))
-    },
-    [carried, offerOf],
-  )
-
-  const closeTargets = useCallback(() => {
-    previewAt(null)
-    setCarried(null)
-  }, [previewAt])
-
-  useEffect(() => {
-    if (!carried) return
-    function onPointerDown(event: MouseEvent) {
-      if (!anchor.current?.contains(event.target as Node)) closeTargets()
+  /**
+   * What leaves this tile — under a cursor, or on the clipboard.
+   *
+   * Row numbers arrive from the tile and the two things a landing might want are built here,
+   * because this is where the comp's slots live. `settle` is this cell's own flush, handed
+   * over rather than called: a copy does not need it, a port does, and only the landing knows
+   * which of the two is happening.
+   */
+  function lift(positions: number[]): CarriedRows {
+    return {
+      offer: {
+        fromCompId: compId,
+        fromName: name,
+        typeIds: slotsAt(slots, positions).map((row) => row.typeId),
+      },
+      positions,
+      settle: flush,
     }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') closeTargets()
-    }
-    document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [carried, closeTargets])
+  }
 
-  useEffect(() => {
-    // A question left hanging when this tile goes away would leave another tile previewing a
-    // copy that can no longer happen.
-    return () => {
-      if (proposedTo.current) propose(proposedTo.current, null)
-      proposedTo.current = null
-    }
-  }, [])
+  /**
+   * An edit to this comp's rows, and the clipboard's cue to let go of any copy taken from it.
+   *
+   * Rows are copied *by number*, and removing one renumbers every row below it — so a copy
+   * held across an edit would paste different hulls than the ones that were picked, and say
+   * nothing about it. The tile drops its own row selection on the same event and for the same
+   * reason; this is that rule following the rows out of the tile.
+   */
+  function edit(next: CompSlot[]) {
+    forgetCopiedFrom(compId)
+    change(next)
+  }
 
   /** Whether a drag now over this tile is one it can take. */
-  function receivable(): HullOffer | null {
+  function receivable(): CarriedRows | null {
     if (!editable) return null
     const dragging = getDragged()
-    if (!dragging || dragging.fromCompId === compId) return null
+    if (!dragging || dragging.offer.fromCompId === compId) return null
     return dragging
   }
-
-  function copyTo(target: CopyTarget) {
-    const rows = carried
-    if (!rows) return
-    previewAt(null)
-    offerHulls(target.id, offerOf(rows))
-    setSent(`Copied ${rows.length === 1 ? '1 hull' : `${rows.length} hulls`} to ${target.name}`)
-    setCarried(null)
-  }
-
-  const destinations = (copyTargets ?? []).filter((target) => target.id !== compId)
 
   /**
    * Where this comp came from, if it came from anywhere.
@@ -239,10 +202,10 @@ export default function CompTileHost({
 
   return (
     // The cell is a drop target, which is what the four handlers below are for and what the
-    // rule objects to. The objection is answered rather than waived: every one of them is a
-    // shortcut over the destination list further down, which is reached from a named control
-    // in the tile and operated with the keyboard, and it computes the same preview through
-    // the same code.
+    // rule objects to. Waived rather than answered, and see the row's own note in CompTile:
+    // carrying hulls into another comp is a drag and has no keyboard today. What the rule is
+    // really guarding against — a control nothing else can reach — is true here, and the
+    // honest place to fix it is a shortcut over the row selection, not a second widget.
     // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <section
       className={`board-tile${preview ? ' board-tile-receiving' : ''}`}
@@ -253,7 +216,7 @@ export default function CompTileHost({
         const dragging = receivable()
         if (!dragging) return
         event.preventDefault()
-        propose(compId, dragging)
+        propose(compId, dragging.offer)
       }}
       onDragOver={(event) => {
         // preventDefault is the whole of what makes this a drop target, and dragover fires
@@ -271,7 +234,7 @@ export default function CompTileHost({
         const dragging = receivable()
         if (!dragging) return
         event.preventDefault()
-        offerHulls(compId, dragging)
+        offerHulls(compId, dragging.offer)
       }}
     >
       <button
@@ -302,27 +265,12 @@ export default function CompTileHost({
             lineage={lineage}
             editable={editable}
             saveState={saveState}
-            onChange={change}
+            onChange={edit}
             onRename={rename}
             autoFocusName={autoFocusName}
-            // Flushed first, and this is the one place that has to be. A port is a fork, and a
-            // fork reads the comp's rows on the *server* — so a port taken inside the 600 ms
-            // debounce would copy the comp as it was before the last edit.
-            onPortRows={
-              onPort
-                ? (positions) => void flush().then(() => onPort(compId, positions))
-                : undefined
-            }
-            onCopyRows={
-              destinations.length > 0
-                ? (rows) => {
-                    setSent(null)
-                    setCarried(rows)
-                  }
-                : undefined
-            }
-            onDragRows={(rows) => setDragged(offerOf(rows))}
+            onDragRows={(positions) => setDragged(lift(positions))}
             onDragRowsEnd={() => setDragged(null)}
+            onCopyRows={(positions) => setCopied(lift(positions))}
             // The band edits in place now, so the cell hands down the vocabulary and the write
             // rather than a control that opens a panel of its own. Fetching still lives here:
             // `vocabulary` is derived from the listing this cell already holds.
@@ -351,9 +299,9 @@ export default function CompTileHost({
             shareStale={comp.shareStale}
           />
 
-          {/* The share panel is rendered out here rather than inside the tile, the way the copy
-              destinations already are: the control is part of the locked tile design and what
-              it opens is the cell's, which is what keeps fetching out of the tile. */}
+          {/* The share panel is rendered out here rather than inside the tile: the control is
+              part of the locked tile design and what it opens is the cell's, which is what
+              keeps fetching out of the tile. */}
           {shareOpen && (
             <SharePanel
               compId={compId}
@@ -386,29 +334,6 @@ export default function CompTileHost({
         )
       )}
 
-      {carried && (
-        <div className="copytargets" data-testid="board-tile-copy-targets" ref={anchor}>
-          <ul className="copytargets-list" aria-label="Comps to copy into">
-            {destinations.map((target) => (
-              <CopyTargetItem
-                key={target.id}
-                target={target}
-                onPick={copyTo}
-                onPreview={previewAt}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Said where the person is looking. A copy changes a comp on the other side of the
-          board, and without this the only thing that moves is somewhere they are not. */}
-      {sent && (
-        <p className="board-tile-transfer" data-testid="board-tile-transfer" role="status">
-          {sent}
-        </p>
-      )}
-
       {preview && (
         <p className="board-tile-preview" data-testid="board-tile-preview" role="status">
           {previewLabel(preview.count, preview.delta, preview.breaks)}
@@ -421,49 +346,6 @@ export default function CompTileHost({
         </p>
       )}
     </section>
-  )
-}
-
-/**
- * One destination in the copy list.
- *
- * Its own component so it can subscribe to the card store for the one comp it names, exactly
- * as the rail's leaf does — a comp renamed in its own tile is then named correctly here
- * without the board having to hear about the rename.
- */
-function CopyTargetItem({
-  target,
-  onPick,
-  onPreview,
-}: {
-  readonly target: CopyTarget
-  readonly onPick: (target: CopyTarget) => void
-  readonly onPreview: (compId: string | null) => void
-}) {
-  const subscribe = useCallback(
-    (listener: () => void) => subscribeCard(target.id, listener),
-    [target.id],
-  )
-  const snapshot = useCallback(() => getCard(target.id), [target.id])
-  const card = useSyncExternalStore(subscribe, snapshot, snapshot)
-  const named: CopyTarget = { id: target.id, name: card?.name ?? target.name }
-
-  return (
-    <li data-testid="board-tile-copy-target">
-      <button
-        className="copytarget"
-        type="button"
-        // Never the bare comp name: that is the tile's own accessible name, and two things
-        // answering to one name is one thing nobody can address.
-        onClick={() => onPick(named)}
-        onFocus={() => onPreview(named.id)}
-        onBlur={() => onPreview(null)}
-        onMouseEnter={() => onPreview(named.id)}
-        onMouseLeave={() => onPreview(null)}
-      >
-        Copy to {named.name}
-      </button>
-    </li>
   )
 }
 

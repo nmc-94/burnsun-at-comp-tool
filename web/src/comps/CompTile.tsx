@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CompSlot, LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
+import { inTextField, isCopy } from '../lib/keys'
 import ShipSearch, { SearchGlyph } from './ShipSearch'
 import TagBar from './TagBar'
 import { EMPTY_VOCABULARY } from './tag-model'
@@ -19,7 +20,6 @@ import {
   rowsBlamedBy,
   scaffold,
   selectRow,
-  slotsAt,
   withFlagship,
   withRow,
 } from './tile-model'
@@ -66,19 +66,21 @@ interface Props {
    *  the next thing rather than a second click. */
   autoFocusName?: boolean
   /**
-   * What to do with the rows somebody has picked out. All optional, and each control appears
-   * only when its handler does: the tile knows nothing about boards or comp ids, so where
-   * the hulls go is the cell's business, not this component's.
+   * The rows somebody has picked out, leaving the tile — under a cursor, or on Ctrl+C.
    *
-   * Porting hands over **row numbers** rather than hulls, unlike copying. A port is a fork, and
-   * the server takes the rows out of its own copy of the comp so that the new one can be pinned
-   * to the same ruleset version and record its parent; a copy is an edit of another comp, and
-   * only the hulls mean anything there.
+   * Both optional, and without `onDragRows` the rows are not draggable at all: the tile knows
+   * nothing about boards or comp ids, so where the rows land is the cell's business, not this
+   * component's.
+   *
+   * **Row numbers**, not hulls, and the same numbers for all three. A copy into another comp
+   * could make do with the hulls, but a port is a fork and the server takes the rows out of
+   * its own copy of the comp — which is what lets the new comp be pinned to the parent's
+   * ruleset version and record its parent. One payload however the rows leave, and the cell
+   * turns the numbers into whatever the landing needs.
    */
-  onPortRows?: (positions: number[]) => void
-  onCopyRows?: (rows: CompSlot[]) => void
-  onDragRows?: (rows: CompSlot[]) => void
+  onDragRows?: (positions: number[]) => void
   onDragRowsEnd?: () => void
+  onCopyRows?: (positions: number[]) => void
   /**
    * Say what the comp is. Absent for a viewer, and for a tile nobody wired one to — the band
    * reads that absence as "read-only" rather than taking a separate flag.
@@ -115,10 +117,9 @@ export default function CompTile({
   onChange,
   onRename,
   autoFocusName,
-  onPortRows,
-  onCopyRows,
   onDragRows,
   onDragRowsEnd,
+  onCopyRows,
   onSaveTags,
   vocabulary,
   onToggleComments,
@@ -169,14 +170,28 @@ export default function CompTile({
     function onPointerDown(event: MouseEvent) {
       // Anywhere that is not this tile ends the gesture — the board's empty space, the rail,
       // another tile. Picking rows is something done *inside* one tile, so a click that lands
-      // outside it is a person looking at something else, and leaving the rows picked would
-      // leave a selection bar acting on a highlight nobody is looking at any more.
+      // outside it is a person looking at something else, and a set of rows still marked in a
+      // tile nobody is reading is a drag waiting to take more than was meant.
       if (!root.current?.contains(event.target as Node)) setSelectedRows(EMPTY_SELECTION)
     }
     function onKeyDown(event: KeyboardEvent) {
       // Not while a row's hull search is open: Escape belongs to that panel first, and it is
       // the nearer of the two things the key could mean.
       if (event.key === 'Escape' && openRow === null) setSelectedRows(EMPTY_SELECTION)
+
+      // Copy, which is the keyboard's way of picking the rows up — the board's paste puts
+      // them down. Control *or* command, the way a row click honours both: neither means
+      // anything else here, so taking both costs nothing and guessing the platform wrong
+      // would cost the gesture.
+      if (!isCopy(event) || !onCopyRows) return
+      // Somebody with a caret in a field means the text in it, whatever is picked out behind
+      // them — the comp's name and a row's hull search are both real places to copy from.
+      if (inTextField(event.target)) return
+      // Claimed, so the browser does not also copy whatever the document happens to have
+      // selected. Nothing on a row is ordinary selectable text, so there is nothing here this
+      // takes away.
+      event.preventDefault()
+      onCopyRows([...selectedRows.rows])
     }
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
@@ -184,7 +199,7 @@ export default function CompTile({
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [picking, openRow])
+  }, [picking, openRow, selectedRows, onCopyRows])
 
   const rows = useMemo(() => scaffold(result, ruleset.fieldSize), [result, ruleset.fieldSize])
   const blamed = useMemo(() => rowsBlamedBy(result.violations), [result.violations])
@@ -198,8 +213,8 @@ export default function CompTile({
   }
 
   /** A drag of a row inside the selection takes the whole selection with it. */
-  function dragging(index: number): CompSlot[] {
-    return slotsAt(slots, picked.has(index) ? selectedRows.rows : [index])
+  function dragging(index: number): number[] {
+    return picked.has(index) ? [...selectedRows.rows] : [index]
   }
 
   /**
@@ -338,12 +353,17 @@ export default function CompTile({
             return (
               // A row is a list item that can be dragged and clicked, which is what
               // `draggable` and the three handlers below are for and what the two rules
-              // object to. Both objections are answered rather than waived. The drag is a
-              // shortcut over "Copy selected hulls to another comp" in the bar below, which
-              // is a real control with a real name; and the click is a shortcut over the
-              // row's own select box, which is still here, still focusable and still named
-              // for its hull and its slot — it is merely not drawn. Nothing on this row is
-              // reachable by pointer alone.
+              // object to.
+              //
+              // The click is answered rather than waived: it is a shortcut over the row's own
+              // select box, which is still here, still focusable and still named for its hull
+              // and its slot — it is merely not drawn.
+              //
+              // The drag is answered too, but only half of it. Rows picked out here can be
+              // taken out into a comp of their own with Ctrl+C and Ctrl+V, which is the same
+              // operation the new-comp tile's drop performs, through the same code. Carrying
+              // them into a comp that *already exists* is still the drag and only the drag —
+              // there is no way to say which comp without pointing at one.
               // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
               <li
                 className={classes.join(' ')}
@@ -354,9 +374,12 @@ export default function CompTile({
                 draggable={editable && onDragRows !== undefined}
                 onDragStart={(event) => {
                   onDragRows?.(dragging(row.index))
-                  // The payload is not here — it is in the store the receiving tile reads,
-                  // which is what lets this be tested at all. `dataTransfer` is only what
-                  // the browser draws under the cursor, and jsdom does not have one.
+                  // The payload is not here — it is in the store whatever this lands on
+                  // reads, which is what lets this be tested at all. `dataTransfer` is only
+                  // what the browser draws under the cursor, and jsdom does not have one.
+                  //
+                  // `copy` for both landings: a port derives rather than moves, so the rows
+                  // stay here either way and `move` would promise otherwise.
                   if (event.dataTransfer) {
                     event.dataTransfer.effectAllowed = 'copy'
                     event.dataTransfer.setData('text/plain', hullName)
@@ -490,49 +513,6 @@ export default function CompTile({
           })}
         </ul>
 
-        {selectedRows.rows.length > 0 && (
-          <div className="rowsel" data-testid="comp-selection">
-            {/* The count lives here rather than in the button names. A name that moves with
-                state cannot be matched by anything, and a driver should not have to know how
-                many rows it picked to find the control that acts on them. */}
-            <p className="rowsel-count" data-testid="comp-selection-status" role="status">
-              {selectedRows.rows.length === 1
-                ? '1 hull selected'
-                : `${selectedRows.rows.length} hulls selected`}
-            </p>
-            {/* Short enough that two fit across a 320px tile. What they act on is the line
-                above, not a word in every name — and a name carrying the count could not be
-                matched by anything looking for the control. */}
-            {onPortRows && (
-              <button
-                className="rowsel-act"
-                type="button"
-                // The row numbers, which are the positions the server stored them at: the
-                // scaffold numbers rows from zero over a dense list, exactly as `_apply_slots`
-                // does.
-                onClick={() => onPortRows([...selectedRows.rows])}
-              >
-                Port to a new comp
-              </button>
-            )}
-            {onCopyRows && (
-              <button
-                className="rowsel-act"
-                type="button"
-                onClick={() => onCopyRows(slotsAt(slots, selectedRows.rows))}
-              >
-                Copy to another comp
-              </button>
-            )}
-            <button
-              className="rowsel-act"
-              type="button"
-              onClick={() => setSelectedRows(EMPTY_SELECTION)}
-            >
-              Clear selection
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="tfoot">

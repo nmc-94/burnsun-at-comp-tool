@@ -6,21 +6,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  forgetCopiedFrom,
+  getCopied,
   getDragged,
   offerHulls,
   peekTransfer,
   propose,
   resetHullTransfers,
+  setCopied,
   setDragged,
   subscribeTransfer,
   takeOffer,
 } from './hull-transfer'
-import type { HullOffer } from './hull-transfer'
+import type { CarriedRows, HullOffer } from './hull-transfer'
 
 const offer = (overrides: Partial<HullOffer> = {}): HullOffer => ({
   fromCompId: 'c1',
   fromName: 'Alpha',
   typeIds: [24_692],
+  ...overrides,
+})
+
+/** Rows out of a tile: the offer a copy would take, plus what only a port reads. */
+const carrying = (overrides: Partial<CarriedRows> = {}): CarriedRows => ({
+  offer: offer(),
+  positions: [0],
+  settle: async () => {},
   ...overrides,
 })
 
@@ -125,18 +136,73 @@ describe('the drag payload', () => {
     const listener = vi.fn()
     subscribeTransfer('c2', listener)
 
-    setDragged(offer())
+    setDragged(carrying())
 
-    expect(getDragged()?.fromCompId).toBe('c1')
+    expect(getDragged()?.offer.fromCompId).toBe('c1')
     expect(listener).not.toHaveBeenCalled()
   })
 
+  it('carries what a copy reads and what only a port reads', () => {
+    // Two landings, one payload. A tile takes the hulls; the new-comp tile takes the row
+    // numbers, because a fork is asked for by position — the server reads the rows out of its
+    // own copy of the source comp, which is what pins the fork to the parent's version.
+    setDragged(carrying({ offer: offer({ typeIds: [587, 609] }), positions: [1, 3] }))
+
+    expect(getDragged()?.offer.typeIds).toEqual([587, 609])
+    expect(getDragged()?.positions).toEqual([1, 3])
+  })
+
   it('is put down again when the drag ends', () => {
-    setDragged(offer())
+    setDragged(carrying())
 
     setDragged(null)
 
     expect(getDragged()).toBeNull()
+  })
+})
+
+describe('the clipboard', () => {
+  it('holds the same thing a drag does, so a paste and a drop are one operation', () => {
+    setCopied(carrying({ positions: [1, 3] }))
+
+    expect(getCopied()?.positions).toEqual([1, 3])
+    expect(getCopied()?.offer.fromCompId).toBe('c1')
+  })
+
+  it('is not emptied by reading it — pasting twice makes two comps', () => {
+    setCopied(carrying())
+
+    expect(getCopied()).not.toBeNull()
+    expect(getCopied()).not.toBeNull()
+  })
+
+  it('is let go of when the comp the rows came from is edited', () => {
+    // Row numbers, and removing a row renumbers every row below it. A copy held across an
+    // edit would paste different hulls than the ones that were picked out, and say nothing.
+    setCopied(carrying())
+
+    forgetCopiedFrom('c1')
+
+    expect(getCopied()).toBeNull()
+  })
+
+  it('survives an edit to any other comp', () => {
+    setCopied(carrying())
+
+    forgetCopiedFrom('c2')
+
+    expect(getCopied()).not.toBeNull()
+  })
+
+  it('is separate from what is under the cursor', () => {
+    // A drag while something is on the clipboard must not overwrite it: the drop and the
+    // paste are two gestures a person can have in flight at once.
+    setCopied(carrying({ positions: [4] }))
+
+    setDragged(carrying({ positions: [7] }))
+
+    expect(getCopied()?.positions).toEqual([4])
+    expect(getDragged()?.positions).toEqual([7])
   })
 })
 
@@ -153,11 +219,13 @@ describe('unsubscribing and resetting', () => {
 
   it('forgets everything when reset', () => {
     offerHulls('c2', offer())
-    setDragged(offer())
+    setDragged(carrying())
+    setCopied(carrying())
 
     resetHullTransfers()
 
     expect(peekTransfer('c2')).toBeUndefined()
     expect(getDragged()).toBeNull()
+    expect(getCopied()).toBeNull()
   })
 })

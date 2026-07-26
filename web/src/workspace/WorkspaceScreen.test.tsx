@@ -13,6 +13,7 @@ import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 import { resetRulesetCache } from '../rulesets/cache'
 import WorkspaceScreen from './WorkspaceScreen'
 import { resetCompCards } from './comp-cards'
+import { resetHullTransfers } from './hull-transfer'
 
 const COMPS = [
   { id: 'a', name: 'Alpha', typeIds: [SHIP.abaddon] },
@@ -170,6 +171,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
   resetRulesetCache()
   resetCompCards()
+  // A drag ends on `dragend`, which a test that only fires `dragstart` and `drop` never
+  // reaches — so the payload would outlive the test that set it.
+  resetHullTransfers()
 })
 
 describe('opening a workspace', () => {
@@ -356,12 +360,17 @@ describe('porting rows into a new comp', () => {
     return view
   }
 
+  /**
+   * Drag Alpha's one row onto the ghost tile.
+   *
+   * The whole gesture, with no control in between: rows are picked up in a tile and put down
+   * on the board's new-comp tile, which is the only place a drop means "a comp of their own"
+   * rather than "into that comp".
+   */
   function port() {
     const alpha = screen.getByLabelText('Alpha')
-    fireEvent.click(within(alpha).getByRole('checkbox', { name: 'Select Abaddon in slot 1' }))
-    fireEvent.click(
-      within(alpha).getByRole('button', { name: 'Port to a new comp' }),
-    )
+    fireEvent.dragStart(within(alpha).getAllByTestId('comp-row')[0]!)
+    fireEvent.drop(screen.getByTestId('board-new-comp'))
   }
 
   it('forks the chosen rows in one request, and puts the new comp on the board', async () => {
@@ -399,10 +408,13 @@ describe('porting rows into a new comp', () => {
 
     port()
 
-    // The tile fetches its own comp, so the lineage has to survive that round trip and not
-    // merely be in the fork's response.
-    const made = await waitFor(() => screen.getByLabelText('Alpha (partial)'))
-    const lineage = within(made).getByTestId('comp-lineage')
+    // The tile fetches its own comp *and* the ruleset that comp is pinned to, so the lineage
+    // has to survive both round trips and not merely be in the fork's response. Waited for by
+    // the mark itself rather than by the tile's name: the name arrives with the comp, a whole
+    // fetch before the tile has anything to draw.
+    const lineage = await waitFor(() =>
+      within(screen.getByLabelText('Alpha (partial)')).getByTestId('comp-lineage'),
+    )
     expect(lineage.textContent).toContain('Alpha')
     // Flagged as a partial derivation, because only some of the parent's rows were taken.
     expect(lineage.textContent).toContain('part')
