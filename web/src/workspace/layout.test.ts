@@ -8,8 +8,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   activeBoard,
+  boardMode,
+  boardSnap,
   emptyLayout,
   MAX_BOARDS,
+  MAX_COORD,
   MAX_TILES_PER_BOARD,
   newBoardId,
   normalizeLayout,
@@ -168,6 +171,92 @@ describe('normalizeLayout', () => {
 
     expect(layout.boards.length).toBe(MAX_BOARDS)
     expect(tilesOn(layout).length).toBe(MAX_TILES_PER_BOARD)
+  })
+
+  // A board's layout mode, and where its tiles sit while it is floating. Mostly about the
+  // two defaults staying *absent*: `WorkspaceScreen` decides whether there is anything to
+  // write by stringifying the layout, so a key that appears from nowhere is a save from
+  // nowhere.
+  it('leaves a grid board saying nothing about being one', () => {
+    const raw = { boards: [{ id: 'b1', name: 'Drafts', tiles: [{ compId: 'c1' }] }] }
+
+    const board = normalizeLayout(raw, known('c1')).boards[0]
+
+    // Presence, not value: the comparison that guards the save reads the JSON, and
+    // `{mode: 'grid'}` and `{}` are the same board written two different ways.
+    expect(Object.hasOwn(board!, 'mode')).toBe(false)
+    expect(Object.hasOwn(board!, 'snap')).toBe(false)
+    expect(boardMode(board!)).toBe('grid')
+    expect(boardSnap(board!)).toBe(true)
+  })
+
+  it('keeps a floating board floating, and remembers snap being turned off', () => {
+    const raw = {
+      boards: [
+        { id: 'b1', name: 'Canvas', tiles: [{ compId: 'c1' }], mode: 'floating', snap: false },
+      ],
+    }
+
+    const board = normalizeLayout(raw, known('c1')).boards[0]
+
+    expect(boardMode(board!)).toBe('floating')
+    expect(boardSnap(board!)).toBe(false)
+  })
+
+  it('draws a board it does not understand the mode of as a grid', () => {
+    const raw = { boards: [{ id: 'b1', name: 'Drafts', tiles: [], mode: 'scattered' }] }
+
+    expect(boardMode(normalizeLayout(raw, known()).boards[0]!)).toBe('grid')
+  })
+
+  it('keeps a place, and keeps it on a board that is not floating', () => {
+    // The claim the toggle rests on, and the one that lets a narrow viewport draw a grid
+    // without costing anybody the arrangement they made on a wide one.
+    const raw = {
+      boards: [{ id: 'b1', name: 'Drafts', tiles: [{ compId: 'c1', place: { x: 340, y: 20 } }] }],
+    }
+
+    const tiles = normalizeLayout(raw, known('c1')).boards[0]!.tiles
+
+    expect(tiles[0]!.place).toEqual({ x: 340, y: 20 })
+  })
+
+  it('drops a place it cannot draw, and keeps the tile', () => {
+    // Discarded rather than clamped, which is this file's stance on a malformed document
+    // everywhere else: clamping would invent a position nobody chose and then save it. The
+    // tile stays, because a tile with a bad position is still a comp somebody opened.
+    const bad = [
+      { x: '340', y: 20 },
+      { x: Number.NaN, y: 20 },
+      { x: -1, y: 20 },
+      { x: MAX_COORD + 1, y: 20 },
+      { x: 340 },
+      null,
+    ]
+    const raw = {
+      boards: bad.map((place, n) => ({
+        id: `b${n}`,
+        name: `Board ${n}`,
+        tiles: [{ compId: 'c1', place }],
+      })),
+    }
+
+    const layout = normalizeLayout(raw, known('c1'))
+
+    expect(layout.boards.map((board) => board.tiles.length)).toEqual(bad.map(() => 1))
+    for (const board of layout.boards) expect(board.tiles[0]!.place).toBeUndefined()
+  })
+
+  it('rounds a place, so a coordinate cannot arm the save debounce forever', () => {
+    // Both ends decide whether to write by comparing whole documents, and 120.00000000000001
+    // is a change on every pass.
+    const raw = {
+      boards: [
+        { id: 'b1', name: 'Canvas', tiles: [{ compId: 'c1', place: { x: 120.4, y: 19.6 } }] },
+      ],
+    }
+
+    expect(normalizeLayout(raw, known('c1')).boards[0]!.tiles[0]!.place).toEqual({ x: 120, y: 20 })
   })
 })
 
@@ -328,6 +417,34 @@ describe('moving a tile on a board', () => {
     const layout = withActiveBoard(layoutOf(['One', 'c1', 'c2'], ['Two']), 'board-Two')
 
     expect(withTileMoved(layout, 'board-One', 'c2', 0).activeBoardId).toBe('board-Two')
+  })
+
+  it('carries each tile across rather than rebuilding it from its id', () => {
+    // Rebuilding was safe while a tile was only an id. It is now how a position would
+    // quietly disappear — and a floating board raises the tile it picks up by reordering,
+    // so this runs on the way *into* every drag rather than in some corner.
+    const layout: WorkspaceLayout = {
+      boards: [
+        {
+          id: 'b1',
+          name: 'Canvas',
+          mode: 'floating',
+          tiles: [
+            { compId: 'c1', place: { x: 0, y: 0 } },
+            { compId: 'c2', place: { x: 334, y: 20 } },
+          ],
+        },
+      ],
+      activeBoardId: 'b1',
+    }
+
+    const moved = withTileMoved(layout, 'b1', 'c1', 1)
+
+    expect(moved.boards[0]!.tiles).toEqual([
+      { compId: 'c2', place: { x: 334, y: 20 } },
+      { compId: 'c1', place: { x: 0, y: 0 } },
+    ])
+    expect(boardMode(moved.boards[0]!)).toBe('floating')
   })
 
   it.each([

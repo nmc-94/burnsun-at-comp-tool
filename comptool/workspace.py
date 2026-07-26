@@ -23,7 +23,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -48,6 +48,15 @@ router = APIRouter(prefix="/api/v1/teams", tags=["workspace"])
 MAX_BOARDS = 20
 MAX_TILES_PER_BOARD = 50
 
+#: How far from the origin a tile may be placed, in the same spirit as the two above: a bound
+#: on a payload, not a statement about how big anybody's board should be.
+#:
+#: Integers rather than floats, and that part is not cosmetic. Both ends decide whether there
+#: is anything to write by comparing a whole document to the last one, and a float that
+#: round-tripped as ``120.00000000000001`` would read as a change on every save forever. The
+#: client rounds before it writes; this refuses anything that did not.
+MAX_COORD = 20_000
+
 
 class _Response(BaseModel):
     # camelCase on the wire: the SPA is the only consumer.
@@ -59,6 +68,34 @@ class _Request(_Response):
 
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+Coord = Annotated[int, Field(ge=0, le=MAX_COORD)]
+
+#: How a board draws its tiles. ``grid`` is the responsive tiled workspace and the default;
+#: ``floating`` gives every tile a place of its own on a canvas.
+BoardMode = Literal["grid", "floating"]
+
+
+class TilePlace(_Response):
+    """A tile's top-left on a floating board, in the canvas's own coordinates."""
+
+    x: int
+    y: int
+
+
+class TilePlaceWrite(TilePlace):
+    #: Inherits rather than sits beside its read model, which the pair of base classes above
+    #: already implies — "same contract inbound". Not only tidiness: ``_present`` puts tiles
+    #: from a *request* into response models on the way back out, and a write place that were
+    #: merely shaped like a read one would be refused there rather than accepted.
+    #:
+    #: Bounded, and a violation is a **422** rather than the silent drop a bad comp id gets.
+    #: The two are not the same question. Dropping is what this module does to *comp ids*,
+    #: because refusing one would answer "that comp is real, just not yours" — the sentence
+    #: the whole access layer is written to avoid. A coordinate answers nothing about
+    #: anybody's data, so there is nothing here to be discreet about, and a client sending
+    #: coordinates this far out has a bug that is kinder to name than to quietly absorb.
+    x: Coord
+    y: Coord
 
 
 class WorkspaceTile(_Response):
@@ -66,9 +103,18 @@ class WorkspaceTile(_Response):
 
     An object rather than a bare id, because this is where a tile's position and size go
     when the board stops being a fixed grid — a client-side change then, not a migration.
+    Position has now arrived; size has not.
     """
 
     comp_id: uuid.UUID
+    #: Absent until the tile has been placed, and kept when its board goes back to being a
+    #: grid: a mode is a way of drawing a board, not a decision to discard where things were.
+    place: TilePlace | None = None
+
+
+class WorkspaceTileWrite(_Request):
+    comp_id: uuid.UUID
+    place: TilePlaceWrite | None = None
 
 
 class WorkspaceBoard(_Response):
@@ -85,12 +131,21 @@ class WorkspaceBoard(_Response):
     id: uuid.UUID
     name: str
     tiles: list[WorkspaceTile]
+    #: Defaulted rather than required, so every document written before boards had a mode
+    #: still validates as one that is a grid — which is what it was.
+    mode: BoardMode = "grid"
+    #: Whether a tile put down on a floating board lands on the step. Meaningless while the
+    #: board is a grid, and stored anyway, because a person who turns it off, switches to the
+    #: grid and back has not changed their mind about it.
+    snap: bool = True
 
 
 class WorkspaceBoardWrite(_Request):
     id: uuid.UUID
     name: Name
-    tiles: Annotated[list[WorkspaceTile], Field(max_length=MAX_TILES_PER_BOARD)]
+    tiles: Annotated[list[WorkspaceTileWrite], Field(max_length=MAX_TILES_PER_BOARD)]
+    mode: BoardMode = "grid"
+    snap: bool = True
 
 
 class WorkspaceSave(_Request):
@@ -138,6 +193,14 @@ def _present(
 ) -> list[WorkspaceBoard]:
     """``boards`` with every tile naming a comp this team does not have removed.
 
+    **Every field of a board is named below, and that is a maintenance hazard worth knowing
+    about.** This rebuilds each board rather than copying it, so a field added to
+    ``WorkspaceBoard`` and not added here is silently dropped on the way through — the
+    arrangement would round-trip fine in every hand test and lose the new field in
+    production. ``test_workspace_api.py`` asserts the two models have the same fields and
+    round-trips a board with all of them set, which is what makes the next omission fail
+    loudly instead.
+
     Duplicates within one board go too, first occurrence kept: two tiles on one board
     editing one comp would autosave over each other, which is the concurrency problem a
     board was supposed to make rarer rather than a feature. The same comp on *two* boards
@@ -154,8 +217,18 @@ def _present(
         for tile in board.tiles:
             if tile.comp_id in present and tile.comp_id not in seen:
                 seen.add(tile.comp_id)
-                tiles.append(tile)
-        kept.append(WorkspaceBoard(id=board.id, name=board.name, tiles=tiles))
+                # A tile keeps its place through the filter, because a place belongs to the
+                # tile rather than to the arrangement it is part of.
+                tiles.append(WorkspaceTile(comp_id=tile.comp_id, place=tile.place))
+        kept.append(
+            WorkspaceBoard(
+                id=board.id,
+                name=board.name,
+                tiles=tiles,
+                mode=board.mode,
+                snap=board.snap,
+            )
+        )
     return kept
 
 
@@ -180,8 +253,21 @@ def _load(session: Session, team_id: uuid.UUID, character_id: int) -> WorkspaceL
 
 
 def _document(boards: Sequence[WorkspaceBoard], active_board_id: uuid.UUID | None) -> dict:
+    """The stored shape.
+
+    ``exclude_none`` so an unplaced tile is ``{"compId": …}`` rather than a tile carrying a
+    null — fifty of those on twenty boards is a lot of document saying nothing. ``mode`` and
+    ``snap`` are not null at their defaults and so are written out in full, which means a
+    document stored before boards had either gains both the first time its owner saves
+    anything. That is a real write, but not a spurious one: the client decides whether to PUT
+    at all by comparing its *own* normalized shape, where an absent default stays absent — so
+    opening the app after the deploy still writes nothing, and the write that does eventually
+    happen is one that carries a change somebody made.
+    """
     return {
-        "boards": [board.model_dump(mode="json", by_alias=True) for board in boards],
+        "boards": [
+            board.model_dump(mode="json", by_alias=True, exclude_none=True) for board in boards
+        ],
         "activeBoardId": str(active_board_id) if active_board_id else None,
     }
 

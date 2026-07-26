@@ -251,18 +251,29 @@ comp editor. Within a tab the user can:
 - **Add tiles** to the board (new blank comp, an existing comp, or a fork of one)
   so several comps are visible and editable side by side.
 - **Move / rearrange** tiles freely and **resize** them; a board behaves like a
-  modular canvas, not a fixed grid or a single-comp page. *(Partly built. The locked
-  design in `HANDOFF.md` chose a responsive **grid** workspace over a free-floating
-  canvas, so a tile's only spatial property is its order on the board — and that order
-  is now rearranged by dragging a tile by its empty space or its header, with the
-  others moving aside as it passes. Free position and size are still where the
-  workspace may go rather than what it does.)*
+  modular canvas, not a fixed grid or a single-comp page. *(Built, except resize. The
+  locked design in `HANDOFF.md` first chose a responsive **grid** workspace over a
+  free-floating canvas; the canvas has since come back as a per-board **option** rather
+  than as a replacement. Each board carries a **layout mode**: **grid** — the responsive
+  tiled workspace, rearranged by dragging a tile by its empty space or its header with
+  the others moving aside as it passes — or **floating**, where a tile has a free x/y on
+  a pannable canvas, with a **snap-to-grid** toggle and a one-shot **tidy up** that packs
+  the tiles exactly as the grid would. The toggle is per board and lossless both ways: a
+  tile is drawn at the same size in either mode, a floating board keeps its positions when
+  it goes back to being a grid, and going back orders the tiles by where they physically
+  sit rather than by whatever order they held before. **Size is still the card's** — free
+  size remains where the workspace may go rather than what it does, and the stored document
+  reserves room for it. Floating is a wide-viewport affordance: below the 860px breakpoint
+  every board draws as the grid, and the positions are kept and come back on a wide screen.)*
 - **Close** a tile without deleting the comp (the comp persists; the tile is just
   a view onto it).
 - Have the **layout persist** so a session can be resumed. Stored **server-side, per
-  user, per team** (§9.3). What is persisted today is the boards, which comps are
-  open on each, and their order; a tile has no free position or size while the board
-  is a grid, and the stored document reserves room per tile for both.
+  user, per team** (§9.3). What is persisted is the boards, which comps are open on
+  each, their order — which on a floating board is also the order they are stacked in,
+  last on top — each board's layout mode and snap setting, and, for a tile that has been
+  placed, its position. A tile still has no size of its own, and the stored document
+  reserves room for one. The **pan offset is deliberately not persisted**: it is viewport
+  state rather than arrangement, and it depends on a viewport the next session may not have.
 
 **Tabs come in two kinds:**
 

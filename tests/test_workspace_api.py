@@ -19,6 +19,10 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
+
+from comptool.models import WorkspaceLayout as LayoutRecord
+from comptool.workspace import WorkspaceBoard, WorkspaceBoardWrite
 from conftest import RULESET_SLUG
 
 OWNER = 90_000_101
@@ -54,6 +58,20 @@ def board(name: str, *comp_ids: str, board_id: str | None = None) -> dict:
         "name": name,
         "tiles": [{"compId": comp_id} for comp_id in comp_ids],
     }
+
+
+def floating(name: str, *placed: tuple[str, int, int], board_id: str | None = None) -> dict:
+    """A board drawn as a canvas, with each of its tiles somewhere on it."""
+    return {
+        "id": board_id or str(uuid.uuid4()),
+        "name": name,
+        "tiles": [{"compId": comp_id, "place": {"x": x, "y": y}} for comp_id, x, y in placed],
+        "mode": "floating",
+    }
+
+
+def places(payload: dict, index: int = 0) -> list[dict | None]:
+    return [tile.get("place") for tile in payload["boards"][index]["tiles"]]
 
 
 def save(client, team: dict, *boards: dict, active: str | None = None):
@@ -378,5 +396,179 @@ def test_a_malformed_team_id_is_a_format_error_not_an_answer(client, sign_in, pu
     sign_in(OWNER)
 
     response = client.get("/api/v1/teams/not-a-uuid/workspace")
+
+    assert response.status_code == 422
+
+
+# --------------------------------------------------------------------------------------
+# A board's layout mode
+#
+# A board draws its tiles as a grid or as a canvas, and on a canvas each tile has a place.
+# Both are stored here, and the tests below are mostly about the two ways that could go
+# wrong quietly: a field that survives validation but not the filter on the way out, and a
+# document written before either field existed.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_board_carries_every_field_it_is_served_back_through_the_filter(client, sign_in, publish):
+    """The alarm for the next field somebody adds.
+
+    ``_present`` rebuilds each board rather than copying it, so a field added to the model
+    and not to that constructor is dropped in silence — the arrangement round-trips fine in
+    every hand test and loses the field in production. Two claims, because either alone
+    passes while the bug is present: the models agree on what a board *has*, and a board
+    with all of it set survives a save.
+    """
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+    every_field = {
+        "id": str(uuid.uuid4()),
+        "name": "Kite drafts",
+        "tiles": [{"compId": comp["id"], "place": {"x": 340, "y": 20}}],
+        "mode": "floating",
+        "snap": False,
+    }
+
+    saved = save(client, team, every_field).json()
+
+    assert set(WorkspaceBoardWrite.model_fields) == set(WorkspaceBoard.model_fields)
+    assert saved["boards"][0] == every_field
+
+
+def test_a_floating_board_and_its_places_survive_a_round_trip(client, sign_in, publish):
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    first = make_comp(client, team, name="Alpha")
+    second = make_comp(client, team, name="Beta")
+
+    save(client, team, floating("Canvas", (first["id"], 0, 0), (second["id"], 334, 120)))
+    reloaded = load(client, team).json()
+
+    assert reloaded["boards"][0]["mode"] == "floating"
+    assert places(reloaded) == [{"x": 0, "y": 0}, {"x": 334, "y": 120}]
+
+
+def test_a_grid_board_keeps_the_places_its_tiles_were_given(client, sign_in, publish):
+    """A mode is a way of drawing a board, not a decision to throw away where things were.
+
+    This is what lets the toggle be casual, and what lets a narrow viewport draw a grid
+    without costing anybody the arrangement they made on a wide one.
+    """
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+    back_to_a_grid = {
+        "id": str(uuid.uuid4()),
+        "name": "Drafts",
+        "tiles": [{"compId": comp["id"], "place": {"x": 120, "y": 260}}],
+        "mode": "grid",
+    }
+
+    save(client, team, back_to_a_grid)
+
+    assert places(load(client, team).json()) == [{"x": 120, "y": 260}]
+
+
+def test_a_board_saved_without_a_mode_stores_what_it_always_did(
+    client, session, sign_in, publish
+):
+    """A client that has never heard of a layout mode writes the document it always wrote.
+
+    Mode and snap are written out at their defaults, so the *stored* document gains two keys
+    the first time anything is saved. What must not change is the shape a tile has: an
+    unplaced tile stays ``{"compId": …}`` rather than growing a null, because fifty of those
+    on twenty boards is a lot of document saying nothing — and because the client decides
+    whether to PUT at all by comparing its own normalized shape, where an absent default
+    stays absent.
+    """
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+
+    save(client, team, board("Drafts", comp["id"]))
+
+    stored = session.scalars(select(LayoutRecord)).one().document
+    assert stored["boards"][0]["tiles"] == [{"compId": comp["id"]}]
+    assert stored["boards"][0]["mode"] == "grid"
+    assert stored["boards"][0]["snap"] is True
+
+
+def test_a_place_is_bounded_the_way_everything_else_here_is(client, sign_in, publish):
+    """A 422, not the silent drop a comp id gets, and the difference is the point.
+
+    Dropping is what this module does to *comp ids*, because refusing one would answer "that
+    comp is real, just not yours". A coordinate answers nothing about anybody's data, so
+    there is nothing to be discreet about and a client this far out has a bug worth naming.
+    """
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+
+    def with_place(place: dict):
+        return save(
+            client, team, {"id": str(uuid.uuid4()), "name": "Canvas", "tiles": [
+                {"compId": comp["id"], "place": place}
+            ]}
+        )
+
+    too_far = with_place({"x": 20_001, "y": 0})
+    negative = with_place({"x": 0, "y": -1})
+    fractional = with_place({"x": 120.5, "y": 0})
+    at_the_edge = with_place({"x": 20_000, "y": 20_000})
+
+    assert too_far.status_code == negative.status_code == fractional.status_code == 422
+    assert at_the_edge.status_code == 200
+
+
+def test_a_place_goes_with_its_tile_when_the_comp_is_filtered_out(client, sign_in, publish):
+    """A place belongs to the tile, so it leaves with it rather than sliding onto its
+    neighbour."""
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    kept = make_comp(client, team, name="Alpha")
+    stranger = str(uuid.uuid4())
+
+    saved = save(client, team, floating("Canvas", (stranger, 0, 0), (kept["id"], 334, 120)))
+
+    assert comp_ids(saved.json()) == [kept["id"]]
+    assert places(saved.json()) == [{"x": 334, "y": 120}]
+
+
+def test_saving_an_unchanged_floating_board_does_not_move_its_timestamp(client, sign_in, publish):
+    """The short-circuit still fires once a board has a mode, a snap and coordinates in it.
+
+    Worth its own test rather than trusting the one above it: that one compares documents
+    whose tiles are bare ids, and this adds three fields and a nested object to the
+    comparison — including the one that would be a float if anything on either side rounded
+    differently.
+    """
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+    only = str(uuid.uuid4())
+
+    first = save(client, team, floating("Canvas", (comp["id"], 340, 20), board_id=only)).json()
+    again = save(client, team, floating("Canvas", (comp["id"], 340, 20), board_id=only)).json()
+    moved = save(client, team, floating("Canvas", (comp["id"], 340, 40), board_id=only)).json()
+
+    assert again["updatedAt"] == first["updatedAt"]
+    assert moved["updatedAt"] != first["updatedAt"]
+
+
+def test_an_unknown_mode_is_refused_rather_than_guessed_at(client, sign_in, publish):
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+
+    response = save(client, team, {"id": str(uuid.uuid4()), "name": "Canvas", "tiles": [],
+                                   "mode": "scattered"})
 
     assert response.status_code == 422

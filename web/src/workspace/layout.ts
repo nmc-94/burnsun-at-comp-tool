@@ -6,13 +6,67 @@
 // every single use site, and holding the invariant in one place is what keeps the rest of
 // the workspace free of null checks it can never trip.
 
-import type { WorkspaceBoard, WorkspaceLayout } from './types'
+import type { BoardMode, Place, WorkspaceBoard, WorkspaceLayout, WorkspaceTile } from './types'
 
 /** How many boards and tiles the server will accept. Mirrored so the UI can stop first. */
 export const MAX_BOARDS = 20
 export const MAX_TILES_PER_BOARD = 50
 
+/** How far from the origin a tile may be placed. Mirrored in `comptool/workspace.py`. */
+export const MAX_COORD = 20_000
+
 const FIRST_BOARD_NAME = 'Board 1'
+
+// ---------------------------------------------------------------------------------------
+// Two rules that only became rules when a tile got a second field, and that nothing outside
+// this file can enforce.
+//
+// **Key order matters.** `WorkspaceScreen` decides whether there is anything to write by
+// stringifying the layout and comparing it to what was last persisted, and the server does
+// the same thing again against the stored document. `{compId, place}` and `{place, compId}`
+// stringify differently while meaning the same thing, so a layout built two ways would read
+// as changed every time it was rebuilt the other way. Every tile is therefore built
+// `{ compId }` or `{ compId, place }`, and every board `{ id, name, tiles, mode?, snap? }`,
+// in those orders, and every construction of either goes through this file.
+//
+// **A default is absent, not written down.** `mode` appears only when it is `'floating'` and
+// `snap` only when it is `false`, so a document saved before either existed round-trips
+// byte-identical and nobody's `updated_at` moves because they opened the app after a deploy.
+// The cost is that `board.mode` must never be read directly — `boardMode` and `boardSnap`
+// below are the only two readers, and `undefined` is not a third state.
+// ---------------------------------------------------------------------------------------
+
+/** How this board draws its tiles. */
+export function boardMode(board: WorkspaceBoard): BoardMode {
+  return board.mode === 'floating' ? 'floating' : 'grid'
+}
+
+/** Whether a tile put down on this board lands on the step. */
+export function boardSnap(board: WorkspaceBoard): boolean {
+  return board.snap !== false
+}
+
+/** A board, built the one way. Both keys omitted at their defaults — see the note above. */
+function boardOf(
+  id: string,
+  name: string,
+  tiles: WorkspaceTile[],
+  mode: BoardMode,
+  snap: boolean,
+): WorkspaceBoard {
+  return {
+    id,
+    name,
+    tiles,
+    ...(mode === 'floating' && { mode }),
+    ...(!snap && { snap }),
+  }
+}
+
+/** A tile, built the one way. */
+export function tileOf(compId: string, place?: Place): WorkspaceTile {
+  return place ? { compId, place } : { compId }
+}
 
 /**
  * A board id.
@@ -45,6 +99,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * A place we are willing to draw a tile at, out of whatever was stored.
+ *
+ * Dropped rather than clamped when it is out of range, which is this file's existing stance
+ * about a malformed document: a layout is convenience state, and the cost of discarding one
+ * bad coordinate is a tile that gets placed again on the next render. Clamping would instead
+ * invent a position nobody chose and then save it.
+ */
+function readPlace(raw: unknown): Place | null {
+  if (!isRecord(raw)) return null
+  const { x, y } = raw
+  if (typeof x !== 'number' || typeof y !== 'number') return null
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  if (x < 0 || y < 0 || x > MAX_COORD || y > MAX_COORD) return null
+  return { x: Math.round(x), y: Math.round(y) }
+}
+
+/**
  * A layout we are willing to draw, out of whatever the server returned.
  *
  * Comps the caller cannot see are dropped **silently**. Saying "3 comps were removed" would
@@ -72,10 +143,14 @@ export function normalizeLayout(raw: unknown, knownCompIds: ReadonlySet<string>)
       // other, and `key={compId}` in the grid assumes they cannot happen.
       if (typeof compId !== 'string' || !knownCompIds.has(compId) || seen.has(compId)) continue
       seen.add(compId)
-      kept.push({ compId })
+      // A place survives a board that is not floating, and is dropped on its own terms when it
+      // is malformed — a tile with a bad position is still a tile somebody opened.
+      kept.push(tileOf(compId, readPlace(tile.place) ?? undefined))
       if (kept.length === MAX_TILES_PER_BOARD) break
     }
-    boards.push({ id, name, tiles: kept })
+    boards.push(
+      boardOf(id, name, kept, candidate.mode === 'floating' ? 'floating' : 'grid', candidate.snap !== false),
+    )
   }
 
   if (boards.length === 0) return emptyLayout()
@@ -117,7 +192,9 @@ export function withCompOpened(
   return mapBoard(layout, boardId, (board) => {
     if (board.tiles.some((tile) => tile.compId === compId)) return board
     if (board.tiles.length >= MAX_TILES_PER_BOARD) return board
-    return { ...board, tiles: [...board.tiles, { compId }] }
+    // Placeless, whatever mode the board is in. A floating board places it on the next render,
+    // where the tiles' measured heights are — which is the only place they are.
+    return { ...board, tiles: [...board.tiles, tileOf(compId)] }
   })
 }
 
@@ -168,7 +245,11 @@ export function withTileMoved(
     const ids = board.tiles.map((tile) => tile.compId)
     const moved = moveTile(ids, compId, toIndex)
     if (moved === ids) return board
-    return { ...board, tiles: moved.map((id) => ({ compId: id })) }
+    // The tiles themselves are carried across rather than rebuilt from their ids, so a tile
+    // that has been placed on a floating board keeps its place when it is reordered. Rebuilding
+    // was safe while a tile was only an id; it is now how a position would quietly disappear.
+    const byId = new Map(board.tiles.map((tile) => [tile.compId, tile]))
+    return { ...board, tiles: moved.map((id) => byId.get(id) ?? tileOf(id)) }
   })
 }
 

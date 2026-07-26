@@ -41,7 +41,15 @@ collaboration, and the library-browser view.
   tiles. Mirror `web/src/components/FittingTabsBar.tsx` (CSS ~`styles.css:11395`).
 - **Grid:** responsive structured grid of comp tiles (`repeat(auto-fill,
   minmax(320px,1fr))`), top-aligned, `grid-auto-rows:max-content`, plus a dashed
-  "New comp" ghost tile. NOT free-floating and NOT a fixed column count.
+  "New comp" ghost tile. NOT a fixed column count. **Free-floating is now a per-board
+  option rather than a rejected concept:** a board carries a `mode` of `grid` — the default,
+  and what the rest of this section describes — or `floating`, where each tile has an x/y on
+  a pannable canvas, with a snap-to-grid toggle and a one-shot "tidy up" that packs the tiles
+  as this grid would. **A tile is drawn at the same size in both modes** (the width this
+  grid's tracks would give it), so toggling does not resize anything; **size is still not
+  free**. Toggling back to the grid orders the tiles by where they physically sit. Below the
+  860px breakpoint every board draws as this grid whatever it has saved, and the positions
+  are kept.
 - **Mobile:** same tiles, single column, underline tabs collapse to a chip-scale tab
   row, sticky bottom action bar with a `+` FAB. Mobile is a day-one target.
 
@@ -135,6 +143,10 @@ Class names are presentation only; nothing outside the stylesheet may select on 
 
 - Grid workspace (not free-floating canvas); left library rail; BurnSun underline tabs;
   no "Shared" library sub-tab.
+  - *Amended in a later pass: the free-floating canvas came back as a per-board **option**.
+    The grid is still the default, still the locked design, and still the whole story below
+    860px — what changed is that a board can now be told to draw itself the other way. The
+    rest of this list stands. See the **Grid** bullet above and `REQUIREMENTS.md` §4.1.*
 - Tile: ± delta pill (green/amber/red) not a bar; no cap chips → violations popover;
   no size labels on rows; flagship = oval pill only; dup surcharge in its own column;
   fixed 10-row scaffold; no pilots.
@@ -147,3 +159,10 @@ Class names are presentation only; nothing outside the stylesheet may select on 
   design pass) — the mockup shows the resting tile, not the open picker.
 - Popover exact copy/placement and whether the issue flag also summarises on hover.
 - Whether "New comp" seeds a blank 10-slot scaffold immediately (assumed yes).
+- **The extent of a floating canvas is provisional.** What shipped is a large pannable 2-D
+  surface. The alternative considered — a canvas exactly as wide as the board area, no
+  horizontal scroll, growing downward only — is a change to `web/src/workspace/canvas-extent.ts`
+  and one CSS line, and nothing else: tile coordinates are already canvas-space, every drop
+  already clamps to the bounds that module hands out, and `placesWithin` is already the named
+  home for bringing existing positions inside a narrower bound. **Keep it that way** — if the
+  canvas grows a second thing that knows how big it is, this stops being one decision.
