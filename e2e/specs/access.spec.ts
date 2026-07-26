@@ -24,9 +24,9 @@ test('a second character reaches nothing of the first', async ({
 
   const theirs = await stranger.context.newPage()
   await theirs.goto('/')
-  await expect(theirs.getByTestId('user-character-name')).toHaveText(
-    stranger.identity.characterName,
-  )
+  await expect(
+    theirs.getByRole('button', { name: `Account — ${stranger.identity.characterName}` }),
+  ).toBeVisible()
   await expect(theirs.getByTestId('team-first-screen')).toBeVisible()
 
   // And a deep link to somebody else's team is a dead end, not a way in.

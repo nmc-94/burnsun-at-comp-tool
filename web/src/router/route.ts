@@ -147,3 +147,25 @@ export function isPublic(route: Route): boolean {
 export function isWide(route: Route): boolean {
   return route.kind === 'workspace'
 }
+
+/**
+ * The team a route is about, or null.
+ *
+ * Here beside `parseRoute` rather than in the header that asks the question, for the same
+ * reason `isPublic` is: it is a fact about the URL grammar, it is pure, and a route added
+ * later that carries a team should answer here once rather than in every reader.
+ *
+ * A comp route is deliberately not one of these. `/comps/:id` names a comp without saying
+ * whose it is — the team is only known once the comp resolves, and guessing would put the
+ * wrong name in the bar for as long as the fetch takes.
+ */
+export function teamIdOf(route: Route): string | null {
+  switch (route.kind) {
+    case 'workspace':
+    case 'team-settings':
+    case 'pick-ban':
+      return route.teamId
+    default:
+      return null
+  }
+}

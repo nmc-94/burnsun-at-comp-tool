@@ -44,6 +44,12 @@
   --radius-md: 5px;
   --radius-lg: 6px;
 
+  /* The two elevations BurnSun declares, at its own values. `--shadow-1` lifts a menu off the
+     page; `--shadow-2` is the small raise on a pressed segment. Light is nearly flat on
+     purpose — on cream, a border does the separating and a heavy shadow reads as dirt. */
+  --shadow-1: 0 4px 12px rgba(13, 18, 32, 0.04);
+  --shadow-2: 0 1px 3px rgba(13, 18, 32, 0.08);
+
   --fit-tag-bg-sat: 60%;
   --fit-tag-bg-light: 92%;
   --fit-tag-border-sat: 50%;
@@ -100,6 +106,10 @@
   --on-accent: #120c02;
   --halo: rgba(232, 164, 74, 0.22);
   --halo-far: rgba(232, 164, 74, 0.055);
+
+  /* Dark carries a real shadow, because there is no border contrast to lean on. */
+  --shadow-1: 0 12px 28px rgba(0, 0, 0, 0.28);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.28);
 
   --fit-tag-bg-sat: 50%;
   --fit-tag-bg-light: 17%;

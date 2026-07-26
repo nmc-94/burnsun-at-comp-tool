@@ -11,7 +11,12 @@ test('a signed-in character sees their own team and opens it', async ({
 }) => {
   await page.goto('/')
 
-  await expect(page.getByTestId('user-character-name')).toHaveText(identity.characterName)
+  // The account control is a portrait, so the character's name is its accessible name rather
+  // than text beside it. Asserting on the name is still the proof that /api/v1/auth/me
+  // answered and the SPA believed it — it just no longer needs the menu opened to see it.
+  await expect(
+    page.getByRole('button', { name: `Account — ${identity.characterName}` }),
+  ).toBeVisible()
 
   // Exactly one. This character was invented for this test, so the listing is a statement
   // about isolation as much as about the screen — and it is what makes fullyParallel safe
@@ -34,6 +39,10 @@ test('the promoted team names itself, not just the thing it opens', async ({ pag
 
 test('signing out lands back on the sign-in screen', async ({ page }) => {
   await page.goto('/')
+
+  // Sign-out lives behind the portrait now rather than standing in the bar, so reaching it is
+  // two steps. That the menu opens at all is part of what this covers.
+  await page.getByTestId('user-menu').click()
   await expect(page.getByTestId('user-character-name')).toBeVisible()
 
   await page.getByTestId('user-sign-out').click()

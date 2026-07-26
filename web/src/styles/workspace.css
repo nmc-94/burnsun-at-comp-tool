@@ -39,10 +39,10 @@
   display: flex;
 }
 
-.app-shell.app-shell-wide .app-header {
-  padding: 8px 16px;
-  margin: 0;
-}
+/* The workspace used to tighten the header here, because the shared bar was 14px of padding
+   and a clamped 18–32px gutter — too generous next to a full-window grid. The bar is a fixed
+   40px track with a 12px gutter on every route now, so an override only made the workspace's
+   chrome differ from everywhere else's. */
 
 /* underline tabs */
 .ftabs-shell {

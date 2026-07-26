@@ -39,23 +39,6 @@
   background: var(--accent-soft);
 }
 
-.wordmark-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--text-1);
-  text-decoration: none;
-  border-radius: var(--radius-sm);
-}
-.wordmark-link svg {
-  color: var(--accent);
-  flex: 0 0 auto;
-}
-.wordmark-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
 /* --- 1 · signed out ------------------------------------------------------ */
 
 /* Rendered instead of `.app-shell`, not inside it. Four elements on an empty page. */

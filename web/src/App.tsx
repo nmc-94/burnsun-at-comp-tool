@@ -1,21 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { ApiError, request } from './api'
+import AppHeader from './AppHeader'
 import { brand } from './brand/brandConfig'
-import SunMark from './brand/SunMark'
 import CompResolver from './comps/CompResolver'
 import PickBanScreen from './pickban/PickBanScreen'
 import { hrefFor, isPublic, isWide, parseRoute, workspaceRoute } from './router/route'
 import type { Route } from './router/route'
-import { navigate, useLinkProps, useRoute } from './router/useRoute'
+import { navigate, useRoute } from './router/useRoute'
 import type { Session } from './session'
 import { fetchSession } from './session'
 import ShareView from './share/ShareView'
 import SignInScreen from './SignInScreen'
 import TeamList from './teams/TeamList'
 import TeamScreen from './teams/TeamScreen'
-import { readThemePref, resolveTheme, toggleTheme } from './theme'
-import UserChip from './UserChip'
+import { readThemePref, resolveTheme } from './theme'
 import WorkspaceScreen from './workspace/WorkspaceScreen'
 
 type HealthState =
@@ -109,6 +108,7 @@ export default function App() {
       data-testid="app-shell"
     >
       <AppHeader
+        route={route}
         session={session}
         theme={theme}
         onThemeChange={setTheme}
@@ -128,44 +128,6 @@ export default function App() {
         {renderRoute(route, session?.character?.characterName ?? null)}
       </main>
     </div>
-  )
-}
-
-interface HeaderProps {
-  session: Session | null
-  theme: 'light' | 'dark'
-  onThemeChange: (theme: 'light' | 'dark') => void
-  onSessionChanged: () => void
-}
-
-function AppHeader({ session, theme, onThemeChange, onSessionChanged }: HeaderProps) {
-  const home = useLinkProps({ kind: 'teams' })
-  return (
-    <header className="app-header" data-testid="app-header">
-      <a className="wordmark-link" {...home}>
-        <SunMark size={18} />
-        <span className="wordmark">
-          {brand.wordmark.primary}
-          <span className="wordmark-suffix">{brand.wordmark.suffix}</span>
-        </span>
-      </a>
-      <h1 className="product-label">{brand.productLabel}</h1>
-      <span className="header-actions">
-        <button
-          className="btn subtle"
-          data-testid="theme-toggle"
-          type="button"
-          // The state belongs in aria-pressed, not baked into the name — a name that
-          // changes with state cannot be matched exactly by anything.
-          aria-pressed={theme === 'dark'}
-          aria-label="Dark theme"
-          onClick={() => onThemeChange(toggleTheme())}
-        >
-          Theme: {theme}
-        </button>
-        {session && <UserChip session={session} onChanged={onSessionChanged} />}
-      </span>
-    </header>
   )
 }
 

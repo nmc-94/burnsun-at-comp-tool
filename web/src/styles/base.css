@@ -59,54 +59,313 @@ h3 {
   flex-direction: column;
 }
 
-/* Full-bleed and bordered, so the bar reads as chrome rather than as the first thing in the
-   column. The workspace already overrode the padding; it gains the border with everything else. */
+/* ---------------------------------------------------------------------------
+   The top bar.
+
+   Ported from BurnSun's `.topbar-*` rules rather than re-derived: both apps declare the same
+   tokens with the same values, so these are its declarations unchanged. Read live off the
+   running app and checked against it — 40px track, 24px controls, a 1×18px separator.
+
+   The bar it replaced was a wrapping flex row 55px tall that reached 120px — three rows — on
+   a phone, because a wordmark, a product label, a theme button and a character carrying two
+   sign-out buttons do not fit on one line. This one holds two things on the left and three on
+   the right, and the two that could grow (the team's name, the character's) truncate.
+   --------------------------------------------------------------------------- */
 .app-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  row-gap: 8px;
-  /* Wraps rather than overflows. The bar holds a wordmark, a theme control and a character
-     with two sign-out buttons, which is more than a phone has room for on one line — and a
-     bar that scrolls sideways takes the whole page with it. */
-  flex-wrap: wrap;
-  padding: 14px clamp(18px, 3vw, 32px);
+  gap: 8px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 12px;
+  background: var(--bg-panel);
   border-bottom: 1px solid var(--line-1);
+  /* Sticky is free on the card routes and a no-op in the workspace, which fills the window
+     and scrolls inside itself. */
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
-.header-actions {
-  margin-left: auto;
+
+/* Left: the mark, then where you are. The wordmark is gone from the bar — it is on the
+   sign-in screen, which is the only place someone meets the app without already knowing it. */
+.header-where {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 10px;
-  row-gap: 8px;
+  gap: 9px;
+  min-width: 0;
 }
-.wordmark {
-  font-family: var(--font-brand);
-  font-weight: 500;
-  font-size: 16px;
-  letter-spacing: 0.01em;
+.header-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--accent);
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+}
+.header-mark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.header-team {
+  color: var(--text-2);
+  font-size: 11.5px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wordmark-suffix {
   color: var(--text-3);
   font-weight: 300;
 }
-/* The page's h1. Sized here rather than left to the browser's heading default — it is a
-   quiet label in the corner, and only its role in the document is large. */
-.product-label {
-  margin: 0 0 0 2px;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--text-3);
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
 }
-/* First thing to go when the bar runs out of room: it repeats what the wordmark already says. */
-@media (max-width: 760px) {
-  .product-label {
-    display: none;
-  }
+
+/* One pill, every control in the bar. 24px so three of them clear the 40px track. */
+.header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 9px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-alt);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+.header-pill:hover:not(:disabled),
+.header-pill.is-open {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-1);
+}
+.header-pill svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.header-pill.ghost {
+  background: none;
+  border-color: transparent;
+}
+.header-pill.ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The theme control. Two buttons rather than one that renames itself: a toggle labelled
+   "Theme: dark" cannot say whether it *is* dark or *does* dark, and both readings are
+   reasonable. Two pressed-states say it once. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  gap: 1px;
+  padding: 1px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  flex-shrink: 0;
+}
+.theme-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 1px);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.theme-toggle button svg {
+  width: 11px;
+  height: 11px;
+}
+.theme-toggle button:hover {
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+}
+.theme-toggle button[aria-pressed='true'] {
+  background: var(--bg-panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-2);
+}
+.theme-toggle button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* --- the account menu ---------------------------------------------------- */
+
+/* The account control is its own group, so it gets group spacing rather than the 4px that
+   separates controls within one. BurnSun draws a 1px rule between groups, which works out to
+   9px of clear space; this is the same distance without the line, because a divider beside a
+   round 28px target reads as clutter where a straight run of pills it does not. */
+.header-menu-shell {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: 6px;
+  /* Flex, not the default block. As a block this establishes a line box for the inline-flex
+     button inside it, which then sits on that line's baseline with the font's descender space
+     left beneath — so the portrait rendered 1.42px above the centre every other control in the
+     bar sits on. Measurable, and just visible on a 28px circle. */
+  display: inline-flex;
+  align-items: center;
+}
+.header-avatar-btn {
+  display: inline-flex;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+}
+.header-avatar-btn:hover,
+.header-avatar-btn.is-open {
+  border-color: var(--accent);
+}
+.header-avatar-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border: 1px solid var(--line-1);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.header-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(240px, calc(100vw - 24px));
+  padding: 4px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-1);
+  z-index: 30;
+}
+.header-menu-who {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+.header-menu-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Truncates rather than wrapping. An EVE name broken across three lines makes the menu as
+   tall as the thing it labels, and there is no width at which that is the better trade. */
+.character-name {
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-menu-meta {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 10px;
+}
+.header-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.header-menu-item:hover:not(:disabled) {
+  background: var(--bg-soft);
+  color: var(--text-1);
+}
+.header-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.header-menu-item svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.header-menu-item.danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+.header-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line-1);
+}
+.chip-muted {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* Present for screen readers and for the document outline, absent from the bar. The label it
+   carries used to be visible in the corner; the bar is now about where you are rather than
+   about what the app is called. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .card {
@@ -206,31 +465,6 @@ h3 {
 }
 .link:hover {
   text-decoration: underline;
-}
-
-.user-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.portrait {
-  border-radius: 50%;
-  vertical-align: middle;
-  flex: 0 0 auto;
-}
-/* Truncates rather than wrapping. An EVE name broken across three lines makes the whole bar
-   as tall as the thing it labels, and there is no width at which that is the better trade. */
-.character-name {
-  font-weight: 500;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.chip-muted {
-  color: var(--text-3);
-  font-size: 11px;
 }
 
 .card-title {
