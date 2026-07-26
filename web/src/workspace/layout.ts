@@ -6,6 +6,7 @@
 // every single use site, and holding the invariant in one place is what keeps the rest of
 // the workspace free of null checks it can never trip.
 
+import { samePlace } from './place'
 import type { BoardMode, Place, WorkspaceBoard, WorkspaceLayout, WorkspaceTile } from './types'
 
 /** How many boards and tiles the server will accept. Mirrored so the UI can stop first. */
@@ -251,6 +252,118 @@ export function withTileMoved(
     const byId = new Map(board.tiles.map((tile) => [tile.compId, tile]))
     return { ...board, tiles: moved.map((id) => byId.get(id) ?? tileOf(id)) }
   })
+}
+
+/**
+ * Put one tile down somewhere on its board.
+ *
+ * The floating counterpart of `withTileMoved`, and it goes the same way: through `arrange` and
+ * the layout debounce, because a rearrangement is convenience state and needs no request of
+ * its own.
+ *
+ * Answers with the board it was given when the tile is already there, for the reason
+ * `moveTile` does — a drag that ends where it started must not arm a save, and on a canvas
+ * that is a common way for one to end.
+ */
+export function withTilePlaced(
+  layout: WorkspaceLayout,
+  boardId: string,
+  compId: string,
+  place: Place,
+): WorkspaceLayout {
+  return mapBoard(layout, boardId, (board) => {
+    const at = board.tiles.findIndex((tile) => tile.compId === compId)
+    const tile = board.tiles[at]
+    if (!tile || samePlace(tile.place, place)) return board
+    const tiles = [...board.tiles]
+    tiles[at] = tileOf(compId, place)
+    return { ...board, tiles }
+  })
+}
+
+/**
+ * Put several tiles down at once.
+ *
+ * "Tidy up" and the placing of tiles that arrived without a position both land here, and both
+ * want to be **one** save rather than one per tile: fifty writes behind an 800 ms debounce is
+ * one write with forty-nine timers cancelled, but it is also fifty renders of the board.
+ *
+ * Tiles the map says nothing about are left alone.
+ */
+export function withTilesPlaced(
+  layout: WorkspaceLayout,
+  boardId: string,
+  places: ReadonlyMap<string, Place>,
+): WorkspaceLayout {
+  return mapBoard(layout, boardId, (board) => {
+    const moves = (tile: WorkspaceTile) =>
+      places.has(tile.compId) && !samePlace(tile.place, places.get(tile.compId))
+    if (!board.tiles.some(moves)) return board
+    return {
+      ...board,
+      tiles: board.tiles.map((tile) => {
+        const place = places.get(tile.compId)
+        return place && !samePlace(tile.place, place) ? tileOf(tile.compId, place) : tile
+      }),
+    }
+  })
+}
+
+/**
+ * Draw this board the other way.
+ *
+ * `order` is how a canvas hands its arrangement back to a grid: the tiles as somebody reading
+ * the board would meet them, which `place.ts` works out from where they physically sit. Without
+ * it the grid would come back in the order the tiles were *opened and raised* in, which after
+ * an afternoon of arranging says nothing about what was on screen.
+ *
+ * Every place is kept, whichever way this goes. A mode is a way of drawing a board, not a
+ * decision to throw away where things were.
+ */
+export function withBoardMode(
+  layout: WorkspaceLayout,
+  boardId: string,
+  mode: BoardMode,
+  order?: readonly string[],
+): WorkspaceLayout {
+  return mapBoard(layout, boardId, (board) => {
+    const ids = board.tiles.map((tile) => tile.compId)
+    // An order naming a different set of comps is from a board that has since changed and is
+    // dropped rather than applied — it would otherwise close or duplicate tiles.
+    const next = order && sameComps(order, ids) ? order : ids
+    // Compared element by element rather than by reference: `ids` is built here and `order`
+    // came from the caller, so the two are never the same array however much they agree. A
+    // toggle that changes no order must still not arm the save debounce.
+    const reordered = next.some((id, n) => id !== ids[n])
+    if (boardMode(board) === mode && !reordered) return board
+    const byId = new Map(board.tiles.map((tile) => [tile.compId, tile]))
+    return boardOf(
+      board.id,
+      board.name,
+      next.map((id) => byId.get(id) ?? tileOf(id)),
+      mode,
+      boardSnap(board),
+    )
+  })
+}
+
+/** Whether a tile put down on this board lands on the step. */
+export function withBoardSnap(
+  layout: WorkspaceLayout,
+  boardId: string,
+  snap: boolean,
+): WorkspaceLayout {
+  return mapBoard(layout, boardId, (board) => {
+    if (boardSnap(board) === snap) return board
+    return boardOf(board.id, board.name, board.tiles, boardMode(board), snap)
+  })
+}
+
+/** Whether two lists name the same comps, in whatever order. */
+function sameComps(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const known = new Set(b)
+  return a.every((id) => known.has(id))
 }
 
 export function withCompClosed(
