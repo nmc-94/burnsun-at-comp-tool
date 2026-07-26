@@ -865,6 +865,32 @@ describe('choosing how a board is drawn', () => {
     expect(lastSave(server).boards[0].snap).toBe(false)
   })
 
+  it('goes and finds a comp the rail is asked for that is already open', async () => {
+    // The rail is the board's index, and this is what makes it one. The same click used to do
+    // nothing at all, which was fine while every tile was on screen at once.
+    stubServer({
+      boards: [
+        {
+          id: 'b1',
+          name: 'Angel',
+          mode: 'floating',
+          tiles: [{ compId: 'b', place: { x: 4_000, y: 2_000 } }],
+        },
+      ],
+      activeBoardId: 'b1',
+      updatedAt: null,
+    })
+    await open()
+    const board = screen.getByTestId('board-grid')
+    Object.defineProperty(board, 'clientWidth', { value: 800, configurable: true })
+    Object.defineProperty(board, 'clientHeight', { value: 600, configurable: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Beta' }))
+
+    expect(board.scrollLeft).toBeGreaterThan(0)
+    expect(board.scrollTop).toBeGreaterThan(0)
+  })
+
   it('draws a saved canvas as a grid on a narrow screen, and keeps the places', async () => {
     // The whole of the narrow-viewport promise. The saved mode is never rewritten — hand-placed
     // tiles on a phone are unusable, but the arrangement somebody made on a desktop is theirs.

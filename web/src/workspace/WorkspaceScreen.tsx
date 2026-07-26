@@ -48,7 +48,8 @@ import {
   withTilePlaced,
   withTilesPlaced,
 } from './layout'
-import { packed, readingOrder, trackCount, trackWidth } from './place'
+import { reveal } from './canvas-extent'
+import { FALLBACK_H, packed, readingOrder, trackCount, trackWidth } from './place'
 import type { BoardMode, Place, WorkspaceLayout } from './types'
 import { useWide } from './useWide'
 
@@ -333,6 +334,10 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
         trackCount(size.width, width),
       ),
     )
+    // Tidying packs everything back to the corner, so a canvas left panned somewhere else
+    // would come out tidy and empty — which reads as having lost the tiles rather than as
+    // having tidied them.
+    if (boardRef.current) reveal(boardRef.current, { x: 0, y: 0 }, size)
   }, [layout, board, placeTiles])
 
   const setMode = useCallback(
@@ -368,13 +373,27 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
     arrange(withActiveBoard(layout, board.id))
   }, [layout, board, arrange])
 
+  /**
+   * Open a comp on this board — or, if it is already open, go and find it.
+   *
+   * The rail is the board's index, and this is what makes it one. Clicking a comp that is
+   * already open used to do nothing at all, which was fine while every tile was on screen at
+   * once; on a canvas that can be panned away from, the same click is the natural way to ask
+   * "where is that one", and answering it needs no new control anywhere.
+   */
   const openComp = useCallback(
     (compId: string) => {
       if (!layout || !board) return
-      if (openCompIds.has(compId)) return
+      if (openCompIds.has(compId)) {
+        const place = places.get(compId)
+        if (mode === 'floating' && place && boardRef.current) {
+          reveal(boardRef.current, place, { width: trackWidth(boardSize(boardRef.current).width), height: FALLBACK_H })
+        }
+        return
+      }
       arrange(withCompOpened(layout, board.id, compId))
     },
-    [layout, board, openCompIds, arrange],
+    [layout, board, openCompIds, arrange, places, mode],
   )
 
   const closeComp = useCallback(
