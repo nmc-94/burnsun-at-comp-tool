@@ -28,9 +28,10 @@
           (pref === 'system' &&
             window.matchMedia &&
             window.matchMedia('(prefers-color-scheme: dark)').matches)
-        var resolved = dark ? 'dark' : 'light'
-        document.documentElement.dataset.theme = resolved
-        document.documentElement.style.colorScheme = resolved
+        // `data-theme` only — tokens.css declares `color-scheme` beside each palette, and the
+        // stylesheet is render-blocking, so it is in force before anything paints. Setting it
+        // inline here as well only shadowed those rules, which the sign-in screen needs to win.
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
       })()
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

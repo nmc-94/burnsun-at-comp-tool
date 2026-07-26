@@ -43,8 +43,12 @@ export function readThemePref(): ThemePref {
 
 export function applyTheme(pref: ThemePref): 'light' | 'dark' {
   const resolved = resolveTheme(pref)
+  // `data-theme` only. `color-scheme` is declared beside the palette it belongs to in
+  // tokens.css, for both states — setting it here as well put an inline style on the root,
+  // and an inline style cannot be overridden by a rule. That is what let the sign-in screen
+  // paint its dark palette while the document still claimed to be light, which a scrollbar
+  // would have shown up the moment the viewport was short enough to need one.
   document.documentElement.dataset.theme = resolved
-  document.documentElement.style.colorScheme = resolved
   try {
     localStorage.setItem(STORAGE_KEY, pref)
   } catch {

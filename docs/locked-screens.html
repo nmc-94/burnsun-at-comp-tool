@@ -513,10 +513,9 @@ input { font: inherit; }
           own button calls <code>signIn()</code> directly.
         </li>
         <li>
-          <b>The theme toggle goes while signed out.</b> <code>applyTheme</code> persists to
-          <code>localStorage</code> and <code>index.html</code> re-applies it pre-paint, so a
-          returning user keeps their choice. A first-time visitor gets <code>system</code> and no
-          way to override until they are signed in.
+          <b>The theme toggle goes while signed out.</b> Settled by making the screen dark
+          outright rather than by finding somewhere to put a control — see §7. There is nothing
+          to choose there, so nothing is missing.
         </li>
         <li>
           <b>The health line goes.</b> If the API is down, sign-in fails with nothing on screen
@@ -528,9 +527,8 @@ input { font: inherit; }
         <span class="lbl">Decided — the footer went, both occupants moved</span>
         <p>
           <b>The theme toggle moved into the header</b>, so it exists on every signed-in route
-          including the workspace, where the footer had it before. Signed out still has neither,
-          and that loss stands: a returning visitor keeps their choice out of
-          <code>localStorage</code>, a first-time one gets <code>system</code>.
+          including the workspace, where the footer had it before. Signed out has no bar to put
+          it in, and no need for one — see §7.
         </p>
         <p>
           <b>The health line became a banner that only renders when the probe fails</b>, full-bleed
@@ -789,7 +787,40 @@ input { font: inherit; }
     </section>
 
     <section>
-      <h2>7 · Accepted inconsistency</h2>
+      <h2>7 · Theme</h2>
+      <p>
+        <b>Dark is the default.</b> An unset preference used to mean <code>system</code>, so the app
+        opened light for anyone whose desktop was light — most people who have never thought about
+        it. A stored preference still wins; a default is only what happens before anyone has said
+        otherwise. The default is spelled in <code>theme.ts</code> and in the pre-paint script in
+        <code>index.html</code>, which cannot import it, and a test fails if the two drift.
+      </p>
+      <p>
+        <b>The sign-in screen is dark whatever is stored.</b> It has no chrome, so it has no toggle
+        — a visitor who once chose light would otherwise be stuck looking at the one page in the app
+        that offers no way to change what they are looking at. Done in <code>tokens.css</code> by
+        adding <code>:root:has(.signin-screen)</code> beside the dark theme's own selector: one
+        palette, two ways in, nothing duplicated. Matched on <code>:root</code> rather than the
+        screen itself so the page canvas goes dark too — a background set on a descendant does not
+        propagate, and the overscroll behind it would stay cream.
+      </p>
+      <p>
+        This is also why neither the module nor the bootstrap sets <code>color-scheme</code> as an
+        inline style any more. <code>tokens.css</code> declares it beside each palette, and the
+        stylesheet is render-blocking, so it is in force before anything paints. Setting it inline
+        as well only shadowed those rules — the sign-in screen painted dark while the document still
+        claimed to be light, which a scrollbar would have exposed the moment a viewport was short
+        enough to need one.
+      </p>
+      <p>
+        A light-preferring visitor still gets one frame of light before React mounts the sign-in
+        screen. The pre-paint script cannot know whether there is a session; fixing it would mean
+        the server saying so in the document before first paint.
+      </p>
+    </section>
+
+    <section>
+      <h2>8 · Accepted inconsistency</h2>
       <p>
         Screen 2 is left-aligned in a 720px column; screens 1 and 3 are centred. A given character only
         ever sees one of 2 or 3, so the two never sit side by side — but the flow signed-out → first team

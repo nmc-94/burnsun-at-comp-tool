@@ -64,7 +64,19 @@
   --fit-tag-light-adjust: 0%;
 }
 
-:root[data-theme="dark"] {
+/* The second selector makes the sign-in screen dark whatever is stored.
+   That screen has no chrome, so it has no theme toggle — a visitor who once chose light would
+   otherwise be looking at the one page in the app that offers no way to change what they are
+   looking at. Matched on `:root` rather than on `.signin-screen` itself so the page canvas
+   goes with it: a background set on a descendant does not propagate, and the overscroll
+   behind it would stay cream.
+
+   One consequence, and it is unavoidable here: the pre-paint script in index.html sets the
+   stored theme before it can possibly know whether there is a session, so a light-preferring
+   visitor gets one frame of light before React mounts the screen. Fixing that would mean the
+   server telling the document who is signed in before first paint. */
+:root[data-theme="dark"],
+:root:has(.signin-screen) {
   color-scheme: dark;
 
   --bg-app: #080b12;
