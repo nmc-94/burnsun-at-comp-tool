@@ -16,6 +16,12 @@ SSO = {
     "esi_token_secret": "secret",
 }
 
+DEV_AUTH = {
+    "dev_auth_enabled": True,
+    # At least DEV_AUTH_SECRET_MIN_LENGTH, or the wrong validator fires.
+    "dev_auth_secret": "a-development-secret-of-sufficient-length",
+}
+
 
 def test_database_url_accepts_unprefixed_alias(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host:5432/db")
@@ -37,6 +43,7 @@ def test_defaults(monkeypatch):
         assert settings.brand_name == "BurnSun"
         assert settings.session_ttl_seconds == 2592000
         assert settings.esi_enabled is False
+        assert settings.dev_auth_enabled is False
     finally:
         settings_module.get_settings.cache_clear()
 
@@ -72,6 +79,34 @@ def test_a_trailing_slash_on_a_base_url_is_dropped():
 
     assert settings.esi_sso_base_url == "https://login.eveonline.com"
     assert settings.esi_api_base_url == "https://esi.evetech.net"
+
+
+def test_the_development_sign_in_is_refused_outside_a_development_environment():
+    # An allow-list, so a name nobody thought of refuses rather than admits.
+    for named in ("production", "prod", "staging", "railway", "live"):
+        with pytest.raises(ValidationError, match="COMPTOOL_ENVIRONMENT"):
+            Settings(**DEV_AUTH, environment=named)
+
+    for named in ("local", "docker", "ci", "DEV", " test "):
+        assert Settings(**DEV_AUTH, environment=named).dev_auth_enabled is True
+
+
+def test_a_short_development_secret_is_refused():
+    # It is the only thing between a caller and every identity in the database.
+    with pytest.raises(ValidationError, match="COMPTOOL_DEV_AUTH_SECRET"):
+        Settings(dev_auth_enabled=True, dev_auth_secret="dev", environment="local")
+
+
+def test_the_development_secret_is_only_required_once_it_is_enabled():
+    assert Settings(dev_auth_enabled=False, dev_auth_secret="").dev_auth_enabled is False
+
+
+def test_the_development_sign_in_needs_no_eve_application():
+    # What CI runs: the back door on, no EVE credentials anywhere.
+    settings = Settings(**DEV_AUTH, environment="ci", esi_enabled=False)
+
+    assert settings.dev_auth_enabled is True
+    assert settings.esi_enabled is False
 
 
 def test_normalize_url_routes_to_psycopg():

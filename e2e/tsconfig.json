@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    // Playwright transpiles the specs itself, so resolution is a bundler's, not Node's.
+    // `nodenext` here would demand a `.js` extension on every relative import of a `.ts`
+    // file that is never emitted — noise in service of a module system nothing here uses.
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["playwright.config.ts", "src", "specs"]
+}

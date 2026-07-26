@@ -1,0 +1,124 @@
+// Preconditions through the real REST API, using the browser context's own authenticated
+// request object.
+//
+// The UI is driven only for the thing under test. A spec that clicks its way to three comps
+// spends nine seconds of debounce before it reaches its first assertion, and fails in the
+// setup half as often as in the half that matters.
+//
+// The wire types below are hand-written rather than imported from web/src. The duplication is
+// the point: this is a black-box client, and a shape that moves should stop this package
+// compiling rather than silently agree with itself.
+
+import type { APIRequestContext, APIResponse } from '@playwright/test'
+
+export interface Team {
+  readonly id: string
+  readonly name: string
+  readonly yourLevel: string
+}
+
+export interface CompSlot {
+  readonly position: number
+  readonly typeId: number
+  readonly isFlagship: boolean
+}
+
+export interface Comp {
+  readonly id: string
+  readonly teamId: string
+  readonly name: string
+  readonly rulesetSlug: string
+  readonly rulesetVersionLabel: string
+  readonly shipCount: number
+  readonly slots: readonly CompSlot[]
+  readonly shareSlug: string | null
+  readonly shareStale: boolean
+}
+
+export interface Board {
+  readonly id: string
+  readonly name: string
+  readonly compIds: readonly string[]
+}
+
+interface RulesetSummary {
+  readonly slug: string
+  readonly latestVersion: unknown
+}
+
+export class Api {
+  constructor(private readonly http: APIRequestContext) {}
+
+  createTeam(name: string): Promise<Team> {
+    return this.json(this.http.post('/api/v1/teams', { data: { name } }), 201)
+  }
+
+  createComp(teamId: string, name: string, rulesetSlug: string): Promise<Comp> {
+    return this.json(
+      this.http.post(`/api/v1/teams/${teamId}/comps`, { data: { name, rulesetSlug } }),
+      201,
+    )
+  }
+
+  getComp(compId: string): Promise<Comp> {
+    return this.json(this.http.get(`/api/v1/comps/${compId}`))
+  }
+
+  /** The whole slot list, in order — the route replaces wholesale rather than patching. */
+  setSlots(compId: string, typeIds: readonly number[]): Promise<Comp> {
+    const slots = typeIds.map((typeId) => ({ typeId, isFlagship: false }))
+    return this.json(this.http.put(`/api/v1/comps/${compId}/slots`, { data: { slots } }))
+  }
+
+  /**
+   * Put comps on a board and make it the active one.
+   *
+   * The board id is the client's (comptool/workspace.py says why), which is what lets a spec
+   * deep-link straight to /teams/:id/boards/:boardId and skip board discovery entirely — no
+   * rail to open, no tab to click, and the 800ms layout debounce never runs during setup.
+   */
+  async openBoard(teamId: string, compIds: readonly string[], name = 'Board 1'): Promise<Board> {
+    const id = randomUuid()
+    await this.json(
+      this.http.put(`/api/v1/teams/${teamId}/workspace`, {
+        data: {
+          boards: [{ id, name, tiles: compIds.map((compId) => ({ compId })) }],
+          activeBoardId: id,
+        },
+      }),
+    )
+    return { id, name, compIds }
+  }
+
+  /** The slug this deployment seeded — read rather than assumed, so `atxxii` is not baked in. */
+  async publishedRulesetSlug(): Promise<string> {
+    const rulesets = await this.json<RulesetSummary[]>(this.http.get('/api/v1/rulesets'))
+    const published = rulesets.find((ruleset) => ruleset.latestVersion !== null)
+    if (!published) {
+      throw new Error(
+        'No ruleset is published. Run `python -m comptool.ingest seed` against this database.',
+      )
+    }
+    return published.slug
+  }
+
+  /** For the spec that has to assert on a refusal rather than throw on one. */
+  async status(path: string): Promise<number> {
+    return (await this.http.get(path)).status()
+  }
+
+  private async json<T>(pending: Promise<APIResponse>, expected = 200): Promise<T> {
+    const response = await pending
+    if (response.status() !== expected) {
+      // The body matters more than the status here: a 422 from this API names the field.
+      throw new Error(
+        `${response.url()} → ${response.status()} (expected ${expected})\n${await response.text()}`,
+      )
+    }
+    return (await response.json()) as T
+  }
+}
+
+function randomUuid(): string {
+  return globalThis.crypto.randomUUID()
+}

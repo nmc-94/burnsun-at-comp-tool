@@ -80,12 +80,15 @@ def _require_sso(settings: Settings) -> None:
         raise HTTPException(status_code=503, detail="EVE SSO is not configured")
 
 
-def _refresh_grant_names(session: Session, character_id: int, character_name: str) -> None:
+def refresh_grant_names(session: Session, character_id: int, character_name: str) -> None:
     """Keep the name shown beside a grant current.
 
     Grants are entered by name and matched by id, so a rename leaves the stored name
     stale. The signed-in character has just proved both, which makes this the cheapest
     possible moment to reconcile them — and it needs no lookup service at all.
+
+    Public because there are now two sign-in paths and both owe this: the callback below,
+    and the development sign-in in ``dev.py``.
     """
     session.execute(
         update(TeamGrant)
@@ -186,7 +189,7 @@ def callback(
                 ),
             )
         )
-    _refresh_grant_names(session, identity.character_id, identity.name)
+    refresh_grant_names(session, identity.character_id, identity.name)
     session.commit()
 
     logger.info(

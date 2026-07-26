@@ -97,3 +97,113 @@ jobs:
         run: |
           python -m comptool.ingest seed
           python -m comptool.ingest seed
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: comptool
+          POSTGRES_PASSWORD: comptool
+          # Its own database, and named so pytest refuses it. tests/conftest.py only runs
+          # against a name containing test/scratch/ci/tmp, and this one deliberately
+          # contains none of them: the e2e suite adds rows and never truncates, so it must
+          # never meet the fixture that drops every table.
+          POSTGRES_DB: comptool_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U comptool -d comptool_e2e"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://comptool:comptool@localhost:5432/comptool_e2e
+      # The seam this whole job exists to use. Off by default everywhere else, and the
+      # settings validator refuses to boot with it on outside a development environment —
+      # hence COMPTOOL_ENVIRONMENT below, which is not decoration.
+      COMPTOOL_DEV_AUTH_ENABLED: "true"
+      # Not a secret: the route does not exist unless the flag above is on, and this whole
+      # stack is thrown away when the job ends. It must clear 32 characters all the same.
+      COMPTOOL_DEV_AUTH_SECRET: an-end-to-end-secret-of-sufficient-length
+      COMPTOOL_ENVIRONMENT: ci
+      # Plain http. A Secure cookie is dropped by the browser without a word, which looks
+      # exactly like a broken login and costs an afternoon.
+      COMPTOOL_SESSION_COOKIE_SECURE: "false"
+      # No EVE application here, and nothing in the suite needs one — which is the point.
+      COMPTOOL_ESI_ENABLED: "false"
+      # Stated rather than left to the default: Settings computes it from the installed
+      # package's location, which is only the repo's web/dist under an editable install.
+      COMPTOOL_SPA_DIR: ${{ github.workspace }}/web/dist
+      # 127.0.0.1, not localhost: uvicorn binds v4 and localhost may resolve to ::1 first.
+      E2E_BASE_URL: http://127.0.0.1:8000
+      E2E_DEV_AUTH_SECRET: an-end-to-end-secret-of-sufficient-length
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            e2e/package-lock.json
+
+      # Editable, and without [dev]: pytest and ruff have no business in this job, and the
+      # editable install is what makes COMPTOOL_SPA_DIR above agree with the package.
+      - run: pip install -e .
+
+      - name: Prepare the database
+        run: |
+          alembic -c alembic.ini upgrade head
+          python -m comptool.ingest seed
+
+      # Before the app starts: main.py decides whether to mount /assets at import time,
+      # from whether web/dist/assets exists.
+      - name: Build the SPA
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install the suite
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Start the app
+        run: |
+          nohup python -m uvicorn comptool.main:app --host 127.0.0.1 --port 8000 \
+            > uvicorn.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/health > /dev/null; then
+              echo "app is healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "the app never became healthy; its log follows:"
+          cat uvicorn.log
+          exit 1
+
+      - name: Run the end-to-end suite
+        working-directory: e2e
+        run: npm test
+
+      # The report is the whole point of a failing browser job: a trace from the retry, a
+      # screenshot per failure, and the server's own log beside them.
+      - name: Keep the evidence when it fails
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            uvicorn.log
+          retention-days: 7

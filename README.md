@@ -101,6 +101,13 @@ login. When developing against the Vite dev server, also set
 `COMPTOOL_ESI_POST_LOGIN_URL=http://localhost:4173/` so the callback lands back on the
 SPA rather than on the API's own origin.
 
+There is a second way in, for browser automation only: `COMPTOOL_DEV_AUTH_ENABLED` opens
+`POST /api/v1/auth/dev-login`, which mints a session for any character a caller names with
+no EVE involved. It is off by default and the app refuses to start with it on outside a
+development environment — that refusal is the feature, so a `.env` carried to a deployment
+fails loudly rather than quietly shipping a back door. See
+[Driving the front end](#driving-the-front-end) and `comptool/auth/dev.py`.
+
 ## Develop
 
 Backend (Python 3.12+):
@@ -132,6 +139,7 @@ serves both from one origin.
 ```bash
 pip install -e ".[dev]" && pytest        # backend
 cd web && npm test                        # frontend (Vitest)
+cd e2e && npm test                        # end to end (Playwright, needs the app running)
 ```
 
 The backend tests need a reachable Postgres and give themselves a clean schema per test,
@@ -164,29 +172,66 @@ ALEMBIC_DATABASE_URL=postgresql://comptool:comptool@localhost:5432/comptool_drif
 
 The SPA is built to be automated: every control carries a role and an accessible name,
 every region a stable `data-testid`, and anything worth waiting for announces itself. See
-`docs/REQUIREMENTS.md` §6.8 for the contract. There is no end-to-end suite yet and no
-Playwright dependency — a script through `npx` is enough to drive a running app.
-
-Signing in needs a session, and there is deliberately no dev backdoor route, so mint one
-against the database and present it as a cookie:
+`docs/REQUIREMENTS.md` §6.8 for the contract. The end-to-end suite lives in [`e2e/`](e2e/) —
+a standalone npm package driving Playwright against a running stack.
 
 ```bash
-docker exec at-comp-tool-app-1 python -c "from comptool.db import init_db,get_session; from comptool.settings import get_settings; from comptool.auth import sessions; init_db(get_settings()); d=next(get_session()); i=sessions.mint(d,character_id=90000001,character_name='Kadir',owner_hash='dev',ttl_seconds=2592000); d.commit(); print(i.token)"
+cd e2e && npm install && npx playwright install chromium && npm test
 ```
 
-Then drive it. Note the shape: scope to a region by test id, find things inside it the way
-a person would, and wait on state rather than sleeping. A board holds many comps, so every
-`comp-*` id inside a tile is scoped by the `board-tile` it belongs to — a tile is named for
-its comp, which is what tells twenty of them apart.
+#### Signing in without EVE
+
+The real sign-in ends at a consent screen on `login.eveonline.com`, which no headless
+browser can complete. So there is a development-only identity source: `POST
+/api/v1/auth/dev-login` mints a session for any character a caller names.
+
+It is not a mock — the row goes in through the same `sessions.mint` and the cookie out
+through the same `set_session_cookie` as the real callback, so nothing downstream can tell
+the two apart. `comptool/auth/dev.py` sets out at length what it bypasses and what it
+deliberately does not. Two variables switch it on:
+
+```bash
+COMPTOOL_DEV_AUTH_ENABLED=true
+COMPTOOL_DEV_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(24))")
+```
+
+The app **refuses to start** with this on unless `COMPTOOL_ENVIRONMENT` is one of `ci`,
+`dev`, `development`, `docker`, `local` or `test`, and unless that secret clears 32
+characters. Every refusal from the route — switched off, wrong environment, wrong secret —
+is the same 404, so no response says whether a build carries it at all; `/api/health`
+reports `dev_auth` for the operator who needs to know. Over plain http also set
+`COMPTOOL_SESSION_COOKIE_SECURE=false`, or the browser drops the cookie without a word.
+
+Then it is one call, and no token passes through the script:
 
 ```javascript
-const ctx = await browser.newContext()
-await ctx.addCookies([{ name: 'comptool_session', value: TOKEN, domain: 'localhost', path: '/' }])
+const ctx = await browser.newContext({ baseURL: 'http://127.0.0.1:8000' })
+// context.request shares the context's cookie jar, so the cookie the server sets here is
+// the one every page opened from this context will send.
+await ctx.request.post('/api/v1/auth/dev-login', {
+  headers: { 'x-comptool-dev-auth': process.env.COMPTOOL_DEV_AUTH_SECRET },
+  data: { characterId: 90000001, characterName: 'Kadir' },
+})
 const page = await ctx.newPage()
-await page.goto('http://localhost:8000/teams/' + TEAM_ID)
+await page.goto('/teams/' + TEAM_ID)
+```
 
+#### Driving it
+
+Note the shape: scope to a region by test id, find things inside it the way a person would,
+and wait on state rather than sleeping. A board holds many comps, so every `comp-*` id
+inside a tile is scoped by the `board-tile` it belongs to.
+
+Reach for `data-comp-id` to tell twenty tiles apart. A tile's *name* is awkward on purpose:
+`aria-label` sits on the `board-tile` element itself, so `filter({ has: … })` — which looks
+at descendants — never matches it, and an editable tile keeps its name in an `<input>`
+value, so `filter({ hasText })` finds nothing either. (That one works on a read-only tile,
+which is the worse failure: green for a viewer, red for an editor.) When only a name is
+available, `and()` the two locators together — `e2e/src/locators.ts` has both forms.
+
+```javascript
 await page.getByTestId('library-rail').getByRole('button', { name: 'Open Angel Shield Kite' }).click()
-const tile = page.getByTestId('board-tile').filter({ has: page.getByLabel('Angel Shield Kite') })
+const tile = page.locator(`[data-testid="board-tile"][data-comp-id="${compId}"]`)
 
 await tile.getByTestId('comp-row-empty').first().getByRole('button').click()
 await page.getByTestId('ship-search-input').fill('Abaddon')
@@ -198,13 +243,15 @@ await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-l
 ```
 
 Moving hulls between comps is scriptable the same way, and without a drag: the drag is a
-shortcut over these controls rather than the only way to reach them. Rows are picked out by
-a checkbox named for the hull *and its slot*, because a comp legitimately holds three of the
-same hull.
+shortcut over these controls rather than the only way to reach them. Clicking a row picks
+it; ctrl- or shift-clicking a second adds to or extends the selection. Each row also keeps
+a checkbox named for the hull *and its slot* — because a comp legitimately holds three of
+the same hull — which is what the keyboard reaches, but it is visually clipped, so a
+pointer-driven script should click the row.
 
 ```javascript
-await tile.getByRole('checkbox', { name: 'Select Abaddon in slot 1' }).check()
-await tile.getByRole('checkbox', { name: 'Select Vindicator in slot 2' }).check()
+await tile.getByTestId('comp-row').nth(0).click()
+await tile.getByTestId('comp-row').nth(1).click({ modifiers: ['ControlOrMeta'] })
 await expect(tile.getByTestId('comp-selection-status')).toHaveText('2 hulls selected')
 
 // Out into a comp of their own. One POST to /fork: the server takes those rows out of its own
@@ -296,7 +343,7 @@ await page.getByRole('button', { name: 'Ban Machariel' }).click()
 await expect(page.getByTestId('pick-ban-turn')).toHaveText(/Blue to ban/)
 
 // A share link. The tile control opens the panel; the link itself is selectable text.
-const tile = page.getByTestId('board-tile').filter({ hasText: 'Angel Shield Kite' })
+const tile = page.getByTestId('board-tile').and(page.getByLabel('Angel Shield Kite', { exact: true }))
 await tile.getByRole('button', { name: 'Share Angel Shield Kite' }).click()
 await tile.getByRole('button', { name: 'Create a share link for Angel Shield Kite' }).click()
 const link = await tile.getByTestId('comp-share-link').textContent()
@@ -319,7 +366,8 @@ without a session. The rail's search box and its two filters are **component sta
 deliberately not in the URL: a history entry per keystroke, or per chip toggled, is not a
 location anybody wants to navigate back out of.
 
-Over plain http the minted cookie must be presented without the `Secure` flag, as above;
-see `COMPTOOL_SESSION_COOKIE_SECURE` under [Sign-in](#sign-in-eve-sso). **A locator that
-has to reach for a CSS class is a missing test id, not a selector to keep** — class names
-are presentation and change without notice.
+Over plain http the server must set the cookie without the `Secure` flag, or the browser
+drops it and every page renders the sign-in card while the sign-in itself reports 200 — set
+`COMPTOOL_SESSION_COOKIE_SECURE=false`, and see [Sign-in](#sign-in-eve-sso). **A locator
+that has to reach for a CSS class is a missing test id, not a selector to keep** — class
+names are presentation and change without notice.

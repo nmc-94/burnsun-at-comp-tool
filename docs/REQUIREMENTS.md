@@ -833,9 +833,37 @@ elements sharing an accessible name, so those stay a review concern.
 > and reaches nothing that control does not. What no linter can check stays a review
 > concern: a testid convention, and two elements sharing an accessible name.
 
-**An automated end-to-end suite is deliberately deferred.** This section exists
-so that adding one later is a matter of writing tests rather than re-plumbing the
-UI. `README.md` documents how to drive the app in the meantime.
+**Signing in is part of this contract too.** The real sign-in ends at a consent
+screen on `login.eveonline.com`, which no headless browser can complete — so for
+as long as that was the only way in, an automated suite could not get past the
+front page. A development-only identity source now exists: `POST
+/api/v1/auth/dev-login`, in `comptool/auth/dev.py`.
+
+It is **not a mock**. It mints a session through the same `sessions.mint` and
+sets it with the same `set_session_cookie` as the real callback, so from the next
+request onward nothing downstream — `optional_session`, `current_viewer`,
+`access.authorize`, the permission resolver — can tell the two apart. What an
+end-to-end run exercises is therefore the real authorization path, not a
+stand-in for it. What it bypasses is the proof of identity, and only that.
+
+Its guardrails, which are the reason it can exist at all: off by default; the app
+**refuses to boot** with it on unless `COMPTOOL_ENVIRONMENT` names a development
+environment; a secret of at least 32 characters is required; every refusal —
+switched off, wrong environment, wrong secret — is an identical 404, so no
+response confirms that a build carries it; and `/api/health` reports `dev_auth`
+so an operator can ask a running instance.
+
+One thing it deliberately does not solve: a grant is entered by name, and turning
+a name into an id still needs the public ESI lookup. A second character can be
+signed in but cannot be granted access to a team, so the permission matrix stays
+covered by `tests/`. What a browser can still prove is the negative — that a
+stranger reaches nothing.
+
+**The end-to-end suite lives in `e2e/`.** A standalone npm package driving
+Playwright against a running stack, deliberately black-box: it imports nothing
+from `web/src`, so the only contract it depends on is the one above plus the REST
+API. `README.md` documents how to run it, and `e2e/README.md` how it stays
+isolated on a shared database.
 
 ## 7. Proposed architecture (starting point, to refine)
 

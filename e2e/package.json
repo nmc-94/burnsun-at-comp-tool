@@ -1,0 +1,20 @@
+{
+  "name": "comptool-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "browsers": "playwright install chromium",
+    "report": "playwright show-report",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.13.2",
+    "typescript": "~6.0.2"
+  }
+}

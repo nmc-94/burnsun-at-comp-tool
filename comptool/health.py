@@ -36,5 +36,15 @@ def health(
     return {
         "status": "ok" if db_ok else "degraded",
         "db": {"ok": db_ok, "latency_ms": latency_ms},
+        # Reported because an operator, a smoke test or a reviewer should be able to ask a
+        # running instance whether it has a back door open without reading environment
+        # variables on a box they may not have. That this route is unauthenticated is not the
+        # leak it looks like: the secret is the secret, not the fact that one exists, and the
+        # only deployments that could disclose anything are the ones the settings validator
+        # will not let boot with it on. Always present rather than present-when-true, so a
+        # probe can assert on a fixed shape and a `false` on every production instance is
+        # itself the reassurance. Top level rather than inside `build`, which is build
+        # metadata while this is runtime configuration.
+        "dev_auth": settings.dev_auth_enabled,
         "build": build_payload(settings.environment),
     }

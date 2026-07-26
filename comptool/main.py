@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from . import __version__
+from .auth.dev import router as dev_auth_router
 from .auth.routes import router as auth_router
 from .comments import router as comments_router
 from .comps import router as comps_router
@@ -54,6 +55,15 @@ def _write_boot_marker() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db(_settings)
+    if _settings.dev_auth_enabled:
+        # Its own record at WARNING rather than a field on the startup line: WARNING goes to
+        # stderr in this app, so this lands beside real problems instead of in the INFO
+        # stream nobody reads. This process will hand a session to anyone who presents one
+        # string, and that is worth one loud line per boot.
+        logger.warning(
+            "dev_auth_enabled",
+            extra={"event": "dev_auth_enabled", "environment": _settings.environment},
+        )
     try:
         _write_boot_marker()
         logger.info("startup", extra={"event": "app_started", "environment": _settings.environment})
@@ -76,6 +86,13 @@ app.include_router(rulesets_router)
 # module that mints and withdraws a link is authenticated and registers below.
 app.include_router(share_router)
 app.include_router(auth_router)
+# The development sign-in, registered unconditionally and guarded inside. Not conditionally:
+# this module reads settings once at import, while the test suite overrides them afterwards
+# through dependency_overrides — a router chosen at import time is a guard no test can reach,
+# and an untested guard on a back door is worse than a tested one. Excluding it from the
+# production image was considered and rejected for the same shape of reason: one artifact,
+# configuration decides, or CI tests a build that is not the one deployed.
+app.include_router(dev_auth_router)
 app.include_router(teams_router)
 # Comps arrive as two routers because they are addressed two ways: nested under a team to
 # list and create, and on their own id thereafter.

@@ -19,6 +19,19 @@ def test_health_ok(client):
     assert body["db"]["ok"] is True
     assert isinstance(body["db"]["latency_ms"], (int, float))
     assert body["build"]["service"] == "api"
+    assert body["dev_auth"] is False
+
+
+def test_health_reports_whether_the_development_sign_in_is_on(client, configure):
+    # An operator should be able to ask a running instance whether it has a back door open
+    # without reading environment variables on a box they may not have.
+    configure(
+        dev_auth_enabled=True,
+        dev_auth_secret="a-development-secret-of-sufficient-length",
+        environment="local",
+    )
+
+    assert client.get("/api/health").json()["dev_auth"] is True
 
 
 def test_unknown_api_path_returns_json_404(client):
