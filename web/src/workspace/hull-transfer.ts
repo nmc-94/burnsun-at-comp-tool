@@ -19,6 +19,11 @@
 //
 // The question can only be answered by the target, because comps on one board can be pinned
 // to different ruleset versions and a hull's price is the receiving ruleset's to say.
+//
+// Those two phases are the *copy*. Rows that land on the new-comp tile instead are a port,
+// which never touches this pair — there is no comp there yet to ask, and nothing to preview
+// against. It reads the rows and forks. See `CarriedRows`, which is how rows leave a tile
+// under a cursor or on the clipboard.
 
 export interface HullOffer {
   readonly fromCompId: string
@@ -32,14 +37,50 @@ export interface Transfer {
   readonly phase: 'proposed' | 'offered'
 }
 
+/**
+ * Rows taken out of a tile and looking for somewhere to land — more than a `HullOffer`,
+ * because there are two landings.
+ *
+ * Put down on another tile it is a **copy**, and only `offer` means anything: the hulls are
+ * appended to a comp that already exists. Put down on the new-comp tile it is a **port**, which
+ * is a fork — the server takes the rows out of its own copy of the source comp so the new one
+ * can be pinned to the parent's version and record its parent — and a fork can only be asked
+ * for by row number. Hence `positions`, which a copy never reads.
+ *
+ * `settle` is the source tile's flush, travelling with the rows because nothing else can reach
+ * it: no comp's editing state rises above the tile that owns it, so the board has no way to
+ * ask a tile to write its outstanding edits. A port taken inside the 600 ms save debounce
+ * would otherwise fork the comp as the server last saw it — and positions that have not landed
+ * yet are *dropped* rather than refused, so the fork would come back quietly short.
+ *
+ * Called "carried" rather than "dragged" because a drag is only one of the two ways rows leave
+ * a tile; the other is Ctrl+C, and it wants exactly this and nothing more.
+ */
+export interface CarriedRows {
+  readonly offer: HullOffer
+  /** Row numbers in the source comp, as `SlotDetail.position` reports them. */
+  readonly positions: readonly number[]
+  /** The source's outstanding edits, written and settled. Never rejects. */
+  readonly settle: () => Promise<void>
+}
+
 const transfers = new Map<string, Transfer>()
 const listeners = new Map<string, Set<() => void>>()
 
-// The hulls under a drag cursor. Deliberately not a subscription and deliberately not in
+// What is under a drag cursor. Deliberately not a subscription and deliberately not in
 // `dataTransfer`: nothing draws this, the drop handler reads it once, and keeping the
 // payload here rather than on the event is what lets a drag be tested at all — jsdom has no
 // `DataTransfer`.
-let dragged: HullOffer | null = null
+let dragged: CarriedRows | null = null
+
+// What Ctrl+C put down. The same payload as a drag, and read the same way — a paste and a
+// drop on the new-comp tile are one operation reached two ways, so they had better be looking
+// at one kind of thing.
+//
+// The difference between the two is *time*. A drag is over in a moment; a copy sits here while
+// the person keeps working, and `positions` are row numbers into a comp that can be edited
+// underneath them. See `forgetCopiedFrom`.
+let copied: CarriedRows | null = null
 
 function announce(compId: string): void {
   for (const listener of listeners.get(compId) ?? []) listener()
@@ -119,12 +160,42 @@ export function subscribeTransfer(compId: string, listener: () => void): () => v
 }
 
 /** What is being dragged, if anything. Set on dragstart, cleared on dragend. */
-export function setDragged(offer: HullOffer | null): void {
-  dragged = offer
+export function setDragged(rows: CarriedRows | null): void {
+  dragged = rows
 }
 
-export function getDragged(): HullOffer | null {
+export function getDragged(): CarriedRows | null {
   return dragged
+}
+
+/** Hold these rows for a later paste, letting go of whatever was held before. */
+export function setCopied(rows: CarriedRows | null): void {
+  copied = rows
+}
+
+/**
+ * What is on the clipboard, if anything.
+ *
+ * Not consumed by reading it: this is a clipboard, and pasting twice makes two comps rather
+ * than one comp and a shrug.
+ */
+export function getCopied(): CarriedRows | null {
+  return copied
+}
+
+/**
+ * Let go of rows copied out of `compId`, because that comp's rows have moved.
+ *
+ * A copy is row *numbers*, and removing a row renumbers every row below it — so a copy held
+ * across an edit would quietly come to mean different hulls than the ones that were picked.
+ * The same reasoning drops the row selection in CompTile when its slots change, and for the
+ * same reason: the alternative is a paste that takes the wrong hulls and says nothing.
+ *
+ * Deliberately blunt. Appending a hull renumbers nothing and would survive a cleverer test,
+ * but "your copy is stale" is only ever safe in one direction.
+ */
+export function forgetCopiedFrom(compId: string): void {
+  if (copied?.offer.fromCompId === compId) copied = null
 }
 
 /** Tests only. Vitest isolates per file, not per test, so module state outlives a test. */
@@ -132,4 +203,5 @@ export function resetHullTransfers(): void {
   transfers.clear()
   listeners.clear()
   dragged = null
+  copied = null
 }

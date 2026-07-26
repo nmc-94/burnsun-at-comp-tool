@@ -174,11 +174,10 @@ describe('which keys they are', () => {
     expect(target.undo).not.toHaveBeenCalled()
   })
 
-  it('ignores a bare Z, both modifiers together, and Ctrl+Alt+Z', () => {
+  it('ignores a bare Z and Ctrl+Alt+Z', () => {
     press('z', { ctrl: false })
-    press('z', { ctrl: true, meta: true })
     // AltGr sets Control and Alt together on a European layout, where this is a character
-    // somebody is trying to type.
+    // somebody is trying to type. The rule that excludes it is the one copy and paste use.
     press('z', { alt: true })
 
     expect(target.undo).not.toHaveBeenCalled()

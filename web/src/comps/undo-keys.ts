@@ -12,9 +12,15 @@
 // marking a tile as most-recently-edited re-renders nothing at all. That is what keeps §6.7
 // true with a global in the middle: an edit in one tile still commits one tile.
 //
-// The document listener is installed lazily and at most once for the whole application — the
-// same discipline as the tile's Escape handler, and stricter, because that one is per tile and
-// this is per document. A board of twenty tiles nobody has edited installs no listener at all.
+// The document listener is installed lazily and at most once for the whole application, and
+// removed again when the tile carrying the history closes — the same discipline the board's
+// paste listener follows, for the same reason: a chord nothing can answer belongs to the
+// browser. A board of twenty tiles nobody has edited installs no listener at all.
+//
+// Which chords those are, and when a keystroke belongs to a field instead, live in lib/keys.ts
+// beside copy and paste, so the three cannot drift apart.
+
+import { hasTypingToUndo, isRedo, isUndo } from '../lib/keys'
 
 /** One comp's two steps, as its tile offers them. */
 export interface UndoTarget {
@@ -29,62 +35,12 @@ const targets = new Map<string, UndoTarget>()
 let mostRecent: string | null = null
 let listening = false
 
-/**
- * Input types carrying text a browser can undo. Everything else an `<input>` can be — a
- * checkbox, a radio, a colour — has no edit history of its own to protect.
- */
-const TEXTUAL = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number'])
-
-/**
- * Whether the key belongs to something that already means undo where it was pressed.
- *
- * The rule is **a field with something in it**, not "a field", and the difference is
- * load-bearing. A tile holds a comp name, a hull search and two tag boxes, and a thread holds
- * two comment boxes; a browser's own undo inside one of them is both older and nearer than
- * this one. But the hull search is *empty by the time a hull lands in the comp* — picking
- * clears the query and deliberately keeps the cursor in the field, so that a pick survives
- * dismiss-on-blur — so bailing on every input would make adding a hull, the most common edit
- * in the tool, the one edit Ctrl+Z could not reach. An empty field has no typing to restore.
- *
- * `<select>` is deliberately absent — a select carries no edit history, so bailing on one would
- * cost the gesture and protect nothing. So is `isContentEditable`: nothing in the tool is
- * contenteditable, and a branch guarding something that does not exist cannot be tested and
- * would be one more thing to keep true.
- */
-function editingText(target: EventTarget | null): boolean {
-  if (target instanceof HTMLTextAreaElement) return target.value !== ''
-  if (target instanceof HTMLInputElement) return TEXTUAL.has(target.type) && target.value !== ''
-  return false
-}
-
-/**
- * Exactly one of Control and Command, and no Alt.
- *
- * Both spellings are honoured on every platform rather than one being chosen from the user
- * agent: neither chord means anything else here, so taking both costs nothing and guessing the
- * platform wrong would cost the gesture — the same argument the row selection makes about its
- * two modifiers. Alt is excluded because AltGr sets Control *and* Alt on a European layout,
- * where Ctrl+Alt+Z is a character somebody is trying to type.
- */
-function chorded(event: KeyboardEvent): boolean {
-  return event.ctrlKey !== event.metaKey && !event.altKey
-}
-
-function isUndo(event: KeyboardEvent): boolean {
-  return chorded(event) && !event.shiftKey && event.key.toLowerCase() === 'z'
-}
-
-/** Ctrl+Shift+Z, Cmd+Shift+Z, and Ctrl+Y — Windows spells redo both ways and means one thing. */
-function isRedo(event: KeyboardEvent): boolean {
-  if (!chorded(event)) return false
-  const key = event.key.toLowerCase()
-  return event.shiftKey ? key === 'z' : key === 'y'
-}
-
 function onKeyDown(event: KeyboardEvent): void {
   const redoing = isRedo(event)
   if (!redoing && !isUndo(event)) return
-  if (editingText(event.target)) return
+  // Not `inTextField`, which is what copy and paste use: see `hasTypingToUndo` for why undo
+  // needs the narrower rule and they do not.
+  if (hasTypingToUndo(event.target)) return
   const target = mostRecent === null ? undefined : targets.get(mostRecent)
   if (!target) return
   // Prevented only when something moved. With nothing left to take back the key is still the

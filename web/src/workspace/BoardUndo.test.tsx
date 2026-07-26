@@ -81,7 +81,7 @@ function stubFetch() {
   return calls
 }
 
-function grid(compIds: string[]) {
+function grid(compIds: string[], onPort?: (compId: string, positions: readonly number[]) => void) {
   return render(
     <BoardGrid
       boardId="b1"
@@ -91,6 +91,7 @@ function grid(compIds: string[]) {
       newCompId={null}
       onClose={vi.fn()}
       onCreate={vi.fn()}
+      onPort={onPort}
     />,
   )
 }
@@ -249,6 +250,56 @@ describe('taking back a removed hull', () => {
     expect(hulls('Rho')).toEqual(['Rifter'])
     expect(writes(calls)).toHaveLength(0)
     expect(within(tile('Rho')).queryByTestId('board-tile-undo')).toBeNull()
+  })
+})
+
+describe('the clipboard', () => {
+  /** Pick rows out of a tile and press Ctrl+C over them, as BoardTransfer does. */
+  function copy(from: string, rows: number[]) {
+    const picked = within(tile(from)).getAllByTestId('comp-row')
+    rows.forEach((at, nth) => fireEvent.click(picked[at]!, { ctrlKey: nth > 0 }))
+    fireEvent.keyDown(document, { key: 'c', ctrlKey: true })
+  }
+
+  const paste = () => fireEvent.keyDown(document, { key: 'v', ctrlKey: true })
+
+  it('lets go of a copy when an undo moves the rows it names', async () => {
+    // The same rule an ordinary edit follows, for the same reason: rows are copied by number
+    // and an undo puts a removed row back, so every number below it means a different hull
+    // afterwards. A copy that survived this would paste hulls nobody picked.
+    stubFetch()
+    const onPort = vi.fn()
+    grid(['b'], onPort)
+    await settled(['Beta'])
+
+    removeRow('Beta')
+    copy('Beta', [0])
+    pressUndo()
+    paste()
+
+    await waitFor(() => expect(hulls('Beta')).toHaveLength(2))
+    expect(onPort).not.toHaveBeenCalled()
+  })
+
+  it('keeps a copy when the key found nothing left to take back', async () => {
+    // Nothing moved, so there is nothing for the copy to be stale against — a clipboard emptied
+    // by a key that did nothing would be its own small bug. Reached by walking the stack dry
+    // first, so the tile is registered and the key genuinely arrives: a comp nobody has edited
+    // has no listener at all, and this would pass without proving anything.
+    stubFetch()
+    const onPort = vi.fn()
+    grid(['b'], onPort)
+    await settled(['Beta'])
+
+    removeRow('Beta')
+    pressUndo()
+    await waitFor(() => expect(hulls('Beta')).toHaveLength(2))
+
+    copy('Beta', [0])
+    pressUndo()
+    paste()
+
+    await waitFor(() => expect(onPort).toHaveBeenCalledWith('b', [0]))
   })
 })
 

@@ -565,62 +565,13 @@
   line-height: 1.35;
 }
 
-/* Said in the tile the hulls came *from*: a copy changes a comp somewhere else on the
-   board, and otherwise nothing moves where the person is looking.
- *
- * The undo line is the same kind of remark for the same reason — a key press that found an
- * empty stack, which is the one outcome that changes nothing on screen — so it takes the same
- * type rather than a second rule that would have to be kept in step with this one. */
-.board-tile-transfer,
+/* A key press that found an empty stack — the one undo outcome that changes nothing on screen,
+   and so the only one with anything to say. Quieter than the preview above it: that one is an
+   answer about hulls under the cursor, this one is a remark about a key. */
 .board-tile-undo {
   margin: 4px 0 0;
   font-size: 11px;
   color: var(--text-3);
-}
-
-.copytargets {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  z-index: 30;
-  max-height: 190px;
-  overflow-y: auto;
-  min-width: 168px;
-  background: var(--bg-panel);
-  border: 1px solid var(--line-1);
-  border-radius: 10px;
-  /* The one place a shadow is allowed: this is an overlay, not app chrome. */
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
-  padding: 4px;
-}
-
-.copytargets-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.copytarget {
-  display: block;
-  width: 100%;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: 11px;
-  text-align: left;
-  padding: 4px 7px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.copytarget:hover,
-.copytarget:focus-visible {
-  background: var(--bg-soft);
-  color: var(--accent);
 }
 
 .ghost-tile {
@@ -632,7 +583,17 @@
   justify-content: center;
   gap: 6px;
   color: var(--text-3);
-  min-height: 130px;
+  /* A comp tile at rest, so the placeholder is the shape of the thing it stands for rather
+     than a strip after the last one — and so the drop it now takes has somewhere generous to
+     land. 350px is a tile with this format's ten 24px rows and its header, tag band and foot,
+     none of them wrapped.
+   *
+   * Deliberately a number and deliberately not the grid row's height. `align-self: stretch`
+   * would match whatever tile shares the row exactly, at any field size — but it would match
+   * the *tallest* one, and a tile is taller than it should be only when something in it has
+   * wrapped. Following that is following a bug. A format with a bigger field is the case this
+   * gets wrong, and it gets it wrong by a knowable amount. */
+  min-height: 350px;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -646,6 +607,17 @@
 .ghost-tile:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Hulls held over it, and the whole of what the tile says about them: the dashes go solid and
+   it fills in. A receiving comp tile gets an outline instead, because the rows underneath are
+   what a person reads while deciding — there is nothing underneath this one, so it can say it
+   plainly. */
+.ghost-tile-receiving {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* Sits in the grid's flow, so an empty board says so where the tiles would have been. */
@@ -697,7 +669,10 @@
     cursor: pointer;
   }
 
+  /* One column down here, so a placeholder the height of a comp is most of a screen of
+     nothing between the last one and the bottom of the board. It stays a comfortable target —
+     and the drop it exists for is a drag, which a phone does not have. */
   .ghost-tile {
-    min-height: 64px;
+    min-height: 96px;
   }
 }

@@ -818,42 +818,6 @@
   white-space: nowrap;
 }
 
-/* What to do with the rows that are ticked. Present only while some are, and below the rows
-   rather than above them, so nothing a person is reading moves when it appears. */
-.rowsel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 5px 4px 0;
-  border-top: 1px solid var(--line-1);
-}
-.rowsel-count {
-  margin: 0;
-  flex: 1 0 100%;
-  font-family: var(--font-brand);
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-4);
-}
-.rowsel-act {
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: 11px;
-  padding: 2px 7px;
-  cursor: pointer;
-}
-.rowsel-act:hover,
-.rowsel-act:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
 /* Flagship: an oval pill after the name and nothing else — no margin bar, no row tint. */
 .flagpill {
   flex: 0 0 auto;

@@ -28,7 +28,7 @@ import type { SaveState } from './CompTile'
 import { trackWrite, whenWritesSettle } from './in-flight'
 import { toEngineComp } from './tile-model'
 import type { CompDetail, CompTagsWrite } from './types'
-import { noteEdited, registerUndoTarget } from './undo-keys'
+import { noteEdited } from './undo-keys'
 
 /** How long to let edits settle before writing them. Long enough to cover a burst of
  *  clicks, short enough that closing the tab straight after an edit is still unusual. */
@@ -276,16 +276,6 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     return true
   }, [apply])
 
-  const editable = comp?.yourLevel === 'editor' || comp?.yourLevel === 'owner'
-
-  useEffect(() => {
-    // Only a comp this person can change, and only while its tile is on screen. A viewer's
-    // tile has nothing to take back, and registering one would put a comp nobody can edit in
-    // the way of the key.
-    if (!editable) return
-    return registerUndoTarget(compId, { undo, redo })
-  }, [compId, editable, undo, redo])
-
   // Held in a ref so a caller's inline arrow does not have to appear in a dependency list and
   // rebuild the callbacks below on every render of the board.
   const changed = useRef(onChanged)
@@ -355,7 +345,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     result,
     saveState,
     error,
-    editable,
+    editable: comp?.yourLevel === 'editor' || comp?.yourLevel === 'owner',
     change,
     undo,
     redo,

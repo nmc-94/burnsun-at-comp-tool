@@ -1,25 +1,29 @@
 // @vitest-environment jsdom
 
-// Hulls crossing from one tile to another.
+// Rows leaving one tile — into another comp, or out into one of their own.
 //
-// Three claims are load-bearing and none of them is visible in a render assertion. **The
-// source is unchanged** — a copy is not a move, and a gesture that quietly emptied the comp
-// it started in would be the worst kind of destructive. **The receiving comp judges the
+// Three claims are load-bearing for a copy and none of them is visible in a render assertion.
+// **The source is unchanged** — a copy is not a move, and a gesture that quietly emptied the
+// comp it started in would be the worst kind of destructive. **The receiving comp judges the
 // arrival**, with its own ruleset, because two tiles on one board can be pinned to different
 // versions and a hull's price is the receiving version's to say. And **only the receiving
 // tile hears about it**, which is the reason the transfer store is subscribed per comp id
 // rather than being a mode on the board.
 //
-// The drag is exercised here as well as the keyboard path, which is possible only because
-// the payload lives in that store rather than in `dataTransfer` — jsdom has no
-// `DataTransfer`, so a design that put it there would ship this untested.
+// The same drag landing on the ghost tile is a port instead, and its load-bearing claim is a
+// fourth: **the source's outstanding edits are on the server first**. A fork asks the server
+// to read rows by number out of its own copy, and it drops numbers it does not recognise, so
+// a port taken inside the 600 ms debounce would come back quietly short.
+//
+// All of it is exercised as a real drag, which is possible only because the payload lives in
+// that store rather than in `dataTransfer` — jsdom has no `DataTransfer`, so a design that
+// put it there would ship this untested.
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Profiler } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import CompTileHost from '../comps/CompTileHost'
-import type { CopyTarget } from '../comps/CompTileHost'
 import { resetInFlightWrites } from '../comps/in-flight'
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 import { resetRulesetCache } from '../rulesets/cache'
@@ -98,7 +102,7 @@ function stubFetch() {
   return calls
 }
 
-function grid(compIds: string[], targets?: readonly CopyTarget[]) {
+function grid(compIds: string[], onPort?: (compId: string, positions: readonly number[]) => void) {
   return render(
     <BoardGrid
       boardId="b1"
@@ -108,7 +112,7 @@ function grid(compIds: string[], targets?: readonly CopyTarget[]) {
       newCompId={null}
       onClose={vi.fn()}
       onCreate={vi.fn()}
-      copyTargets={targets}
+      onPort={onPort}
     />,
   )
 }
@@ -134,6 +138,9 @@ function lift(from: string, row = 0) {
   if (!picked) throw new Error(`${from} has no row ${row}`)
   fireEvent.dragStart(picked)
 }
+
+/** The dashed tile at the end of the board — a button, and the one place a port can land. */
+const ghost = () => screen.getByTestId('board-new-comp')
 
 // Real timers, unlike the hook's own tests: the only clock these want is the 600 ms save
 // debounce, and `waitFor` waits that out without one.
@@ -261,78 +268,214 @@ describe('the preview under the cursor', () => {
   })
 })
 
-describe('copying without a drag', () => {
-  const targets: readonly CopyTarget[] = [
-    { id: 'a', name: 'Alpha' },
-    { id: 'b', name: 'Beta' },
-  ]
-
-  it('reaches the same place the drop does, by role and name alone', async () => {
+describe('dragging hulls onto the new-comp tile', () => {
+  it('ports them: the comp they came from, and the rows by number', async () => {
     stubFetch()
-    grid(['a', 'b'], targets)
-    await settled(['Alpha', 'Beta'])
+    const onPort = vi.fn()
+    grid(['b'], onPort)
+    await settled(['Beta'])
 
-    const alpha = tile('Alpha')
-    fireEvent.click(within(alpha).getByRole('checkbox', { name: 'Select Abaddon in slot 1' }))
-    fireEvent.click(
-      within(alpha).getByRole('button', { name: 'Copy to another comp' }),
-    )
-    fireEvent.click(within(alpha).getByRole('button', { name: 'Copy to Beta' }))
+    // Two rows picked out, then one of them dragged: a drag of a row inside the selection
+    // takes the whole selection with it.
+    const beta = tile('Beta')
+    fireEvent.click(within(beta).getAllByTestId('comp-row')[0]!)
+    fireEvent.click(within(beta).getAllByTestId('comp-row')[1]!, { ctrlKey: true })
+    lift('Beta')
+    fireEvent.drop(ghost())
 
-    await waitFor(() => expect(hulls('Beta')).toHaveLength(3))
+    // Row numbers, not hulls. The server takes those rows out of its own copy of Beta, which
+    // is what lets the new comp be pinned to Beta's version and record Beta as its parent.
+    await waitFor(() => expect(onPort).toHaveBeenCalledWith('b', [0, 1]))
+  })
+
+  it('waits for the source comp to be saved before asking for the fork', async () => {
+    // The race the whole payload exists for. A fork reads rows by number on the *server*, and
+    // the server drops numbers it does not recognise rather than refusing them — so a port
+    // taken inside the 600 ms debounce would come back short, silently.
+    const calls = stubFetch()
+    const writesWhenAsked: number[] = []
+    const onPort = vi.fn(() => writesWhenAsked.push(writes(calls).length))
+    grid(['b'], onPort)
+    await settled(['Beta'])
+
+    // An edit, and no waiting: the debounce has not fired and the server still has two rows.
+    fireEvent.click(within(tile('Beta')).getAllByTestId('comp-row-remove')[1]!)
+    expect(within(tile('Beta')).getByTestId('comp-save-state').dataset.saveState).toBe('pending')
+    expect(writes(calls)).toHaveLength(0)
+
+    lift('Beta')
+    fireEvent.drop(ghost())
+
+    await waitFor(() => expect(onPort).toHaveBeenCalled(), { timeout: 2000 })
+    expect(writesWhenAsked).toEqual([1])
+    expect(writes(calls).map((call) => call.url)).toEqual(['/api/v1/comps/b/slots'])
+  })
+
+  it('leaves the comp the rows came from exactly as it was', async () => {
+    // A port derives rather than moves. "The server takes the rows out of its own copy" means
+    // it reads them from the stored comp, not that the parent loses them.
+    stubFetch()
+    grid(['a'], vi.fn())
+    await settled(['Alpha'])
+
+    lift('Alpha')
+    fireEvent.drop(ghost())
+
     expect(hulls('Alpha')).toEqual(['Abaddon'])
   })
 
-  it('says so where the person is looking, not only where the hulls went', async () => {
+  it('reads as somewhere to let go, without the button changing its name', async () => {
     stubFetch()
-    grid(['a', 'b'], targets)
-    await settled(['Alpha', 'Beta'])
+    grid(['a'], vi.fn())
+    await settled(['Alpha'])
 
-    const alpha = tile('Alpha')
-    fireEvent.click(within(alpha).getByRole('checkbox', { name: 'Select Abaddon in slot 1' }))
-    fireEvent.click(
-      within(alpha).getByRole('button', { name: 'Copy to another comp' }),
-    )
-    fireEvent.click(within(alpha).getByRole('button', { name: 'Copy to Beta' }))
+    lift('Alpha')
+    fireEvent.dragEnter(ghost())
 
-    const said = within(alpha).getByTestId('board-tile-transfer')
-    expect(said.textContent).toBe('Copied 1 hull to Beta')
-    expect(said.getAttribute('role')).toBe('status')
+    // In an attribute, never in the name. A name that moved with the cursor could not be
+    // matched by anything looking for the control that makes a comp — and there is still
+    // exactly one of those.
+    expect(ghost().dataset.receiving).toBe('true')
+    expect(screen.getByRole('button', { name: 'New comp' })).toBe(ghost())
   })
 
-  it('previews in the destination when the destination is merely focused', async () => {
+  it('stops when the cursor leaves', async () => {
     stubFetch()
-    grid(['a', 'b'], targets)
-    await settled(['Alpha', 'Beta'])
+    grid(['a'], vi.fn())
+    await settled(['Alpha'])
 
-    const alpha = tile('Alpha')
-    fireEvent.click(within(alpha).getByRole('checkbox', { name: 'Select Abaddon in slot 1' }))
-    fireEvent.click(
-      within(alpha).getByRole('button', { name: 'Copy to another comp' }),
-    )
-    fireEvent.focus(within(alpha).getByRole('button', { name: 'Copy to Beta' }))
+    lift('Alpha')
+    fireEvent.dragEnter(ghost())
+    fireEvent.dragLeave(ghost())
 
-    // The same number the drag shows, from the same code, computed in the same tile.
-    expect(within(tile('Beta')).getByTestId('board-tile-preview').textContent).toContain(
-      'costs 56 points',
-    )
+    expect(ghost().dataset.receiving).toBe('false')
   })
 
-  it('never offers a comp its own hulls', async () => {
+  it('stops on the drop, so a tile is never left offering to take what has gone', async () => {
     stubFetch()
-    grid(['a', 'b'], targets)
-    await settled(['Alpha', 'Beta'])
+    grid(['a'], vi.fn())
+    await settled(['Alpha'])
 
-    const alpha = tile('Alpha')
-    fireEvent.click(within(alpha).getByRole('checkbox', { name: 'Select Abaddon in slot 1' }))
-    fireEvent.click(
-      within(alpha).getByRole('button', { name: 'Copy to another comp' }),
-    )
+    lift('Alpha')
+    fireEvent.dragEnter(ghost())
+    fireEvent.drop(ghost())
 
-    const list = within(alpha).getByTestId('board-tile-copy-targets')
-    expect(within(list).getAllByRole('button').map((item) => item.textContent)).toEqual([
-      'Copy to Beta',
-    ])
+    expect(ghost().dataset.receiving).toBe('false')
+  })
+
+  it('takes nothing on a board that cannot fork', async () => {
+    // No `onPort`, so the tile is a button and nothing else — and it does not offer to do
+    // something it has no way of doing.
+    stubFetch()
+    grid(['a'])
+    await settled(['Alpha'])
+
+    lift('Alpha')
+    fireEvent.dragEnter(ghost())
+    fireEvent.drop(ghost())
+
+    expect(ghost().dataset.receiving).toBe('false')
+  })
+})
+
+describe('copying rows out with the keyboard', () => {
+  /** Pick rows out of a tile and press Ctrl+C over them. */
+  function copy(from: string, rows: number[]) {
+    const tiles = within(tile(from)).getAllByTestId('comp-row')
+    rows.forEach((at, nth) => fireEvent.click(tiles[at]!, { ctrlKey: nth > 0 }))
+    fireEvent.keyDown(document, { key: 'c', ctrlKey: true })
+  }
+
+  const paste = () => fireEvent.keyDown(document, { key: 'v', ctrlKey: true })
+
+  it('ports what was copied, exactly as dropping it on the ghost tile does', async () => {
+    stubFetch()
+    const onPort = vi.fn()
+    grid(['b'], onPort)
+    await settled(['Beta'])
+
+    copy('Beta', [0, 1])
+    paste()
+
+    await waitFor(() => expect(onPort).toHaveBeenCalledWith('b', [0, 1]))
+  })
+
+  it('waits for the source comp to be saved, the way the drop does', async () => {
+    const calls = stubFetch()
+    const writesWhenAsked: number[] = []
+    const onPort = vi.fn(() => writesWhenAsked.push(writes(calls).length))
+    grid(['b'], onPort)
+    await settled(['Beta'])
+
+    // Edited first and copied afterwards, which is the only order that reaches the race: the
+    // clipboard is let go of when the rows it names move, so a copy taken *before* the edit
+    // would rightly not be there to paste.
+    fireEvent.click(within(tile('Beta')).getAllByTestId('comp-row-remove')[1]!)
+    expect(within(tile('Beta')).getByTestId('comp-save-state').dataset.saveState).toBe('pending')
+    expect(writes(calls)).toHaveLength(0)
+
+    copy('Beta', [0])
+    paste()
+
+    await waitFor(() => expect(onPort).toHaveBeenCalled(), { timeout: 2000 })
+    expect(writesWhenAsked).toEqual([1])
+    expect(writes(calls).map((call) => call.url)).toEqual(['/api/v1/comps/b/slots'])
+  })
+
+  it('lets go of the copy when the rows it names move underneath it', async () => {
+    // Row numbers renumber when a row is removed, so a copy held across an edit would paste
+    // hulls nobody picked. The tile drops its own selection on the same event; this is that
+    // rule following the rows out of the tile.
+    stubFetch()
+    const onPort = vi.fn()
+    grid(['b'], onPort)
+    await settled(['Beta'])
+
+    copy('Beta', [1])
+    fireEvent.click(within(tile('Beta')).getAllByTestId('comp-row-remove')[0]!)
+    paste()
+
+    await waitFor(() => expect(hulls('Beta')).toHaveLength(1))
+    expect(onPort).not.toHaveBeenCalled()
+  })
+
+  it('pastes twice into two comps, because that is what a clipboard does', async () => {
+    stubFetch()
+    const onPort = vi.fn()
+    grid(['b'], onPort)
+    await settled(['Beta'])
+
+    copy('Beta', [0])
+    paste()
+    paste()
+
+    await waitFor(() => expect(onPort).toHaveBeenCalledTimes(2))
+  })
+
+  it('leaves Ctrl+V alone when the caret is in a field', async () => {
+    // Pasting text into a comp's name is what it looks like, and it is not this.
+    stubFetch()
+    const onPort = vi.fn()
+    grid(['b'], onPort)
+    await settled(['Beta'])
+
+    copy('Beta', [0])
+    fireEvent.keyDown(within(tile('Beta')).getByTestId('comp-name'), { key: 'v', ctrlKey: true })
+
+    expect(onPort).not.toHaveBeenCalled()
+  })
+
+  it('does nothing on a board that cannot fork', async () => {
+    stubFetch()
+    grid(['b'])
+    await settled(['Beta'])
+
+    copy('Beta', [0])
+    paste()
+
+    // Nothing to assert but the absence of a crash and of a change: the copy is still held,
+    // and a board with somewhere to put it would take it.
+    expect(hulls('Beta')).toEqual(['Abaddon', 'Abaddon'])
   })
 })
 
