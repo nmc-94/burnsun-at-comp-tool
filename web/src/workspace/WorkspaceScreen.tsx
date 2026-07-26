@@ -22,6 +22,8 @@ import type { RulesetVersionDetail } from '../rulesets/types'
 import { workspaceRoute } from '../router/route'
 import { navigate } from '../router/useRoute'
 import TeamSettingsDialog from '../teams/TeamSettingsDialog'
+import { boardSize, tileHeights } from './board-metrics'
+import BoardControls from './BoardControls'
 import BoardGrid from './BoardGrid'
 import BoardTabs from './BoardTabs'
 import { seedCards } from './comp-cards'
@@ -29,18 +31,25 @@ import LibraryRail from './LibraryRail'
 import { getWorkspace, putWorkspace } from './layout-api'
 import {
   activeBoard,
+  boardMode,
+  boardSnap,
   emptyLayout,
   MAX_BOARDS,
   normalizeLayout,
   withActiveBoard,
   withBoardAdded,
   withBoardClosed,
+  withBoardMode,
   withBoardRenamed,
+  withBoardSnap,
   withCompClosed,
   withCompOpened,
   withTileMoved,
+  withTilesPlaced,
 } from './layout'
-import type { WorkspaceLayout } from './types'
+import { packed, readingOrder, trackCount, trackWidth } from './place'
+import type { BoardMode, Place, WorkspaceLayout } from './types'
+import { useWide } from './useWide'
 
 /** Longer than the tile's 600 ms, and deliberately not the same number: these are two
  *  debounces with two jobs, and one shared constant would invite treating them as one. */
@@ -257,6 +266,80 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
     [board],
   )
 
+  const wide = useWide()
+  /**
+   * How the board on screen is drawn, which is not always how it is *saved*.
+   *
+   * A narrow viewport draws every board as the grid. The saved mode is never rewritten for it
+   * — hand-placed tiles on a phone would be unusable, but the arrangement somebody made on a
+   * desktop is theirs and comes back when they are back on one.
+   */
+  const mode: BoardMode = board && wide ? boardMode(board) : 'grid'
+
+  const places = useMemo(() => {
+    const known = new Map<string, Place>()
+    for (const tile of board?.tiles ?? []) if (tile.place) known.set(tile.compId, tile.place)
+    return known
+  }, [board])
+
+  /** The board element, so "tidy up" measures exactly what is drawn. */
+  const boardRef = useRef<HTMLElement>(null)
+
+  const placeTiles = useCallback(
+    (next: ReadonlyMap<string, Place>) => {
+      if (!layout || !board) return
+      arrange(withTilesPlaced(layout, board.id, next))
+    },
+    [layout, board, arrange],
+  )
+
+  /**
+   * Pack the tiles as the grid would, once.
+   *
+   * Reads the DOM, because the heights it packs by are only knowable there — which also means
+   * it can only be run while looking at the board. That is true of nothing else in this file,
+   * and is the reason it lives beside the control rather than in `layout.ts`.
+   */
+  const tidy = useCallback(() => {
+    if (!layout || !board) return
+    const size = boardSize(boardRef.current)
+    const width = trackWidth(size.width)
+    placeTiles(
+      packed(
+        board.tiles.map((tile) => tile.compId),
+        tileHeights(boardRef.current),
+        width,
+        trackCount(size.width, width),
+      ),
+    )
+  }, [layout, board, placeTiles])
+
+  const setMode = useCallback(
+    (next: BoardMode) => {
+      if (!layout || !board) return
+      // Going back to the grid takes the arrangement somebody actually made rather than the
+      // order the tiles happen to sit in the list — which is the order they were opened and
+      // raised in, and after an afternoon of arranging says nothing about what is on screen.
+      const order =
+        next === 'grid'
+          ? readingOrder(
+              board.tiles.map((tile) => tile.compId),
+              places,
+            )
+          : undefined
+      arrange(withBoardMode(layout, board.id, next, order))
+    },
+    [layout, board, places, arrange],
+  )
+
+  const setSnap = useCallback(
+    (snap: boolean) => {
+      if (!layout || !board) return
+      arrange(withBoardSnap(layout, board.id, snap))
+    },
+    [layout, board, arrange],
+  )
+
   useEffect(() => {
     // The URL is authoritative for which board is on screen; the layout records it so a
     // later bare team URL lands where the person left off rather than on the first board.
@@ -436,18 +519,39 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
           onReorder={moveTile}
           vocabulary={vocabulary}
           onCompChanged={recordChange}
+          mode={mode}
+          places={places}
+          boardRef={boardRef}
+          onPlaceMany={mode === 'floating' ? placeTiles : undefined}
         />
 
-        {/* What a driver waits on instead of sleeping through the layout debounce, and the
-            one live region on a board of twenty tiles whose own save states are silent. */}
-        <p
-          className="ws-status"
-          data-testid="workspace-layout-state"
-          data-layout-state={layoutState}
-          role="status"
-        >
-          {layoutLabel(layoutState)}
-        </p>
+        {/* The strip under the board: how it draws itself on the left, whether that has been
+            saved on the right. No vertical room of its own — the status line was already here
+            — and the two belong together, since one reports on the other. */}
+        <div className="ws-footer">
+          {/* Below the breakpoint there is nothing here to offer: every board draws as the
+              grid, and a toggle that could not change that would be a control that lies. */}
+          {wide && (
+            <BoardControls
+              mode={mode}
+              snap={board ? boardSnap(board) : true}
+              onMode={setMode}
+              onSnap={setSnap}
+              onTidy={mode === 'floating' && board.tiles.length > 0 ? tidy : undefined}
+            />
+          )}
+
+          {/* What a driver waits on instead of sleeping through the layout debounce, and the
+              one live region on a board of twenty tiles whose own save states are silent. */}
+          <p
+            className="ws-status"
+            data-testid="workspace-layout-state"
+            data-layout-state={layoutState}
+            role="status"
+          >
+            {layoutLabel(layoutState)}
+          </p>
+        </div>
 
         {error && (
           <p className="err" data-testid="workspace-error" role="alert">

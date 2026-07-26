@@ -744,3 +744,151 @@ describe('team settings', () => {
     expect(screen.getByTestId('board-tabs')).toBeTruthy()
   })
 })
+
+describe('choosing how a board is drawn', () => {
+  /** A board holding two comps, already open. */
+  const twoTiles = () =>
+    stubServer({
+      boards: [{ id: 'b1', name: 'Angel', tiles: [{ compId: 'a' }, { compId: 'b' }] }],
+      activeBoardId: 'b1',
+      updatedAt: null,
+    })
+
+  /** What `useWide` reads. Absent under jsdom, which is why it answers "wide" by default —
+   *  so the stub is only ever needed by a test about the narrow path. */
+  function stubWidth(wide: boolean) {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({
+        matches: wide,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+  }
+
+  const lastSave = (server: ReturnType<typeof stubServer>) =>
+    JSON.parse(String(savesOf(server.calls).at(-1)!.init.body))
+
+  it('draws the board as a canvas and saves that it is one', async () => {
+    const server = twoTiles()
+    await open()
+
+    fireEvent.click(screen.getByTestId('board-mode'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('board-grid').dataset.boardMode).toBe('floating'),
+    )
+    await vi.advanceTimersByTimeAsync(900)
+    expect(lastSave(server).boards[0].mode).toBe('floating')
+  })
+
+  it('places the tiles it is now responsible for, in one save', async () => {
+    // Going floating gives the tiles nowhere to be; the board works out where and commits it
+    // in a single call, rather than one write per tile behind the same debounce.
+    const server = twoTiles()
+    await open()
+
+    fireEvent.click(screen.getByTestId('board-mode'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    const tiles = lastSave(server).boards[0].tiles
+    expect(tiles.every((tile: { place?: unknown }) => tile.place)).toBe(true)
+    expect(savesOf(server.calls).length).toBe(1)
+  })
+
+  it('orders the tiles by where they sit when it goes back to a grid', async () => {
+    // Not by the stored array, which is the order they were opened and raised in.
+    const server = stubServer({
+      boards: [
+        {
+          id: 'b1',
+          name: 'Angel',
+          mode: 'floating',
+          tiles: [
+            { compId: 'a', place: { x: 400, y: 0 } },
+            { compId: 'b', place: { x: 0, y: 0 } },
+          ],
+        },
+      ],
+      activeBoardId: 'b1',
+      updatedAt: null,
+    })
+    await open()
+
+    fireEvent.click(screen.getByTestId('board-mode'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    expect(lastSave(server).boards[0].tiles.map((tile: { compId: string }) => tile.compId)).toEqual(
+      ['b', 'a'],
+    )
+    // And the places come with them: a mode is a way of drawing a board, not a decision to
+    // throw away where things were.
+    expect(lastSave(server).boards[0].tiles[0].place).toEqual({ x: 0, y: 0 })
+  })
+
+  it('tidies the whole board in one save', async () => {
+    const server = stubServer({
+      boards: [
+        {
+          id: 'b1',
+          name: 'Angel',
+          mode: 'floating',
+          tiles: [
+            { compId: 'a', place: { x: 900, y: 700 } },
+            { compId: 'b', place: { x: 40, y: 500 } },
+          ],
+        },
+      ],
+      activeBoardId: 'b1',
+      updatedAt: null,
+    })
+    await open()
+
+    fireEvent.click(screen.getByTestId('board-tidy'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    const tiles = lastSave(server).boards[0].tiles
+    expect(tiles[0].place).toEqual({ x: 16, y: 16 })
+    expect(savesOf(server.calls).length).toBe(1)
+  })
+
+  it('remembers snap being turned off', async () => {
+    const server = twoTiles()
+    await open()
+    fireEvent.click(screen.getByTestId('board-mode'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    fireEvent.click(screen.getByTestId('board-snap'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    expect(lastSave(server).boards[0].snap).toBe(false)
+  })
+
+  it('draws a saved canvas as a grid on a narrow screen, and keeps the places', async () => {
+    // The whole of the narrow-viewport promise. The saved mode is never rewritten — hand-placed
+    // tiles on a phone are unusable, but the arrangement somebody made on a desktop is theirs.
+    stubWidth(false)
+    const server = stubServer({
+      boards: [
+        {
+          id: 'b1',
+          name: 'Angel',
+          mode: 'floating',
+          tiles: [{ compId: 'a', place: { x: 400, y: 60 } }],
+        },
+      ],
+      activeBoardId: 'b1',
+      updatedAt: null,
+    })
+    await open()
+
+    expect(screen.getByTestId('board-grid').dataset.boardMode).toBe('grid')
+    // No controls at all: a toggle that could not change how the board draws would be a
+    // control that lies.
+    expect(screen.queryByTestId('board-controls')).toBeNull()
+    // And nothing is written, because nothing changed.
+    await vi.advanceTimersByTimeAsync(900)
+    expect(savesOf(server.calls).length).toBe(0)
+  })
+})

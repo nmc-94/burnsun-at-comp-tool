@@ -6,19 +6,28 @@
 // nineteen tiles are not re-rendered, which means they are also not re-judged, and §6.7 is
 // satisfied by the shape rather than by a discipline about `React.memo` that nothing checks.
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 
 import CompTileHost from '../comps/CompTileHost'
 import type { TileDrag } from '../comps/CompTileHost'
 import type { TagVocabulary } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import { inTextField, isPaste } from '../lib/keys'
+import { canvasFor, tileHeights, useBoardSize } from './board-metrics'
+import { measure, play } from './flip'
+import type { Box } from './flip'
 import GhostTile from './GhostTile'
 import type { TileFork } from './GhostTile'
 import { getCopied } from './hull-transfer'
 import type { CarriedRows } from './hull-transfer'
+import { FALLBACK_H, nextFreePlace } from './place'
 import { beginReorder } from './reorder'
 import type { Reorder } from './reorder'
+import type { BoardMode, Place } from './types'
+
+/** Shared so an empty board does not build a new map on every render and re-run the memo. */
+const EMPTY_PLACES: ReadonlyMap<string, Place> = new Map()
 
 interface Props {
   readonly boardId: string
@@ -57,6 +66,33 @@ interface Props {
   readonly onReorder?: (compId: string, toIndex: number) => void
   readonly vocabulary?: TagVocabulary
   readonly onCompChanged?: (comp: CompDetail) => void
+  /**
+   * How this board draws its tiles.
+   *
+   * The two modes share everything except where a tile ends up, which is why this is a branch
+   * here rather than a second component. What a floating board would have had to copy is the
+   * expensive half of this file — the Ctrl+V listener and `port()`, which the note above says
+   * are deliberately one operation rather than "two that agree by accident"; the whole
+   * fork-onto-ghost wiring with its settle-before-fork race; and the id-taking `CompTileHost`
+   * call that *is* §6.7 expressed as a shape.
+   *
+   * Defaulted, like the callbacks around it: a board rendered with an id, a name and a list of
+   * comps is a grid, which is what a board was before it could be anything else.
+   */
+  readonly mode?: BoardMode
+  /** Where each tile sits, while floating. Ignored by a grid. */
+  readonly places?: ReadonlyMap<string, Place>
+  /** The board element, for the one control that acts on it from outside — "tidy up", which
+   *  needs the same measured heights this board draws itself from. */
+  readonly boardRef?: RefObject<HTMLElement | null>
+  /**
+   * Tiles that arrived without a position, placed.
+   *
+   * Rendered first and committed after, in one call: the board is the only thing that knows
+   * how tall its tiles are, and a comp opened onto a canvas has to land *somewhere* before
+   * anyone can be asked to save where.
+   */
+  readonly onPlaceMany?: (places: ReadonlyMap<string, Place>) => void
 }
 
 export default function BoardGrid({
@@ -72,8 +108,33 @@ export default function BoardGrid({
   onReorder,
   vocabulary,
   onCompChanged,
+  mode = 'grid',
+  places,
+  boardRef,
+  onPlaceMany,
 }: Props) {
   const grid = useRef<HTMLElement>(null)
+  /**
+   * One element, two holders.
+   *
+   * The board keeps its own reference and hands the same one up, so "tidy up" — which runs from
+   * a control outside the board — measures exactly what is drawn rather than forming a second
+   * opinion about it. Written through a callback rather than by picking whichever ref was
+   * passed, so `grid` stays one stable object: every memo and effect below depends on it, and a
+   * ref that changed identity with a prop would re-run all of them.
+   */
+  const attach = useCallback(
+    (element: HTMLElement | null) => {
+      grid.current = element
+      if (boardRef) boardRef.current = element
+    },
+    [boardRef],
+  )
+  const floating = mode === 'floating'
+  /** Where the tiles were at the last commit, and which way they were being drawn — the two
+   *  halves of a FLIP that spans a mode change. */
+  const boxes = useRef<Map<string, Box> | null>(null)
+  const drawnMode = useRef<BoardMode>(mode)
   /** The tile being carried, if one is. A ref and not state: the whole point of `reorder.ts`
    *  is that dragging one tile over twenty others re-renders none of them. */
   const carrying = useRef<Reorder | null>(null)
@@ -84,9 +145,81 @@ export default function BoardGrid({
 
   useEffect(() => {
     // Switching boards keeps the scroll offset otherwise, so the second board opens
-    // half-way down at whatever depth the first one was left at.
-    if (grid.current) grid.current.scrollTop = 0
+    // half-way down at whatever depth the first one was left at — or, on a canvas, at
+    // whatever corner of it the first board was last panned to.
+    if (!grid.current) return
+    grid.current.scrollTop = 0
+    grid.current.scrollLeft = 0
   }, [boardId])
+
+  const size = useBoardSize(grid, floating)
+  const canvas = useMemo(
+    () => (floating ? canvasFor(size, places ?? EMPTY_PLACES, tileHeights(grid.current)) : null),
+    [floating, size, places, grid],
+  )
+
+  /**
+   * Where each tile is *drawn*: where it was last put down, and for one that has only just
+   * arrived, somewhere nothing else is.
+   *
+   * The gap-fill is here rather than in the toggle because the boxes are here — only the board
+   * knows how tall its tiles came out. It is committed rather than left as a render-time
+   * answer, because a board that drew one arrangement and saved another would lose the
+   * difference on the next reload.
+   */
+  const drawn = useMemo(() => {
+    if (!canvas) return null
+    const filled = new Map(places ?? EMPTY_PLACES)
+    const missing: string[] = []
+    const heights = tileHeights(grid.current)
+    for (const compId of compIds) {
+      if (filled.has(compId)) continue
+      const placed = [...filled].map(([id, place]) => ({
+        place,
+        height: heights.get(id) ?? FALLBACK_H,
+      }))
+      filled.set(compId, nextFreePlace(placed, canvas.tileWidth, canvas.columns))
+      missing.push(compId)
+    }
+    return { filled, missing }
+  }, [canvas, places, compIds, grid])
+
+  useEffect(() => {
+    // Cannot loop: every commit gives a tile a place, so the set of placeless tiles only
+    // ever shrinks.
+    if (!drawn || drawn.missing.length === 0 || !onPlaceMany) return
+    onPlaceMany(new Map(drawn.missing.map((compId) => [compId, drawn.filled.get(compId)!])))
+  }, [drawn, onPlaceMany])
+
+  /**
+   * The board changing shape, animated with the drag's own motion.
+   *
+   * A FLIP across a mode change: the tiles are already in their new places by the time this
+   * runs, so `from` has to be the measurement taken at the previous commit — which is what the
+   * bookkeeping pass at the bottom keeps. `flip.ts` is shared with `reorder.ts` so a board
+   * rearranging itself and a board rearranged by hand are the same motion rather than two that
+   * look alike.
+   *
+   * Measured on every commit rather than on a dependency list. It is one forced layout over a
+   * handful of elements, at a point in the frame where layout is computed anyway, and the
+   * alternative is a list that has to name every prop that can move a tile — including the
+   * board's own width, which is not a prop at all.
+   */
+  useLayoutEffect(() => {
+    const container = grid.current
+    if (!container) return
+    const tiles = new Map<string, HTMLElement>()
+    for (const tile of container.querySelectorAll<HTMLElement>('[data-comp-id]')) {
+      if (tile.dataset.compId) tiles.set(tile.dataset.compId, tile)
+    }
+    const scroll = { left: container.scrollLeft, top: container.scrollTop }
+    const changed = drawnMode.current !== mode
+    const was = changed ? boxes.current : null
+    const now = measure(tiles, scroll, changed)
+    if (was) play(tiles, was, now)
+    drawnMode.current = mode
+    boxes.current = now
+  })
 
   /**
    * Rows out into a comp of their own — the whole of what a drop on the ghost tile and a
@@ -119,7 +252,10 @@ export default function BoardGrid({
    * gesture is the drop.
    */
   const tileDrag = useMemo<TileDrag | undefined>(() => {
-    if (!onReorder) return undefined
+    // Grid only for now. A canvas has its own engine, and until it has one a tile there is
+    // drawn where it was put down and moved by tidying up — which is a whole board rather
+    // than an unfinished one.
+    if (!onReorder || floating) return undefined
     return {
       lift(compId, settle) {
         if (!grid.current) return false
@@ -135,7 +271,7 @@ export default function BoardGrid({
         settling.current = null
       },
     }
-  }, [onReorder])
+  }, [onReorder, floating])
 
   /**
    * The other place a carried tile can be let go of: the new-comp tile, where it forks.
@@ -208,7 +344,36 @@ export default function BoardGrid({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onPort, port])
 
-  return (
+  const tiles = compIds.map((compId) => (
+    <CompTileHost
+      key={compId}
+      compId={compId}
+      onClose={onClose}
+      autoFocusName={compId === newCompId}
+      onFork={onFork}
+      vocabulary={vocabulary}
+      onCompChanged={onCompChanged}
+      tileDrag={tileDrag}
+      place={drawn?.filled.get(compId)}
+    />
+  ))
+
+  const ghost = (
+    <GhostTile
+      onCreate={onCreate}
+      busy={creating}
+      onPortDropped={onPort ? port : undefined}
+      tileFork={tileFork}
+    />
+  )
+
+  const nothingOpen = compIds.length === 0 && (
+    <p className="board-empty" data-testid="board-empty">
+      Nothing open on this board yet — open a comp from the library, or start a new one.
+    </p>
+  )
+
+  const board = (
     // The board is somewhere a carried tile may be let go of, which is what the two handlers
     // below are for and what the rule objects to. It is the gaps between the tiles rather than
     // a control of its own — a region of the page, not a widget — and there is nothing to give
@@ -217,9 +382,10 @@ export default function BoardGrid({
     // and `data-tile-order` on this element. The cell carries the same note at more length.
     // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <section
-      className="wsgrid"
+      className={floating ? 'wsfloat' : 'wsgrid'}
       data-testid="board-grid"
       data-board-id={boardId}
+      data-board-mode={mode}
       data-comp-count={compIds.length}
       // The order the tiles are *drawn* in, which while one is being carried is not the order
       // they sit in the DOM — `reorder.ts` re-sequences them with `order` and rewrites this to
@@ -228,7 +394,7 @@ export default function BoardGrid({
       data-tile-order={compIds.join(',')}
       data-reordering="false"
       aria-label={boardName}
-      ref={grid}
+      ref={attach}
       onDragOver={(event) => {
         // Every `dragover` in the whole gesture arrives here, whether it started on a tile or
         // in one of the gaps between them — a board of unequal tiles has a lot of grid that is
@@ -251,31 +417,40 @@ export default function BoardGrid({
         if (drop()) event.preventDefault()
       }}
     >
-      {compIds.map((compId) => (
-        <CompTileHost
-          key={compId}
-          compId={compId}
-          onClose={onClose}
-          autoFocusName={compId === newCompId}
-          onFork={onFork}
-          vocabulary={vocabulary}
-          onCompChanged={onCompChanged}
-          tileDrag={tileDrag}
-        />
-      ))}
-
-      <GhostTile
-        onCreate={onCreate}
-        busy={creating}
-        onPortDropped={onPort ? port : undefined}
-        tileFork={tileFork}
-      />
-
-      {compIds.length === 0 && (
-        <p className="board-empty" data-testid="board-empty">
-          Nothing open on this board yet — open a comp from the library, or start a new one.
-        </p>
+      {floating ? (
+        // A surface the size of the canvas, so the scroller above has something to scroll and
+        // the tiles have something to be positioned against. Its width and height are the only
+        // two numbers on a floating board that come from `canvas-extent.ts` — which is what
+        // makes that module the one place the canvas's size is decided.
+        <div
+          className="wsfloat-surface"
+          data-testid="board-surface"
+          style={{ width: canvas?.extent.width, height: canvas?.extent.height }}
+        >
+          {tiles}
+        </div>
+      ) : (
+        tiles
       )}
+
+      {/* Inside the grid, where it is the last cell and a drop on it forks. A canvas keeps it
+          outside the scroller instead — see below — because a new-comp tile that scrolls away
+          with the canvas is one that has to be found before it can be used. */}
+      {!floating && ghost}
+      {!floating && nothingOpen}
     </section>
   )
+
+  if (!floating) return board
+
+  return (
+    <div className="wsboard" style={{ '--tile-w': `${canvas?.tileWidth ?? 0}px` } as CSSVars}>
+      {board}
+      {ghost}
+      {nothingOpen}
+    </div>
+  )
 }
+
+/** One custom property, which `style` has no type for. */
+type CSSVars = CSSProperties & Record<'--tile-w', string>

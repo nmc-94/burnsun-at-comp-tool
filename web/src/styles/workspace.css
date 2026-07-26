@@ -663,16 +663,93 @@
   font-size: 11.5px;
 }
 
+/* The strip under the board. Costs no vertical room the status line did not already cost —
+ * which is the whole reason the layout controls are down here rather than in a toolbar of
+ * their own above the board. */
+.ws-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 16px 8px;
+}
+
 .ws-status {
   flex: 0 0 auto;
   margin: 0;
-  padding: 4px 16px 8px;
   font-size: 10.5px;
   color: var(--text-4);
 }
 
+.ws-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* --------------------------------------------------------------------------------------
+ * A board drawn as a canvas.
+ *
+ * Two boxes, not one. `.wsfloat` is the scroller and stays the size of the board; the surface
+ * inside it is the size of the *canvas*, which is what gives the scroller something to scroll.
+ * Panning is therefore ordinary scrolling — which is where the keyboard paging, the two-finger
+ * pan and shift-wheel all come from without being written.
+ * -------------------------------------------------------------------------------------- */
+.wsboard {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+}
+
+.wsfloat {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+.wsfloat-surface {
+  position: relative;
+}
+
+/* Positioned by the board rather than flowed. `left`/`top` are React's and come from the
+ * saved place; `transform` is the drag's. Different properties on purpose, so neither can
+ * undo the other — the same bargain the grid makes with `order`. */
+.board-tile-placed {
+  position: absolute;
+  width: var(--tile-w);
+}
+
+/* Outside the scroller, so it stays where it was put however far the canvas has been panned.
+ * A new-comp tile that scrolls away with the canvas is one that has to be found before it can
+ * be used, and it is also the only place on the board a whole tile can be dropped to fork it. */
+.wsboard > .ghost-tile {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  width: 150px;
+  min-height: 64px;
+}
+
+/* Centred in what is visible rather than sitting at the top-left of a canvas that is mostly
+ * off screen. */
+.wsboard > .board-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
 /* Below this the rail costs more width than it earns, so it slides over the grid instead of
- * sitting beside it. A disclosure, not a dialog: nothing is trapped and nothing is modal. */
+ * sitting beside it. A disclosure, not a dialog: nothing is trapped and nothing is modal.
+ *
+ * The same 860 is also where floating stops being offered — but that half cannot live here,
+ * because CSS can hide a control and cannot stop a position being written. `useWide.ts` holds
+ * the number for the code, names this block, and is named by it. */
 @media (max-width: 860px) {
   .lib {
     position: absolute;

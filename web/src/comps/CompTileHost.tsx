@@ -35,6 +35,7 @@ import {
   takeOffer,
 } from '../workspace/hull-transfer'
 import type { CarriedRows } from '../workspace/hull-transfer'
+import type { Place } from '../workspace/types'
 import { slotsAt, withHullsAdded, withRow } from './tile-model'
 import type { CompDetail } from './types'
 import { registerUndoTarget } from './undo-keys'
@@ -90,6 +91,16 @@ interface Props {
   readonly onCompChanged?: (comp: CompDetail) => void
   /** Carrying this tile somewhere else on the board. */
   readonly tileDrag?: TileDrag
+  /**
+   * Where this cell sits, on a board that places its tiles rather than flowing them.
+   *
+   * Absent on a grid board, where the cell has no position beyond the track it lands in.
+   *
+   * **React writes `left`/`top`; a drag writes only `transform` and `z-index`.** Different
+   * properties, so neither can undo the other — the same bargain `reorder.ts` makes by moving
+   * tiles with `order`, which React never writes either.
+   */
+  readonly place?: Place
 }
 
 export default function CompTileHost({
@@ -100,6 +111,7 @@ export default function CompTileHost({
   vocabulary,
   onCompChanged,
   tileDrag,
+  place,
 }: Props) {
   const {
     comp,
@@ -365,9 +377,12 @@ export default function CompTileHost({
       // Which is only ever a landing on the comp as a whole — a hull going into a named slot
       // is the same claim about one row, and the row draws it. Saying it twice, once around the
       // card and once around the row inside it, reads as two things happening.
-      className={`board-tile${receiving ? ' board-tile-receiving' : ''}`}
+      className={`board-tile${place ? ' board-tile-placed' : ''}${receiving ? ' board-tile-receiving' : ''}`}
       data-testid="board-tile"
       data-comp-id={compId}
+      style={place ? { left: place.x, top: place.y } : undefined}
+      // Where this tile sits, without a driver having to read the stylesheet for it.
+      data-place={place ? `${place.x},${place.y}` : undefined}
       // Written here and changed by `reorder.ts` while a drag is in flight. Safe because
       // nothing ever re-renders it to something else: React only writes an attribute when the
       // value it is given changes, and this one is a constant.
