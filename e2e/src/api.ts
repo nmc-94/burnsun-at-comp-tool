@@ -59,7 +59,13 @@ export interface Workspace {
   readonly boards: ReadonlyArray<{
     readonly id: string
     readonly name: string
-    readonly tiles: ReadonlyArray<{ readonly compId: string }>
+    readonly tiles: ReadonlyArray<{
+      readonly compId: string
+      /** Where the tile sits, on a board being drawn as a canvas. */
+      readonly place?: { readonly x: number; readonly y: number }
+    }>
+    readonly mode: 'grid' | 'floating'
+    readonly snap: boolean
   }>
   readonly activeBoardId: string | null
 }
@@ -136,6 +142,39 @@ export class Api {
       }),
     )
     return { id, name, compIds }
+  }
+
+  /**
+   * A board already drawn as a canvas, with its tiles already somewhere on it.
+   *
+   * Seeded rather than arranged through the page, for the tests about *panning*. Playwright
+   * scrolls a drag's source into view before it takes hold of it, so a test that scrolls the
+   * canvas and then drags a tile at the origin has its pan quietly undone on the way — and
+   * ends up proving the opposite of what it set out to.
+   */
+  async openFloatingBoard(
+    teamId: string,
+    placed: ReadonlyArray<{ compId: string; x: number; y: number }>,
+    { snap = true, name = 'Board 1' } = {},
+  ): Promise<Board> {
+    const id = randomUuid()
+    await this.json(
+      this.http.put(`/api/v1/teams/${teamId}/workspace`, {
+        data: {
+          boards: [
+            {
+              id,
+              name,
+              mode: 'floating',
+              snap,
+              tiles: placed.map(({ compId, x, y }) => ({ compId, place: { x, y } })),
+            },
+          ],
+          activeBoardId: id,
+        },
+      }),
+    )
+    return { id, name, compIds: placed.map((tile) => tile.compId) }
   }
 
   /** The arrangement as it was actually saved, for asserting on the database rather than on
