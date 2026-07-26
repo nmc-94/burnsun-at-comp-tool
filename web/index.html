@@ -3,10 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light dark" />
+    <!-- Dark first, matching the default below: this is what the browser renders form
+         controls and scrollbars with in the instant before the script runs. -->
+    <meta name="color-scheme" content="dark light" />
     <script>
       // Set the theme before first paint to avoid a flash. Values: light | dark | system.
-      // Must stay in sync with src/theme.ts (same key and resolution rule).
+      // Must stay in sync with src/theme.ts (same key, same default, same resolution rule).
       //
       // The prefix is substituted at build time from brand.storageKeyPrefix — see the
       // brand-storage-prefix plugin in vite.config.ts. This script runs before any module, so
@@ -14,7 +16,9 @@
       // rebranded.
       (function () {
         var KEY = '__BRAND_STORAGE_PREFIX__.theme'
-        var pref = 'system'
+        // Dark unless something is stored. `system` is still resolved when a browser has it
+        // stored, but it is no longer what an unset preference means.
+        var pref = 'dark'
         try {
           var stored = localStorage.getItem(KEY)
           if (stored === 'light' || stored === 'dark' || stored === 'system') pref = stored

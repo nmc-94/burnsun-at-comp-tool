@@ -37,12 +37,20 @@ describe('the stored preference', () => {
     expect(readThemePref()).toBe('light')
   })
 
-  it('falls back to following the system when nothing is stored', () => {
-    expect(readThemePref()).toBe('system')
+  it('is dark when nothing is stored', () => {
+    expect(readThemePref()).toBe('dark')
   })
 
   it('ignores a stored value that is not a preference', () => {
     localStorage.setItem(`${brand.storageKeyPrefix}.theme`, 'chartreuse')
+
+    expect(readThemePref()).toBe('dark')
+  })
+
+  // Nothing writes it any more, but a browser that stored it before the default changed must
+  // not have that quietly reinterpreted as "dark".
+  it('still follows the system for a browser that has that stored', () => {
+    localStorage.setItem(`${brand.storageKeyPrefix}.theme`, 'system')
 
     expect(readThemePref()).toBe('system')
   })
@@ -55,5 +63,14 @@ describe('the pre-paint bootstrap', () => {
     // that broke the very flash this script prevents.
     expect(indexHtml).toContain("'__BRAND_STORAGE_PREFIX__.theme'")
     expect(indexHtml).not.toContain(`'${brand.storageKeyPrefix}.theme'`)
+  })
+
+  // The same drift as the key, one line down. These two carry the default separately because
+  // the script runs before any module exists, and disagreeing about it is a flash of the wrong
+  // theme on every cold load — visible, blamed on the network, and hard to attribute.
+  it('defaults to the same theme this module does', () => {
+    localStorage.clear()
+
+    expect(indexHtml).toContain(`var pref = '${readThemePref()}'`)
   })
 })

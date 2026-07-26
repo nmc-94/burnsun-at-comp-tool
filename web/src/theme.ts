@@ -10,6 +10,10 @@
 
 import { brand } from './brand/brandConfig'
 
+// `system` is still honoured when it is what a browser has stored, but nothing writes it any
+// more: the toggle only ever produces light or dark, and the default below is dark rather
+// than "whatever the desktop says". Kept so an existing preference is not overridden, and so
+// that following the system is one line away if it is ever wanted back.
 export type ThemePref = 'light' | 'dark' | 'system'
 
 const STORAGE_KEY = `${brand.storageKeyPrefix}.theme`
@@ -19,6 +23,14 @@ export function resolveTheme(pref: ThemePref): 'light' | 'dark' {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+/**
+ * The stored preference, or dark.
+ *
+ * Dark rather than `system`: this is a tool for reading dense point tables next to a game
+ * that is itself dark, and following the desktop's setting meant the app arrived light for
+ * anyone who had never opened the toggle. A stored preference still wins — a default is only
+ * what happens before anyone has said otherwise.
+ */
 export function readThemePref(): ThemePref {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -26,7 +38,7 @@ export function readThemePref(): ThemePref {
   } catch {
     // localStorage unavailable; fall through to the default.
   }
-  return 'system'
+  return 'dark'
 }
 
 export function applyTheme(pref: ThemePref): 'light' | 'dark' {
