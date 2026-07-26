@@ -553,6 +553,33 @@
   border-radius: 11px;
 }
 
+/* A tile being carried. The browser draws its own copy of it under the cursor, so what is left
+   behind has to read as the space it came out of rather than as a second one of it — and it is
+   also where the tile would land, which is the thing worth being able to find while the other
+   tiles are moving around it.
+ *
+ * So while it is in hand the card becomes a placeholder for itself: the same shape, hollowed
+ * out, wearing the new-comp tile's border instead of its own — the same weight and the same
+ * dashes, because they stand for the same thing, in amber because this one is answering a
+ * gesture in progress. Its *own* border rather than an outline around it, so the edge of the
+ * hole is where the edge of the tile was and not a second line beyond it; style and colour
+ * rather than the shorthand, so the width and the corners stay the tile's and nothing shifts.
+ * There is nothing to transition back to on release — the attribute goes and the card is a
+ * card again. No shadow, which §6.4 rules out and which this would otherwise reach for. */
+.board-tile[data-lifted='true'] .tile {
+  background: transparent;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+/* Everything drawn inside it, and anything opened below it. Not the card itself, whose border
+   is the one thing here that has to stay legible; and not the close button, which is hidden
+   until a tile is approached and which this would otherwise out-specify into view on the one
+   tile nobody is about to close. */
+.board-tile[data-lifted='true'] .tile > *,
+.board-tile[data-lifted='true'] > *:not(.board-tile-close, .tile) {
+  opacity: 0.35;
+}
+
 /* What the offered hulls would cost *here* — this comp's ruleset's answer, not the sending
    comp's, which is the only reason this is drawn in the receiving tile at all. */
 .board-tile-preview {

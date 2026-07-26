@@ -243,7 +243,11 @@ export default function CompTile({
 
   return (
     <div className="tile" data-testid="comp-tile" ref={root}>
-      <div className="thead">
+      {/* Named for a driver because it is somewhere to take hold of: a board picks a tile up
+          by its header the way a window is moved by its title bar. Where the tile then goes is
+          the board's business and nothing here knows about it — this only says which strip is
+          a grip, which is a fact about how the tile is drawn. */}
+      <div className="thead" data-testid="comp-header">
         {editable ? (
           <input
             className="nm tile-name"

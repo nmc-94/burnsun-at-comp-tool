@@ -36,6 +36,7 @@ import {
   withBoardRenamed,
   withCompClosed,
   withCompOpened,
+  withTileMoved,
 } from './layout'
 import type { WorkspaceLayout } from './types'
 
@@ -235,6 +236,21 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
   )
 
   /**
+   * Where a tile was put down.
+   *
+   * The same route as opening or closing one: the arrangement is convenience state, so a
+   * rearrangement is another save behind the same debounce and needs no request of its own.
+   * A drop that changed nothing arrives here too, and stops at the comparison in `save`.
+   */
+  const moveTile = useCallback(
+    (compId: string, toIndex: number) => {
+      if (!layout || !board) return
+      arrange(withTileMoved(layout, board.id, compId, toIndex))
+    },
+    [layout, board, arrange],
+  )
+
+  /**
    * A fork: a new comp seeded from an existing one, whole or in part, put on the board.
    *
    * One request, and it is the *same* request for both gestures. Phase G's "port these rows to
@@ -370,6 +386,7 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
           onCreate={() => void create()}
           onPort={(compId, positions) => void fork(compId, positions)}
           onFork={(compId) => void fork(compId)}
+          onReorder={moveTile}
           vocabulary={vocabulary}
           onCompChanged={recordChange}
         />

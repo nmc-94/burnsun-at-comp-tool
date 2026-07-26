@@ -251,11 +251,12 @@ comp editor. Within a tab the user can:
 - **Add tiles** to the board (new blank comp, an existing comp, or a fork of one)
   so several comps are visible and editable side by side.
 - **Move / rearrange** tiles freely and **resize** them; a board behaves like a
-  modular canvas, not a fixed grid or a single-comp page. *(Later ambition, not the
-  current build. The locked design in `HANDOFF.md` chose a responsive **grid**
-  workspace over a free-floating canvas, so a tile's only spatial property today is
-  its order on the board. Read this bullet as where the workspace may go, not as a
-  description of what Phase F shipped.)*
+  modular canvas, not a fixed grid or a single-comp page. *(Partly built. The locked
+  design in `HANDOFF.md` chose a responsive **grid** workspace over a free-floating
+  canvas, so a tile's only spatial property is its order on the board — and that order
+  is now rearranged by dragging a tile by its empty space or its header, with the
+  others moving aside as it passes. Free position and size are still where the
+  workspace may go rather than what it does.)*
 - **Close** a tile without deleting the comp (the comp persists; the tile is just
   a view onto it).
 - Have the **layout persist** so a session can be resumed. Stored **server-side, per
@@ -705,6 +706,13 @@ plumbing:
 - **Motion & finish.** Hover transitions `0.1–0.15s` on background/color only;
   pressed `scale(0.98)`. **No gradients, blur, glow, or drop shadows in
   application UI** (reserve atmosphere for marketing/landing surfaces).
+  *Direct manipulation is the one exception to the band, and only to the band:*
+  motion that answers a gesture in progress — the tiles moving aside as one is
+  carried over them — is `transform`, runs around `0.2s`, and is skipped outright
+  under `prefers-reduced-motion: reduce`. Hover motion only has to be noticed;
+  this has to be **followed**, and at hover speed a slide is hard to tell from a
+  jump. Nothing else about the rule relaxes: no shadow under the lifted thing, no
+  overshoot, no bounce.
 - **Reference assets.** `docs/style/brand-assets/references/` (brand guide,
   component showcase, application-state gallery) are the visual source of truth
   to match.
@@ -826,12 +834,30 @@ elements sharing an accessible name, so those stay a review concern.
 > a clean tree exits `0`, and a probe file with `autoFocus` and a bare `onClick` on a
 > `<div>` exits `1` with three errors.
 >
-> Two suppressions exist, both on drag handlers
-> (`no-noninteractive-element-interactions` on the draggable row and on the drop-target
-> cell), both carrying the reason in a comment: the rule's real requirement is a
-> keyboard equivalent, and there is one — the drag is a shortcut over a named control
-> and reaches nothing that control does not. What no linter can check stays a review
-> concern: a testid convention, and two elements sharing an accessible name.
+> Suppressions of `no-noninteractive-element-interactions` exist on the drag handlers —
+> the draggable row, the tile that is both a drop target and something that can be picked
+> up, and the board it is carried across — each carrying its reason in a comment.
+>
+> **An earlier version of this paragraph claimed the rule's real requirement is a
+> keyboard equivalent and that there was one in every case. That was an over-reading of
+> this section, and it was not true even when it was written**: the cell's own comment
+> said carrying hulls into another comp "has no keyboard today". What this section
+> actually asks for is that the front end be *drivable* and that every interactive
+> element carry a correct role and an accessible name. Neither says that every pointer
+> gesture must have a keyboard twin, and a drag source is not a control the rule can
+> express — there is nothing to give a role or a name to, because there is nothing to
+> operate.
+>
+> What a drag does owe is that the state it produces can be read rather than inferred,
+> which is the "async state must be observable" clause above applied to a gesture:
+> `data-receiving`, `data-lifted`, `data-reordering`, `data-tile-order`, and the
+> `data-*-state` attributes for the saves that follow. Where a keyboard route is
+> genuinely owed it is because the *operation* is otherwise unreachable — taking rows out
+> into a comp of their own is Ctrl+C and Ctrl+V over the same code as the drag — rather
+> than because a linter asked. Rearranging a board is the pointer's alone.
+>
+> What no linter can check stays a review concern: a testid convention, and two elements
+> sharing an accessible name.
 
 **Signing in is part of this contract too.** The real sign-in ends at a consent
 screen on `login.eveonline.com`, which no headless browser can complete — so for

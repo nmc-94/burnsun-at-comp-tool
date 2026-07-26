@@ -142,6 +142,22 @@ all reach their handlers, and `BoardTransfer.test.tsx` drives the whole gesture.
 payload off the event is what makes both the keyboard path and the test possible, which is
 the same decision twice.
 
+**A second correction, to this trap's heading and its prescription.** "§6.8 is not optional"
+is right; "a drag must have a keyboard equivalent" is not what §6.8 says, and reading it that
+way turned a testability requirement into a blanket rule about gestures. §6.8 asks that the
+front end be drivable and that every interactive element carry a correct role and an
+accessible name. A drag source is not an element that rule can express — there is nothing to
+name, because there is nothing to operate — and what a drag genuinely owes is that the state
+it produces is *observable* rather than implied.
+
+So "design the operation first and the drag second" holds where the operation would otherwise
+be unreachable, which is why taking rows out into a comp of their own is Ctrl+C and Ctrl+V
+over the same code as the drop. It does not hold as a general tax on every gesture.
+Rearranging a board by carrying a tile across it is the pointer's alone, deliberately: the
+arrangement is convenience state, the same comps are all present and editable in any order,
+and inventing a chord or a pair of buttons per tile to satisfy a rule nobody wrote would cost
+more than it bought. §6.8's paragraph on these suppressions has been corrected to match.
+
 ### Trap 3 — two comps, two ruleset versions
 
 Comps on one board can be pinned to different versions; the cache in

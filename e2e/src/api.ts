@@ -44,6 +44,16 @@ export interface Board {
   readonly compIds: readonly string[]
 }
 
+/** What the server stores of an arrangement. Only the part a spec reads back. */
+export interface Workspace {
+  readonly boards: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+    readonly tiles: ReadonlyArray<{ readonly compId: string }>
+  }>
+  readonly activeBoardId: string | null
+}
+
 interface RulesetSummary {
   readonly slug: string
   readonly latestVersion: unknown
@@ -96,6 +106,12 @@ export class Api {
       }),
     )
     return { id, name, compIds }
+  }
+
+  /** The arrangement as it was actually saved, for asserting on the database rather than on
+   *  the screen that wrote to it. */
+  getWorkspace(teamId: string): Promise<Workspace> {
+    return this.json(this.http.get(`/api/v1/teams/${teamId}/workspace`))
   }
 
   /** The slug this deployment seeded — read rather than assumed, so `atxxii` is not baked in. */

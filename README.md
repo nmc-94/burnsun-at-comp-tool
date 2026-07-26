@@ -288,6 +288,51 @@ The copy always lands. If it breaks a rule the target says so through its own
 Copying into a comp that already exists is still the drag and only the drag — there is no way
 to say *which* comp without pointing at one.
 
+**Rearranging a board** is a drag of the whole tile. A press takes hold of the tile unless it
+lands on something that already answers one — a hull row carries the hull, a button clicks, a
+search box is typed in — with the header as the deliberate exception, so a tile is picked up
+by its title bar and the name field is a handle rather than a control while a press is moving.
+
+Aim for the header, not the middle: `dragTo` presses at an element's centre by default, and a
+tile's centre is a hull row, so a bare `dragTo(tile, tile)` carries a *hull* out of the comp.
+Pass `sourcePosition`/`targetPosition`. Which half of the target the cursor is over decides
+whether the tile lands before it or after it.
+
+Read the arrangement off `data-tile-order` on `board-grid` rather than by walking the tiles.
+While a tile is being carried the two disagree on purpose: the tiles keep their places in the
+DOM and are re-sequenced with CSS `order`, so document order is the arrangement the drag
+*started* from. `data-reordering` says a drag is in flight and `data-lifted` marks the tile in
+hand. Wait for the tiles to have loaded before dragging — `data-comp-count` is satisfied while
+they are still drawing "Loading…" at a fraction of their height, and a board that grows under
+the cursor is a race rather than a gesture.
+
+```javascript
+const grid = page.getByTestId('board-grid')
+await expect(grid).toHaveAttribute('data-comp-count', '3')
+await expect(page.getByTestId('board-tile-loading')).toHaveCount(0)
+
+// By the header, into the left half of the target: "put this one before that one".
+await tileFor(page, gamma.id).dragTo(tileFor(page, alpha.id), {
+  sourcePosition: { x: 60, y: 12 },
+  targetPosition: { x: 60, y: 12 },
+})
+await expect(grid).toHaveAttribute('data-tile-order', `${gamma.id},${alpha.id},${beta.id}`)
+await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-layout-state', 'idle')
+```
+
+The tiles move aside as one is carried over them, and slide back if it is let go of nowhere.
+That animation is 200 ms of `transform` — longer than the tool's hover motion, because this one
+has to be followed rather than merely noticed — and is skipped entirely under
+`prefers-reduced-motion: reduce`, where the tiles still rearrange and simply arrive. It has no
+bearing on any assertion above: `data-tile-order` changes when the arrangement does, not when
+the motion finishes. The tile in hand is hollowed out and wears a dashed amber border in place
+of its own, standing where it would land, which is `data-lifted="true"` and nothing a driver
+needs to read the stylesheet for.
+
+Reordering has no keyboard route and is not owed one — see §6.8's note on the drag
+suppressions. The arrangement is convenience state, and every comp on the board is present and
+editable whatever order it is in.
+
 **Forking a whole comp** is the same mechanism with no rows named, from the fork control in
 the tile's foot. The new comp keeps the parent's ruleset version — a fork exists to be
 compared against what it came from — and says where it came from, whether or not the parent

@@ -25,3 +25,6 @@ node_modules/
 
 # OS / editor
 .DS_Store
+# Claude Code's working directory: a launch config that is one machine's ports and paths, and
+# scratch worktrees. Nothing in here is the project's.
+.claude/

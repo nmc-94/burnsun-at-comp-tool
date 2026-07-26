@@ -160,6 +160,30 @@ async function open(boardId: string | null = null) {
 const tileNames = () =>
   screen.queryAllByTestId('board-tile').map((tile) => tile.getAttribute('data-comp-id'))
 
+/**
+ * Take a tile by its empty space and put it down on another one.
+ *
+ * Where it lands is decided from the cursor's position against the tiles' resting boxes, and
+ * jsdom measures every box at the origin — so the drop always resolves to the first slot, and
+ * which tile these events are fired on makes no difference. `reorder.test.ts` is where that
+ * arithmetic is checked over real numbers.
+ */
+function carry(from: string, onto: string) {
+  const held = screen.getByLabelText(from)
+  fireEvent.mouseDown(held, { button: 0 })
+  fireEvent.dragStart(held)
+  dragOverAt(screen.getByLabelText(onto))
+  fireEvent.drop(screen.getByLabelText(onto))
+  fireEvent.dragEnd(held)
+}
+
+/** A `dragover` carrying coordinates, which `fireEvent.dragOver` cannot — jsdom has no
+ *  `DragEvent`, and the bare `Event` it falls back to drops them. `MouseEvent` is what a drag
+ *  event is built on and jsdom does have it. */
+function dragOverAt(on: HTMLElement) {
+  fireEvent(on, new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: 0, clientY: 0 }))
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   window.history.replaceState(null, '', '/teams/t1')
@@ -322,6 +346,72 @@ describe('arranging', () => {
       { compId: 'b' },
       { compId: 'c' },
     ])
+  })
+
+  it('saves a rearrangement the same way it saves an opening', async () => {
+    // A tile carried across the board is not a request of its own: the arrangement is
+    // convenience state, so a move is another write behind the same 800 ms debounce.
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Board 1', tiles: [{ compId: 'a' }, { compId: 'b' }] }],
+      activeBoardId: 'b1',
+    })
+    await open()
+    await waitFor(() => expect(tileNames()).toEqual(['a', 'b']))
+
+    carry('Beta', 'Alpha')
+
+    expect(screen.getByTestId('workspace-layout-state').dataset.layoutState).toBe('pending')
+    expect(savesOf(server.calls).length).toBe(0)
+    await vi.advanceTimersByTimeAsync(900)
+
+    await waitFor(() => expect(savesOf(server.calls).length).toBe(1))
+    expect(JSON.parse(String(savesOf(server.calls)[0]?.init.body)).boards[0].tiles).toEqual([
+      { compId: 'b' },
+      { compId: 'a' },
+    ])
+    // And the board is showing what was written, not merely claiming to have written it.
+    expect(tileNames()).toEqual(['b', 'a'])
+  })
+
+  it('writes nothing for a tile merely carried over another and brought back', async () => {
+    // The preview lives outside React entirely — CSS `order` and inline styles — so nothing
+    // about it may reach the layout. A drag abandoned mid-air is the case that would show it.
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Board 1', tiles: [{ compId: 'a' }, { compId: 'b' }] }],
+      activeBoardId: 'b1',
+    })
+    await open()
+    await waitFor(() => expect(tileNames()).toEqual(['a', 'b']))
+
+    fireEvent.mouseDown(screen.getByLabelText('Beta'), { button: 0 })
+    fireEvent.dragStart(screen.getByLabelText('Beta'))
+    dragOverAt(screen.getByLabelText('Alpha'))
+    fireEvent.dragEnd(screen.getByLabelText('Beta'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    expect(savesOf(server.calls).length).toBe(0)
+    expect(screen.getByTestId('workspace-layout-state').dataset.layoutState).toBe('idle')
+    expect(tileNames()).toEqual(['a', 'b'])
+  })
+
+  it('writes nothing for a tile put down where it was picked up', async () => {
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Board 1', tiles: [{ compId: 'a' }, { compId: 'b' }] }],
+      activeBoardId: 'b1',
+    })
+    await open()
+    await waitFor(() => expect(tileNames()).toEqual(['a', 'b']))
+
+    fireEvent.mouseDown(screen.getByLabelText('Alpha'), { button: 0 })
+    fireEvent.dragStart(screen.getByLabelText('Alpha'))
+    fireEvent.drop(screen.getByLabelText('Alpha'))
+    fireEvent.dragEnd(screen.getByLabelText('Alpha'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    // The move is asked for and arrives at the comparison against what was last persisted,
+    // which is what stops an arrangement being written every time somebody thinks better of
+    // moving something.
+    expect(savesOf(server.calls).length).toBe(0)
   })
 
   it('adds a board and moves to it', async () => {

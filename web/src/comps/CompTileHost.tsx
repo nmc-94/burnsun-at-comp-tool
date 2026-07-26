@@ -12,6 +12,7 @@
 // owns them, which is the whole of §6.7.
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import type { MouseEvent as PointerPress } from 'react'
 
 import type { CompSlot, Violation } from '../engine'
 import CommentThread from './CommentThread'
@@ -39,6 +40,27 @@ import type { CompDetail } from './types'
 import { registerUndoTarget } from './undo-keys'
 import { useCompDocument } from './useCompDocument'
 
+/**
+ * Moving the tile itself, which is the board's business from beginning to end — a comp has no
+ * opinion about where it sits. Passed as one object so that a board with no way to rearrange
+ * itself simply passes nothing, the way `onPort`'s absence already disables porting.
+ */
+export interface TileDrag {
+  /** This tile has been picked up. False when there is nothing to rearrange. */
+  readonly lift: (compId: string) => boolean
+  /** The gesture is over, dropped or not. */
+  readonly end: () => void
+}
+
+/**
+ * Everything in a tile a press already means something to.
+ *
+ * `draggable` is checked as the property rather than as an attribute: `img` and `a[href]` are
+ * draggable by default with nothing written on them, and a viewer's tile has no draggable rows
+ * to hide behind.
+ */
+const ANSWERS_A_PRESS = 'a[href], button, input, textarea, select, [contenteditable]'
+
 interface Props {
   readonly compId: string
   /** Take the tile off the board. The comp itself is untouched — a tile is only a view. */
@@ -58,6 +80,8 @@ interface Props {
   readonly vocabulary?: TagVocabulary
   /** Told when a write in here changes something the rail draws. */
   readonly onCompChanged?: (comp: CompDetail) => void
+  /** Carrying this tile somewhere else on the board. */
+  readonly tileDrag?: TileDrag
 }
 
 export default function CompTileHost({
@@ -67,6 +91,7 @@ export default function CompTileHost({
   onFork,
   vocabulary,
   onCompChanged,
+  tileDrag,
 }: Props) {
   const {
     comp,
@@ -211,6 +236,40 @@ export default function CompTileHost({
   }
 
   /**
+   * Whether a press here is a press on the tile rather than on something in it.
+   *
+   * Empty space, and the header. Everything else in a tile already answers a press — a hull
+   * row is dragged out to another comp, a name is typed in, a button is clicked — and the
+   * header is the exception because a card is picked up by its title bar. The cost of that
+   * exception is selecting the name by dragging across it, which is real; clicking into it,
+   * typing and tabbing to it are all untouched.
+   *
+   * Two regions are answered for as regions, before anything in them is asked about, because
+   * each has to outrank its own contents. The header contains the name field, which is a
+   * control, and a walk that met the field first would answer for the field and never reach
+   * the exception. The slot list contains empty rows, which are not controls and are not
+   * draggable either — a walk would call the sliver of one beside its search box empty space,
+   * and nobody expects to pick a board up by the gap next to a text field. Everything else is
+   * walked rather than `closest`ed, so the tile itself is never a match: it is about to be
+   * `draggable` too.
+   */
+  function byHandle(event: PointerPress<HTMLElement>): boolean {
+    // The secondary button opens a context menu, and arming a drag under one would leave the
+    // tile draggable with nothing having happened.
+    if (event.button !== 0 || !tileDrag) return false
+    const tile = event.currentTarget
+    const pressed = event.target instanceof Element ? event.target : null
+    if (!pressed) return true
+    if (pressed.closest('[data-testid="comp-header"]')) return true
+    if (pressed.closest('[data-testid="comp-rows"]')) return false
+    for (let node: Element | null = pressed; node && node !== tile; node = node.parentElement) {
+      if (node instanceof HTMLElement && node.draggable) return false
+      if (node.matches(ANSWERS_A_PRESS)) return false
+    }
+    return true
+  }
+
+  /**
    * Where this comp came from, if it came from anywhere.
    *
    * Built here rather than in the tile because it is the one thing on screen that names another
@@ -229,17 +288,68 @@ export default function CompTileHost({
   }, [comp])
 
   return (
-    // The cell is a drop target, which is what the four handlers below are for and what the
-    // rule objects to. Waived rather than answered, and see the row's own note in CompTile:
-    // carrying hulls into another comp is a drag and has no keyboard today. What the rule is
-    // really guarding against — a control nothing else can reach — is true here, and the
-    // honest place to fix it is a shortcut over the row selection, not a second widget.
+    // The cell is both a drop target and — by its empty space and its header — something that
+    // can be picked up, which is what the handlers below are for and what the rule objects to.
+    //
+    // The rule cannot express either of those. What it is really guarding against is a control
+    // nothing but a mouse can reach, and the answer a drag owes is that the state it produces
+    // is observable rather than implied: `data-lifted` here, `data-reordering` and
+    // `data-tile-order` on the grid, `data-layout-state` for the save that follows. That is
+    // what §6.8 asks of a gesture. Carrying hulls between comps has Ctrl+C and Ctrl+V over the
+    // same code (see the row's note in CompTile); rearranging a board is the pointer's alone,
+    // and the board's arrangement is convenience state that a person who never rearranges it
+    // is not deprived of.
+    //
+    // Two handlers, one element: a hull arriving is judged first, because it is the branch
+    // that has to `preventDefault` for a copy to be possible at all.
     // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <section
       className={`board-tile${preview ? ' board-tile-receiving' : ''}`}
       data-testid="board-tile"
       data-comp-id={compId}
+      // Written here and changed by `reorder.ts` while a drag is in flight. Safe because
+      // nothing ever re-renders it to something else: React only writes an attribute when the
+      // value it is given changes, and this one is a constant.
+      data-lifted="false"
       aria-label={name}
+      onMouseDown={(event) => {
+        // Set on the element rather than rendered, and it has to be: the browser reads
+        // `draggable` as it stands when the press lands, and a render could not have happened
+        // by then. Keeping it out of the JSX is also what stops React putting it back.
+        // A press on a draggable element still moves focus the way any other press does —
+        // measured, because the opposite is widely assumed and would be expensive here: a
+        // comp's name is committed by its blur, so a tile that swallowed the focus change
+        // would lose a rename to the next click on the board without saying so. It does not,
+        // and `board-reorder.spec.ts` keeps it that way.
+        event.currentTarget.draggable = byHandle(event)
+      }}
+      onMouseUp={(event) => {
+        // A press on empty space that never became a drag would otherwise leave the tile
+        // armed until something else was pressed.
+        event.currentTarget.draggable = false
+      }}
+      onDragStart={(event) => {
+        // A hull row is draggable too and `dragstart` bubbles, so without this a row leaving
+        // the tile would pick the whole tile up alongside it. Exact rather than approximate:
+        // the event is raised *at* the source node, and the source is always the nearest
+        // draggable ancestor of the press.
+        if (event.target !== event.currentTarget) return
+        if (!tileDrag?.lift(compId)) {
+          event.preventDefault()
+          return
+        }
+        if (event.dataTransfer) {
+          // `move`, where a row's drag says `copy`: a row derives and stays where it is, and
+          // this really does take the thing under the cursor somewhere else.
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('text/plain', name)
+        }
+      }}
+      onDragEnd={(event) => {
+        if (event.target !== event.currentTarget) return
+        event.currentTarget.draggable = false
+        tileDrag?.end()
+      }}
       onDragEnter={(event) => {
         const dragging = receivable()
         if (!dragging) return
@@ -249,9 +359,17 @@ export default function CompTileHost({
       onDragOver={(event) => {
         // preventDefault is the whole of what makes this a drop target, and dragover fires
         // continuously — so nothing else may happen in here. The preview is dragenter's.
+        //
+        // A tile being *carried* over this one is not answered here at all: it bubbles to the
+        // board, which decides where it would land from the cursor's coordinates rather than
+        // from which element the browser hit-tested. Cancelling is per event, not per element,
+        // so the board's is enough to let a drop happen on this one.
         if (receivable()) event.preventDefault()
       }}
       onDragLeave={(event) => {
+        // Gated, so a tile drag crossing this tile does not withdraw a hull offer that was
+        // never made. Harmless today only because the store refuses to withdraw nothing.
+        if (!receivable()) return
         // dragleave fires again every time the cursor crosses into a child element, so a
         // bare handler flickers the preview off and on all the way across the tile.
         const related = event.relatedTarget
@@ -259,6 +377,8 @@ export default function CompTileHost({
         propose(compId, null)
       }}
       onDrop={(event) => {
+        // Hulls only, for the same reason as above: a tile let go of here is the board's, and
+        // this event reaches it by bubbling.
         const dragging = receivable()
         if (!dragging) return
         event.preventDefault()

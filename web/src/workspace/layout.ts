@@ -121,6 +121,57 @@ export function withCompOpened(
   })
 }
 
+/**
+ * The same comps, one of them somewhere else.
+ *
+ * Exported, and used by the drag as well as by the save. A tile being carried is drawn in the
+ * order it *would* land in, and if the preview worked this out one way and the commit another
+ * the tiles would jump on drop — a disagreement no test names, because each half is right on
+ * its own. One function, two callers.
+ *
+ * Answers with the array it was given when nothing moves. `arrange` compares what it is
+ * handed against what was last persisted, so a new array of the same ids would arm the layout
+ * debounce for a drag that ended where it started.
+ */
+export function moveTile(
+  ids: readonly string[],
+  compId: string,
+  toIndex: number,
+): readonly string[] {
+  const from = ids.indexOf(compId)
+  if (from === -1 || !Number.isInteger(toIndex)) return ids
+  // Clamped rather than refused: a drop lands where the cursor is, and the last tile's half
+  // of the grid extends to the edge of the board.
+  const to = Math.min(Math.max(toIndex, 0), ids.length - 1)
+  if (to === from) return ids
+  const moved = [...ids]
+  moved.splice(from, 1)
+  // Into the gap the removal left, so `to` counts positions in the finished list rather than
+  // in the one this started with. The two differ for every move rightwards.
+  moved.splice(to, 0, compId)
+  return moved
+}
+
+/**
+ * Put a comp's tile at a given position on its board.
+ *
+ * No cap check, unlike `withCompOpened`: moving a tile adds nothing, so a board already at
+ * `MAX_TILES_PER_BOARD` can still be rearranged.
+ */
+export function withTileMoved(
+  layout: WorkspaceLayout,
+  boardId: string,
+  compId: string,
+  toIndex: number,
+): WorkspaceLayout {
+  return mapBoard(layout, boardId, (board) => {
+    const ids = board.tiles.map((tile) => tile.compId)
+    const moved = moveTile(ids, compId, toIndex)
+    if (moved === ids) return board
+    return { ...board, tiles: moved.map((id) => ({ compId: id })) }
+  })
+}
+
 export function withCompClosed(
   layout: WorkspaceLayout,
   boardId: string,

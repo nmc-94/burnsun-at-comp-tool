@@ -17,9 +17,11 @@ import {
   withBoardAdded,
   withBoardClosed,
   withBoardRenamed,
+  moveTile,
   withCompClosed,
   withCompForgotten,
   withCompOpened,
+  withTileMoved,
 } from './layout'
 import type { WorkspaceLayout } from './types'
 
@@ -251,7 +253,101 @@ describe('the reducers', () => {
     withCompOpened(layout, 'board-One', 'c2')
     withBoardAdded(layout)
     withBoardRenamed(layout, 'board-One', 'Other')
+    withTileMoved(layout, 'board-One', 'c1', 0)
 
     expect(JSON.stringify(layout)).toBe(before)
+  })
+})
+
+describe('moving a tile', () => {
+  it('carries a comp later in the order', () => {
+    expect(moveTile(['a', 'b', 'c'], 'a', 2)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('carries a comp earlier in the order', () => {
+    expect(moveTile(['a', 'b', 'c'], 'c', 0)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('counts the destination in the finished list, not the one it started with', () => {
+    // The case that needs four comps. Removing the comp first shifts every position above it
+    // down by one, so moving `a` to 2 lands it third — `['b','c','a','d']` — and not last.
+    // Three comps agree whichever way round the two splices are written, which is exactly why
+    // three comps cannot tell anyone they got it wrong.
+    expect(moveTile(['a', 'b', 'c', 'd'], 'a', 2)).toEqual(['b', 'c', 'a', 'd'])
+  })
+
+  it('swaps a neighbouring pair, either way round', () => {
+    expect(moveTile(['a', 'b', 'c'], 'b', 0)).toEqual(['b', 'a', 'c'])
+    expect(moveTile(['a', 'b', 'c'], 'b', 2)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('answers with the very same list when the comp is already there', () => {
+    // Not merely equal. `arrange` decides whether to write by comparing against what was last
+    // persisted, and a fresh array of identical ids would arm the debounce for a drag that
+    // ended where it began.
+    const ids = ['a', 'b', 'c']
+
+    expect(moveTile(ids, 'b', 1)).toBe(ids)
+  })
+
+  it('clamps a destination past either end', () => {
+    expect(moveTile(['a', 'b', 'c'], 'a', 9)).toEqual(['b', 'c', 'a'])
+    expect(moveTile(['a', 'b', 'c'], 'c', -4)).toEqual(['c', 'a', 'b'])
+  })
+
+  it.each([
+    ['a comp that is not on this board', ['a', 'b'], 'elsewhere', 0],
+    ['a destination that is not a whole number', ['a', 'b'], 'a', 1.5],
+    ['a destination that is not a number at all', ['a', 'b'], 'a', Number.NaN],
+    ['nothing to move', [] as string[], 'a', 0],
+    ['one comp with nowhere to go', ['a'], 'a', 0],
+  ])('leaves the order alone given %s', (_case, ids, compId, toIndex) => {
+    expect(moveTile(ids, compId, toIndex)).toBe(ids)
+  })
+
+  it('leaves the list it was given untouched', () => {
+    const ids = ['a', 'b', 'c']
+
+    moveTile(ids, 'a', 2)
+
+    expect(ids).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('moving a tile on a board', () => {
+  it('rearranges the board it was named and no other', () => {
+    const layout = layoutOf(['One', 'c1', 'c2', 'c3'], ['Two', 'c1', 'c2'])
+
+    const moved = withTileMoved(layout, 'board-One', 'c3', 0)
+
+    expect(tilesOn(moved, 0)).toEqual(['c3', 'c1', 'c2'])
+    expect(tilesOn(moved, 1)).toEqual(['c1', 'c2'])
+  })
+
+  it('leaves which board is in front alone', () => {
+    const layout = withActiveBoard(layoutOf(['One', 'c1', 'c2'], ['Two']), 'board-Two')
+
+    expect(withTileMoved(layout, 'board-One', 'c2', 0).activeBoardId).toBe('board-Two')
+  })
+
+  it.each([
+    ['a board that is not ours', 'elsewhere', 'c1'],
+    ['a comp that is not on it', 'board-One', 'elsewhere'],
+  ])('changes nothing given %s', (_case, boardId, compId) => {
+    const layout = layoutOf(['One', 'c1', 'c2'])
+
+    expect(withTileMoved(layout, boardId, compId, 1)).toEqual(layout)
+  })
+
+  it('rearranges a board that is already full', () => {
+    // Unlike opening a comp, which the cap refuses. A move adds nothing, so a board at the
+    // limit is exactly the one most worth being able to tidy.
+    const full = Array.from({ length: MAX_TILES_PER_BOARD }, (_unused, at) => `c${at}`)
+    const layout = layoutOf(['One', ...full])
+
+    const moved = withTileMoved(layout, 'board-One', `c${MAX_TILES_PER_BOARD - 1}`, 0)
+
+    expect(tilesOn(moved).length).toBe(MAX_TILES_PER_BOARD)
+    expect(tilesOn(moved)[0]).toBe(`c${MAX_TILES_PER_BOARD - 1}`)
   })
 })
