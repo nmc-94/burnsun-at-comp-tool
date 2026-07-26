@@ -126,11 +126,16 @@ jobs:
       # Not a secret: the route does not exist unless the flag above is on, and this whole
       # stack is thrown away when the job ends. It must clear 32 characters all the same.
       COMPTOOL_DEV_AUTH_SECRET: an-end-to-end-secret-of-sufficient-length
+      # The second seam, and it needs the first: dev-login mints the characters this then
+      # resolves names against. Without it a grant is looked up against EVE — which the line
+      # below switches off — so every add is a 503 and three specs fail in their setup.
+      COMPTOOL_DEV_RESOLVE_ENABLED: "true"
       COMPTOOL_ENVIRONMENT: ci
       # Plain http. A Secure cookie is dropped by the browser without a word, which looks
       # exactly like a broken login and costs an afternoon.
       COMPTOOL_SESSION_COOKIE_SECURE: "false"
-      # No EVE application here, and nothing in the suite needs one — which is the point.
+      # No EVE application here, and nothing in the suite needs one — which is the point, and
+      # what the resolver above exists to make true rather than merely tolerable.
       COMPTOOL_ESI_ENABLED: "false"
       # Stated rather than left to the default: Settings computes it from the installed
       # package's location, which is only the repo's web/dist under an editable install.
