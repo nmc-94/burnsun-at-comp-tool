@@ -273,12 +273,19 @@ This usually takes a couple of minutes and **should land within an hour** of DNS
 propagating. Then:
 
 ```bash
-curl -sI https://comps.example.com/api/health
+curl -s https://comps.example.com/api/health
 ```
 
-A `200` over HTTPS with no certificate warning means Railway is serving your domain
+The health JSON over HTTPS with no certificate warning means Railway is serving your domain
 directly. **Do not continue until this works** — everything after this point adds a second
 system in front of a thing you have just proved works.
+
+> **Use `curl -s`, not `curl -sI`.** `-I` sends a `HEAD` request, and every route in this
+> app is registered `GET`-only, so FastAPI answers `405 Method Not Allowed` with an
+> `allow: GET` header. That `405` is not a deployment problem — it still proves TLS
+> succeeded and that your app's router answered — but it is a confusing thing to read at
+> this point in the process. To see response headers, use a `GET` that discards the body:
+> `curl -s -D - -o /dev/null https://comps.example.com/api/health`.
 
 ### 6.4 Set the SSL/TLS mode — before the proxy
 
@@ -300,12 +307,13 @@ Back in **DNS** → **Records**, edit the `comps` CNAME and switch **Proxy statu
 ### 6.6 Re-verify
 
 ```bash
-curl -sI https://comps.example.com/api/health
+curl -s -D - -o /dev/null https://comps.example.com/api/health
 ```
 
-Still a `200`. The response headers now carry Cloudflare's fingerprints (`server: cloudflare`,
-a `cf-ray` header) — that is how you know traffic is going through the proxy rather than
-straight to Railway.
+Still a `200`, and the headers now carry Cloudflare's fingerprints — `server: cloudflare`
+and a `cf-ray` header, where before you saw `server: railway-hikari` and `x-railway-edge`.
+That swap is how you know traffic is going through the proxy rather than straight to
+Railway.
 
 ---
 
@@ -351,6 +359,7 @@ Six checks. The last one is the interesting one.
 | Sign-in reports success, app renders signed-out | The `Secure` cookie was dropped, or the session cookie is scoped wrong | Ensure `COMPTOOL_SESSION_COOKIE_SECURE` is unset and `COMPTOOL_SESSION_COOKIE_DOMAIN` is empty |
 | EVE returns an invalid `redirect_uri` | `COMPTOOL_ESI_CALLBACK_URL` and the portal registration differ | Compare byte for byte — scheme, host, trailing slash. Both must be `https://comps.example.com/api/v1/auth/callback` |
 | Deploy times out waiting for healthcheck | Health Check Path is wrong | It is `/api/health` — not `/health`, and not under `/api/v1` |
+| `curl -I` returns `405 Method Not Allowed`, `allow: GET` | `-I` sends `HEAD`; the routes are `GET`-only | Not a deployment problem — the `405` came from your app, so TLS and routing both worked. Use `curl -s` |
 | A `POST` to a bad `/api/…` path returns `405`, not `404` | Known: the SPA catch-all matches on path, not method | Not a deployment problem |
 
 **Where to look.** Railway's **Deployments** tab has the build log and the runtime log;
