@@ -463,17 +463,40 @@ describe('annotate', () => {
 })
 
 describe('selectRow', () => {
-  it('adds a row, and takes the same row back out', () => {
+  it('replaces what was picked on a plain pick, which is what clicking a row means', () => {
+    const first = selectRow(EMPTY_SELECTION, 2)
+    expect(first.rows).toEqual([2])
+
+    // Not [2, 5]: a click with nothing held says "this one", the way every file list does.
+    expect(selectRow(first, 5).rows).toEqual([5])
+  })
+
+  it('leaves a row picked when it is picked again, rather than flickering it out', () => {
+    // A plain pick is not a toggle. Letting go is the toggle, Clear selection, or a click
+    // outside the tile — three ways out, and none of them is "click the same row twice".
     const one = selectRow(EMPTY_SELECTION, 2)
+
+    expect(selectRow(one, 2).rows).toEqual([2])
+  })
+
+  it('adds a row with toggle, and takes the same row back out', () => {
+    const one = selectRow(EMPTY_SELECTION, 2, { toggle: true })
     expect(one.rows).toEqual([2])
 
-    expect(selectRow(one, 2).rows).toEqual([])
+    expect(selectRow(one, 2, { toggle: true }).rows).toEqual([])
   })
 
   it('keeps the rows in row order however they were picked', () => {
     const picked = [5, 1, 3].reduce(selectRowAt, EMPTY_SELECTION)
 
     expect(picked.rows).toEqual([1, 3, 5])
+  })
+
+  it('anchors on a plain pick as well as a toggle, so shift extends from either', () => {
+    const plain = selectRow(EMPTY_SELECTION, 4)
+
+    expect(plain.anchor).toBe(4)
+    expect(selectRow(plain, 6, { range: true }).rows).toEqual([4, 5, 6])
   })
 
   it('extends from the anchor with shift, upwards or down', () => {
@@ -497,12 +520,20 @@ describe('selectRow', () => {
 
   it('never adds a row twice when ranges overlap', () => {
     const first = selectRow(selectRow(EMPTY_SELECTION, 1), 4, { range: true })
-    const second = selectRow(selectRow(first, 3), 6, { range: true })
+    const second = selectRow(selectRow(first, 3, { toggle: true }), 6, { range: true })
 
     expect(second.rows).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
+  it('lets a toggle build on a range without throwing the range away', () => {
+    // The two gestures compose, which is the whole point of control and shift being separate
+    // keys: pick a run, then add the odd one out further down.
+    const run = selectRow(selectRow(EMPTY_SELECTION, 0), 2, { range: true })
+
+    expect(selectRow(run, 7, { toggle: true }).rows).toEqual([0, 1, 2, 7])
   })
 })
 
 function selectRowAt(selection: RowSelection, index: number): RowSelection {
-  return selectRow(selection, index)
+  return selectRow(selection, index, { toggle: true })
 }

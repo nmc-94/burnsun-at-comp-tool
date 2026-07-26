@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { hueFor, suggest, tidy, vocabularyOf } from './tag-model'
+import { chipVars, hueFor, suggest, tidy, vocabularyOf } from './tag-model'
 import type { CompDetail } from './types'
 
 function comp(name: string, archetype: string | null, tags: string[]): CompDetail {
@@ -49,11 +49,59 @@ describe('a chip’s hue', () => {
     }
   })
 
-  it('separates values that differ, including by case', () => {
-    // Not a guarantee the function can make in general — 360 hues and unlimited strings — but
-    // these are the ones that sit beside each other in a real library.
-    const hues = ['Shield', 'Armor', 'Kite', 'Brawl', 'shield'].map(hueFor)
+  it('is the hue BurnSun gives the same word', () => {
+    // The load-bearing test in this file. Both apps are looked at side by side, so a tag called
+    // "Shield" being one colour here and another there would be worse than no colour at all —
+    // and nothing else in either codebase would notice the two drifting apart.
+    //
+    // Read off the running BurnSun (`fitTagStyleVars` in web/src/lib/fitTags.ts), not derived
+    // from this implementation, which is what makes them a check rather than a restatement.
+    expect(hueFor('armor')).toBe(155)
+    expect(hueFor('shield')).toBe(74)
+    expect(hueFor('kiter')).toBe(292)
+    expect(hueFor('brawl')).toBe(223)
+    expect(hueFor('draft')).toBe(343)
+  })
+
+  it('reads through case and spacing, so one tag is one colour across both apps', () => {
+    // BurnSun stores tags casefolded and dash-joined; this app keeps the team's spelling. The
+    // hue is taken from the folded form so the two agree on screen anyway.
+    expect(hueFor('Shield')).toBe(hueFor('shield'))
+    expect(hueFor('Armor Brawl')).toBe(hueFor('armor-brawl'))
+    expect(hueFor('  Kite  ')).toBe(hueFor('kite'))
+  })
+
+  it('separates values that differ', () => {
+    // Not a guarantee the function can make in general — 360 hues, unlimited strings — but the
+    // band-and-offset spread is what keeps the handful a team adds in one sitting apart, and
+    // these are the ones that end up beside each other on a tile.
+    const hues = ['Shield', 'Armor', 'Kite', 'Brawl', 'Angel'].map(hueFor)
     expect(new Set(hues).size).toBe(hues.length)
+  })
+
+  it('pushes near-identical names a long way apart rather than a degree', () => {
+    // What the multiply-by-31 hash could not do: "Shield" and "Shields" used to land within a
+    // couple of degrees, which is two chips the same colour.
+    expect(Math.abs(hueFor('Shield') - hueFor('Shields'))).toBeGreaterThan(20)
+  })
+})
+
+describe('the properties a chip is coloured by', () => {
+  it('carries the hue plus a jitter on each of saturation and lightness', () => {
+    // Hue alone gives 360 buckets; the two adjustments are what keep a collision readable.
+    expect(chipVars('shield')).toEqual({
+      '--fit-tag-hue': '74',
+      '--fit-tag-sat-adjust': '5%',
+      '--fit-tag-light-adjust': '-1%',
+    })
+  })
+
+  it('agrees with hueFor, so a dot and its chip cannot disagree', () => {
+    for (const value of ['Shield', 'Armor Brawl', 'a']) {
+      expect(chipVars(value)['--fit-tag-hue' as keyof ReturnType<typeof chipVars>]).toBe(
+        String(hueFor(value)),
+      )
+    }
   })
 })
 

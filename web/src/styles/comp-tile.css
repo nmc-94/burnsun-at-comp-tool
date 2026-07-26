@@ -29,11 +29,14 @@
   border-radius: 11px;
   width: 100%;
 }
+/* Bottom padding is deliberately short of the top's: what a comp says it is belongs with its
+   name, not with its hulls, so the header gives up some of its own air to sit closer to the
+   band below it. See .chipsrow for the other half of that split. */
 .thead {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 11px;
+  padding: 9px 11px 5px;
 }
 .thead .nm {
   flex: 1;
@@ -102,12 +105,19 @@
 /* The chips band. Reserved-and-empty on a comp that says nothing, filled once it does — the
    band was held open through Phases E–G so that arrival is a change of content, not a
    relayout. */
-.chipsrow-reserved {
-  height: 19px;
-  margin: 8px 0 3px;
-}
+/* Eight above and twelve below, counting the header's own five: the band reads as the last line
+   of the title rather than the first line of the ship list, which is what it is. It was 17 above
+   and 3 below, which grouped it with the hulls. The total is unchanged, so no tile got taller. */
+.chipsrow-reserved,
 .chipsrow {
-  margin: 8px 0 3px;
+  margin: 3px 0 12px;
+}
+/* The spacer a viewer gets on a comp that says nothing, and it has to be exactly a pill tall or
+   the comp acquiring one is a relayout — which is the whole reason the band was reserved. Given
+   as a pill is built rather than as a number: one line box, plus its 2px of padding and 1px of
+   border top and bottom. A constant here would drift the moment the type scale moved. */
+.chipsrow-reserved {
+  height: calc(1lh + 6px);
 }
 .chips {
   display: flex;
@@ -115,112 +125,208 @@
   gap: 5px;
   align-items: center;
 }
-.chips-edit {
+/* The two namespaces side by side: BurnSun's fit tag bar, at the size a 320px tile draws chips.
+   Each group is its chips and the control that adds one. The gap between the groups is twice the
+   gap within one, which is what keeps "Kite Angel Shield" reading as one archetype and two tags
+   rather than as three of something. */
+.tagbar {
+  gap: 10px;
+}
+.tagbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* The slot a placeholder lives in — the placeholder and the field share it, so the field arrives
+   where the control was. Sized by the placeholder, which stays mounted underneath: a slot that
+   collapsed or grew when the field opened would shove the other namespace sideways, and a button
+   that moves between mousedown and mouseup never receives the click at all. */
+.tagbar-slot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+/* Above the chips it is briefly drawn over, so the field reads as a field rather than as text
+   laid on top of pills. Its own panel background is the other half of that. */
+.tagbar-slot-open {
+  z-index: 5;
+}
+/* Held in the flow for its width, and out of reach: hidden this way rather than with opacity so
+   it is neither hit-tested nor announced while the field is over it. */
+.tagbar-slot-open .tagbar-add {
+  visibility: hidden;
+}
+.tagbar-editor {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  /* The slot's width, so the field inside can measure itself against the placeholder it is
+     covering rather than against whatever it happens to contain. */
+  width: 100%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The empty placeholder: a ghost chip, dashed and unfilled, so the row reads as "a thing could
+   go here" rather than as a button parked beside the chips.
+
+   Its box is `.chip`'s, property for property — the same padding, the same inherited
+   line-height, and no height of its own. Given as a height instead it came out 19px against the
+   chips' 21.2px, and put its text 0.64px off their baseline: a placeholder and a chip sit side
+   by side in this row, so the two agreeing matters more than either being centred on paper. */
+.tagbar-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border: 1px dashed color-mix(in srgb, var(--line-2) 90%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
   font: inherit;
   font-size: 10.5px;
-  color: var(--text-3);
-  background: none;
-  border: 1px dashed var(--line-1);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+/* Once the group has chips in it the word is redundant and the mark stands in. Same pill radius,
+   which on a square is a circle: it is the same control either way, and a shape that changed
+   when the first tag landed would read as a different one.
+ *
+ * Sized off the row rather than by a number, because a number would have to be the chip height
+ * and that is font-derived. The mark only ever appears beside a chip — it replaces the word
+ * precisely when the group is non-empty — so stretching to the row always has something to
+ * measure against, and the aspect ratio squares it off. */
+.tagbar-slot {
+  align-self: stretch;
+}
+.tagbar-add-mark {
+  height: 100%;
+  padding: 0;
+  aspect-ratio: 1;
+}
+.tagbar-add-mark svg {
+  width: 10px;
+  height: 10px;
+}
+.tagbar-add:hover,
+.tagbar-add:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
+}
+.tagbar-input {
+  /* Never narrower than the placeholder it replaced — so a field opened on the tag mark does not
+     come up 19px wide — and never so narrow it cannot be typed in. `100%` is the slot, which
+     `.tagbar-editor` matches; the floor is about thirteen characters at this size, which covers
+     every archetype and tag a team has yet come up with. */
+  /* Exactly the placeholder it is covering, so it can never be drawn over the group beside it.
+     A field that ran 8px onto the Tags pill left it looking clipped rather than overlaid, and
+     widening the field is the wrong trade: the neighbour is a chip or a placeholder that has to
+     stay readable. */
+  width: 100%;
+  /* Chip metrics again, for the same reason the placeholder uses them: the field stands exactly
+     where a pill was, so it should be exactly a pill's height. */
+  padding: 2px 8px;
+  border: 1px solid var(--accent);
   border-radius: 999px;
-  padding: 1px 8px;
+  background: var(--bg-panel);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 10.5px;
+  outline: none;
+}
+/* The last group has nothing to its right to run into, so its field may take the room it needs.
+   That is what keeps a field opened on the 21px tag mark typeable without letting the archetype
+   field — which always has a neighbour — grow at all. */
+.tagbar-group:last-child .tagbar-input {
+  width: max(100%, 88px);
+}
+
+/* The suggestion menu: BurnSun's .fit-tag-dropdown. It floats over the tile rather than pushing
+   it open, which is the whole difference from the tray this replaced. */
+.tagbar-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 150px;
+  max-width: min(210px, calc(100vw - 24px));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  box-shadow: 0 12px 28px color-mix(in srgb, black 24%, transparent);
+}
+:root:not([data-theme="dark"]) .tagbar-menu {
+  box-shadow: 0 8px 22px rgba(13, 18, 32, 0.14);
+}
+.tagbar-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 10.5px;
+  text-align: left;
   cursor: pointer;
 }
-.chips-edit:hover {
-  color: var(--text-1);
-  border-color: var(--line-2);
+.tagbar-option:hover,
+.tagbar-option:focus-visible {
+  background: var(--bg-soft);
+  outline: none;
 }
-/* The remove control inside an applied chip. It inherits the chip's hue, so it reads as part
-   of the chip rather than as something bolted onto it. */
+/* Accent and italic, so creating reads as making something rather than as one more match. */
+.tagbar-create {
+  color: var(--accent);
+  font-style: italic;
+}
+
+/* The remove control inside an applied chip. It inherits the chip's hue, so it reads as part of
+   the chip rather than as something bolted onto it — and it is collapsed rather than hidden, so
+   on approach it slides out of the chip's own edge instead of appearing beside it and shoving
+   every chip after it sideways. BurnSun's .fit-tag-pill-remove. */
 .chip-x {
+  max-width: 0;
+  margin-left: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: inherit;
   font: inherit;
   font-size: 12px;
   line-height: 1;
-  color: inherit;
-  background: none;
-  border: 0;
-  padding: 0 0 0 2px;
-  opacity: 0.6;
+  opacity: 0;
   cursor: pointer;
+  transition: max-width 0.13s ease, margin-left 0.13s ease, opacity 0.13s ease;
 }
-.chip-x:hover {
+.chip:hover .chip-x,
+.chip:focus-within .chip-x {
+  max-width: 12px;
+  margin-left: 3px;
+  opacity: 0.82;
+}
+.chip-x:hover,
+.chip-x:focus-visible {
   opacity: 1;
-}
-
-/* The tag editor: two boxes, because the two namespaces never mix. */
-.tageditor {
-  border-top: 0.5px solid var(--line-1);
-  padding: 8px 11px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.tageditor-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.tageditor-input {
-  width: 100%;
-  height: 24px;
-  padding: 0 7px;
-  font: inherit;
-  font-size: 11px;
-  color: var(--text-1);
-  background: var(--bg-soft);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-sm);
-}
-.tageditor-options {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 132px;
-  overflow-y: auto;
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-sm);
-}
-.tageditor-option {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 24px;
-  padding: 0 8px;
-  font: inherit;
-  font-size: 11px;
-  text-align: left;
-  color: var(--text-2);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-.tageditor-option:hover {
-  background: var(--bg-soft);
-  color: var(--text-1);
-}
-.tageditor-option .cdot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  background: hsl(var(--h) var(--fit-tag-dot-sat) var(--fit-tag-dot-light));
-}
-.tageditor-create {
-  color: var(--text-3);
-}
-.tageditor-done {
-  align-self: flex-start;
-  padding: 2px 10px;
-  font: inherit;
-  font-size: 10.5px;
-  color: var(--text-2);
-  background: none;
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.tageditor-done:hover {
-  background: var(--bg-soft);
+  outline: none;
 }
 
 /* The comment thread. Opened from the footer, drawn under the tile. */
@@ -396,8 +502,15 @@
   padding: 0;
 }
 .trow {
+  /* Five tracks: the hull icon, the name, the row's actions (swap, then remove), the surcharge
+     and the cost. All but the name are fixed, which is what keeps the cost column aligned down
+     the whole scaffold.
+   *
+   * The actions sit at the end rather than in a leading margin. Out there they were inset a
+   * third of the way across the card from its left edge, with nothing to their left, and read
+   * as belonging to nothing; here they are against the row's own numbers. */
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 20px 26px;
+  grid-template-columns: 18px minmax(0, 1fr) 34px 20px 26px;
   align-items: center;
   gap: 8px;
   height: 24px;
@@ -420,6 +533,49 @@
 .trow.highlighted {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
+/* The row's actions: swap, then remove, in the order they sit on screen. Drawn the way BurnSun
+   draws a module row's actions — a 16px hit box around a small glyph, 2px apart — and revealed
+   on hover like the star further along the row, because a control belongs only to the row being
+   worked on.
+
+   Both boxes are the same size and centred the same way, so the two glyphs share a centre line
+   whatever the glyphs inside them measure. */
+.rowacts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.rowact {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    color 0.12s;
+}
+.trow:hover .rowact,
+.rowact:focus-visible,
+.rowact[aria-expanded="true"] {
+  opacity: 1;
+}
+.rowact:hover,
+.rowact[aria-expanded="true"] {
+  color: var(--accent);
+}
+/* Emptying a slot is the destructive one of the two, and it says so on approach — the same
+   red the control that closes a tile turns. */
+.rowact-clear:hover {
+  color: var(--danger);
+}
+
 .trow .ic {
   position: relative;
   width: 18px;
@@ -429,27 +585,30 @@
   width: 18px;
   height: 18px;
 }
-/* The row's tick sits on top of its hull icon rather than beside it, so picking rows out
-   costs the row no width and the tile's four-track grid does not move. Hidden by opacity and
-   never by `display`, because a control nothing can focus is a control nobody has. */
+/* The row's tick, kept for the keyboard and taken off the screen.
+
+   Rows are picked out by clicking them now — plainly, with control, or with shift — so a box
+   drawn over every hull icon was a second control for a thing the row already does, and it
+   covered the one picture on the row that says which hull it is. It stays in the markup
+   because it is the only handle a keyboard or a screen reader has: a control nothing can
+   focus is a control nobody has. Clipped rather than `display: none`, which would take it out
+   of the tab order and out of the accessibility tree along with it. */
 .rowpick {
   position: absolute;
-  inset: 0;
+  width: 1px;
+  height: 1px;
   margin: 0;
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-.trow:hover .rowpick,
-.rowpick:focus-visible,
-.rowpick:checked {
-  opacity: 1;
-}
-.trow:hover .rowpick:not(:checked),
-.trow .rowpick:focus-visible:not(:checked) {
-  opacity: 0.65;
+/* Focus lands on the box; the ring is drawn on the row, because the row is what the box acts
+   on and the only one of the two a person can see. */
+.trow:has(.rowpick:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 /* A picked row keeps its tint while the cursor is elsewhere, so a selection built across
    several rows is still visible as one thing. */
@@ -471,18 +630,6 @@
   white-space: nowrap;
   font-size: 12px;
 }
-.linkish {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-}
-.linkish:disabled {
-  cursor: default;
-}
 /* The surcharge gets its own track so it can never push the cost column around. Every
    copy of a duplicated hull shows the same figure — the charge is retroactive, not a
    penalty on whichever copy was added last. */
@@ -499,34 +646,176 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.trow.empty .nm .t,
-.trow.empty .cost {
-  color: var(--text-5);
+/* An empty slot has no hull to picture and nothing to act on, so its search takes the icon and
+   action tracks as well as the name — starting flush with the left edge of a filled row's hull
+   icon, and running to where the numbers begin. */
+.trow-empty .nm {
+  grid-column: 1 / 4;
 }
-.trow.empty .ph {
-  display: block;
-  width: 18px;
+
+/* The inline hull search, ported from BurnSun's empty module slot (IN1: the underline
+   variant its main fitting panel uses, not the filled box its additions panels keep).
+   A bare field behind a magnifier over a hairline rule — the rule is the whole of the
+   chrome, and it turns accent when the field is being used. */
+.rowsearch {
+  /* The containing block for its own menu, which is what keeps the two left edges together
+     however wide the cell under them happens to be. */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 18px;
-  border: 1px dashed var(--line-2);
-  border-radius: 4px;
+  /* No left padding: the magnifier is the leftmost thing on the row, so it lines up with a
+     filled row's own first icon rather than starting five pixels in from it. */
+  padding: 0 5px 0 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line-1) 72%, transparent);
+  border-radius: 0;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease;
 }
-.trow.empty:not(:disabled) {
+.rowsearch:hover {
+  border-bottom-color: color-mix(in srgb, var(--accent) 45%, var(--line-1));
+}
+/* Colour only. BurnSun doubles the rule with an accent box-shadow here; that reads as the
+   line getting thicker under the cursor, and a field that changes weight when you use it
+   moves the row you are reading. */
+.rowsearch.active {
+  border-bottom-color: var(--accent);
+}
+/* A viewer's empty slot: the rule alone. The scaffold still reads as ten slots, and nothing
+   offers a search to somebody who cannot fill one. */
+.rowsearch-mute {
+  height: 18px;
+}
+.rowsearch-mag {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--text-2) 86%, var(--accent) 14%);
+  /* The icon is a picture of what the field is for, not a second way to reach it. */
+  pointer-events: none;
+}
+.rowsearch.active .rowsearch-mag {
+  color: color-mix(in srgb, var(--text-1) 72%, var(--accent) 28%);
+}
+.rowsearch-input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  outline: none;
+  box-shadow: none;
+}
+.rowsearch.active .rowsearch-input {
+  color: var(--text-1);
+}
+
+/* The matches. Anchored to the bar itself, so its left edge is the bar's left edge whatever
+   the bar is sitting in — and floating, so a search never reflows the board. Widened past a
+   narrow bar (a swap's, which only spans the name) but never past the tile. */
+.rowsearch-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  width: max(100%, 216px);
+  max-width: min(320px, calc(100vw - 24px));
+  z-index: 30;
+}
+.rowsearch-menu {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--line-1) 94%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  /* An overlay, not app chrome — the one place §6.4 allows a shadow, and this is BurnSun's
+     own pair for this menu. */
+  box-shadow:
+    0 12px 28px color-mix(in srgb, black 24%, transparent),
+    0 12px 28px rgba(0, 0, 0, 0.28);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+:root:not([data-theme="dark"]) .rowsearch-menu {
+  box-shadow: 0 8px 22px rgba(13, 18, 32, 0.14);
+}
+.rowsearch-results {
+  list-style: none;
+  padding: 0;
+  max-height: 248px;
+}
+/* What the menu says when it has nothing to offer, in the row BurnSun keeps for it. */
+.rowsearch-status {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.rowsearch-option {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
   cursor: pointer;
 }
-.trow.empty:not(:disabled):hover {
-  background: var(--accent-soft);
+.rowsearch-option:hover,
+.rowsearch-option:focus-visible {
+  background: var(--bg-soft);
+  outline: none;
 }
-.trow.empty:not(:disabled):hover .nm .t,
-.trow.empty:not(:disabled):hover .cost {
-  color: var(--accent);
+.rowsearch-option-ic {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
 }
-.trow.empty:not(:disabled):hover .ph {
-  border-color: var(--accent);
+.rowsearch-option-ic img {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
 }
-.trow-open {
-  display: block;
-  height: auto;
-  padding: 4px;
+.rowsearch-option-nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowsearch-option-cost {
+  font-family: var(--font-brand);
+  font-size: 10px;
+  color: var(--text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* What the pick would break, stated — never a reason to withhold it. */
+.rowsearch-option-warn {
+  grid-column: 2 / -1;
+  color: var(--danger);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* What to do with the rows that are ticked. Present only while some are, and below the rows
@@ -580,8 +869,7 @@
   padding: 1px 7px;
   line-height: 1.3;
 }
-.flagset,
-.rowclear {
+.flagset {
   border: 0;
   background: transparent;
   color: var(--text-4);
@@ -593,20 +881,17 @@
     opacity 0.12s,
     color 0.12s;
 }
-/* Both are controls, and controls only appear on the row being worked on. The designated
-   row deliberately does not pin its star open: the pill already says it is the flagship,
-   and a permanent star beside a permanent pill says the same thing twice. */
+/* A control, and controls only appear on the row being worked on. The designated row
+   deliberately does not pin its star open: the pill already says it is the flagship, and a
+   permanent star beside a permanent pill says the same thing twice. */
 .trow:hover .flagset,
-.trow:hover .rowclear,
-.flagset:focus-visible,
-.rowclear:focus-visible {
+.flagset:focus-visible {
   opacity: 1;
 }
 .flagset[aria-pressed="true"] {
   color: var(--accent);
 }
-.flagset:hover,
-.rowclear:hover {
+.flagset:hover {
   color: var(--text-1);
 }
 
@@ -622,6 +907,18 @@
   border-radius: 10px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
   padding: 11px;
+}
+/* Load-bearing now the panel opens on hover: `top: 26px` leaves six pixels of nothing between
+   the flag and the panel, and a cursor crossing them is a cursor that has left both. This is
+   part of the panel, so the gap stays a gap to look at and stops being one to fall through —
+   which is why it is here rather than in a smaller `top`: the spacing is the locked design's. */
+.vpop::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -8px;
+  height: 8px;
 }
 :root:not([data-theme="dark"]) .vpop {
   box-shadow: 0 8px 22px rgba(13, 18, 32, 0.12);
@@ -681,59 +978,6 @@
   color: var(--text-3);
   font-size: 10.5px;
   margin-top: 1px;
-}
-
-/* The inline hull picker, opened on a row. */
-.shipsearch-input {
-  width: 100%;
-}
-.shipsearch-results {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
-  max-height: 190px;
-  overflow-y: auto;
-}
-.shipsearch-option {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 40px;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 24px;
-  padding: 2px 4px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.shipsearch-option:hover {
-  background: var(--accent-soft);
-}
-.shipsearch-option .nm {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.shipsearch-option .cost {
-  font-family: var(--font-brand);
-  font-size: 11px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-/* What the pick would break, stated — never a reason to withhold it. */
-.shipsearch-option .warns {
-  grid-column: 2 / -1;
-  color: var(--danger);
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .comp-list {

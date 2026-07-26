@@ -285,27 +285,58 @@ h3 {
   background: var(--bg-soft);
 }
 
-/* Archetype/Tags chips. The hue per chip comes from the value itself, via --h set inline by
-   `comps/tag-model.ts` — so one tag is one colour everywhere it appears. `.arch` is dashed and
-   dotless, which is what tells an archetype from a tag in the locked design. */
+/* Archetype/Tags chips. The colour comes from the value itself, via the three custom properties
+   `comps/tag-model.ts` sets inline — so one tag is one colour everywhere it appears, and the
+   same colour BurnSun gives it. `.arch` carries the dot, which is what tells an archetype
+   from a tag in the locked design.
+
+   The declarations are BurnSun's `.fit-tag-pill`, unchanged: hue from the value, saturation and
+   lightness from the theme's tokens (identical in tokens.css), nudged by a per-value jitter so
+   two values that land on one hue still read apart. */
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  /* Spacing is on the children rather than a `gap` here, because the remove control collapses
+     to nothing: a gap would go on reserving 5px after the label for a button that is not
+     showing, and the chip would sit visibly off-centre in its own padding. */
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 10.5px;
   font-weight: 500;
-  border: 1px solid hsl(var(--h) var(--fit-tag-border-sat) var(--fit-tag-border-light));
-  background: hsl(var(--h) var(--fit-tag-bg-sat) var(--fit-tag-bg-light));
-  color: hsl(var(--h) var(--fit-tag-text-sat) var(--fit-tag-text-light));
+  border: 1px solid
+    hsl(
+      var(--fit-tag-hue)
+      clamp(0%, calc(var(--fit-tag-border-sat) + var(--fit-tag-sat-adjust)), 100%)
+      clamp(0%, calc(var(--fit-tag-border-light) + var(--fit-tag-light-adjust)), 100%)
+    );
+  background: hsl(
+    var(--fit-tag-hue)
+    clamp(0%, calc(var(--fit-tag-bg-sat) + var(--fit-tag-sat-adjust)), 100%)
+    clamp(0%, calc(var(--fit-tag-bg-light) + var(--fit-tag-light-adjust)), 100%)
+  );
+  color: hsl(
+    var(--fit-tag-hue)
+    clamp(0%, calc(var(--fit-tag-text-sat) + var(--fit-tag-sat-adjust)), 100%)
+    clamp(0%, calc(var(--fit-tag-text-light) + var(--fit-tag-light-adjust)), 100%)
+  );
 }
-.chip .cdot {
+/* Not scoped to .chip: the suggestion menu draws the same dot beside an option that has not been
+   applied yet, carrying its own inline properties. Declares no defaults of its own — inside a
+   chip it must inherit the chip's hue, and re-declaring here would override it. */
+.cdot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: hsl(var(--h) var(--fit-tag-dot-sat) var(--fit-tag-dot-light));
+  flex: 0 0 auto;
+  background: hsl(
+    var(--fit-tag-hue)
+    clamp(0%, calc(var(--fit-tag-dot-sat) + var(--fit-tag-sat-adjust)), 100%)
+    clamp(0%, calc(var(--fit-tag-dot-light) + var(--fit-tag-light-adjust)), 100%)
+  );
 }
-.chip.arch {
-  border-style: dashed;
+.chip .cdot {
+  margin-right: 5px;
 }
+/* Both kinds are solid: dashed is the band's word for "nothing here yet", and spending it on a
+   populated tag put a value in the same costume as an empty placeholder. What separates the two
+   kinds now is the dot, which the archetype has and the tags do not — see TagBar. */

@@ -33,6 +33,9 @@ export interface Comp {
   readonly slots: readonly CompSlot[]
   readonly shareSlug: string | null
   readonly shareStale: boolean
+  /** What the comp says it is: one archetype at most, and any number of tags. */
+  readonly archetype: string | null
+  readonly tags: readonly string[]
 }
 
 export interface Board {
@@ -62,6 +65,11 @@ export class Api {
 
   getComp(compId: string): Promise<Comp> {
     return this.json(this.http.get(`/api/v1/comps/${compId}`))
+  }
+
+  /** Archetype and tags together, because the route replaces both wholesale. */
+  setTags(compId: string, archetype: string | null, tags: readonly string[]): Promise<Comp> {
+    return this.json(this.http.put(`/api/v1/comps/${compId}/tags`, { data: { archetype, tags } }))
   }
 
   /** The whole slot list, in order — the route replaces wholesale rather than patching. */

@@ -14,9 +14,10 @@ test('adding a hull saves, and survives a reload', async ({ page, api, team }) =
   const tile = tileFor(page, comp.id)
   await expect(tile).toBeVisible()
 
-  await tile.getByTestId('comp-row-empty').first().getByRole('button').click()
-  await page.getByTestId('ship-search-input').fill('Abaddon')
-  await page.getByTestId('ship-search-results').getByRole('button', { name: /^Abaddon/ }).click()
+  // An empty row *is* its search now — no control to open first. Scoped to the row rather than
+  // the page because every empty slot draws one of these, so the page-wide id matches ten.
+  await tile.getByTestId('comp-row-empty').first().getByTestId('ship-search-input').fill('Abaddon')
+  await tile.getByTestId('ship-search-results').getByRole('button', { name: /^Abaddon/ }).click()
 
   await expect(tile.getByTestId('comp-row-name')).toHaveText('Abaddon')
   await expectCompSaved(tile)

@@ -52,9 +52,10 @@ test('a share link opens with no cookie, and goes stale when the comp moves on',
 
   // A share is a snapshot. Editing the comp afterwards must say so rather than silently
   // changing what a link already sent shows.
-  await tile.getByTestId('comp-row-empty').first().getByRole('button').click()
-  await page.getByTestId('ship-search-input').fill('Scimitar')
-  await page.getByTestId('ship-search-results').getByRole('button', { name: /^Scimitar/ }).click()
+  // An empty row *is* its search now — no control to open first, and scoped to the row because
+  // every empty slot draws one.
+  await tile.getByTestId('comp-row-empty').first().getByTestId('ship-search-input').fill('Scimitar')
+  await tile.getByTestId('ship-search-results').getByRole('button', { name: /^Scimitar/ }).click()
   await expectCompSaved(tile)
 
   await expect(tile.getByTestId('comp-share')).toHaveAttribute('data-shared', 'true')

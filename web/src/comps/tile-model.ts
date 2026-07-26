@@ -196,18 +196,23 @@ export const EMPTY_SELECTION: RowSelection = { rows: [], anchor: null }
 /**
  * Row `index` picked, or unpicked.
  *
- * Plain is a toggle, because the control is a checkbox and a checkbox that cleared its
- * neighbours would be lying about what it is. Shift extends from the anchor by union, so a
- * range only ever adds — the way back out is the checkbox that put a row in.
+ * The three gestures every list of rows answers to, and they are deliberately the ones a file
+ * list uses rather than a set invented here. **Plain replaces**: clicking a row means "this
+ * one", so whatever was picked before lets go. **Toggle** — control or command held, and the
+ * row's own select box, because a checkbox that cleared its neighbours would be lying about
+ * what it is — adds or removes the one row and leaves the rest alone. **Range** extends from
+ * the anchor by union, so a range only ever adds; the way back out is a toggle on a row in it.
+ *
+ * The anchor is the last row touched *without* shift, which is what makes a second shift-click
+ * re-extend from where the person last pointed rather than from wherever the last range ended.
  */
 export function selectRow(
   selection: RowSelection,
   index: number,
-  options?: { readonly range?: boolean },
+  options?: { readonly range?: boolean; readonly toggle?: boolean },
 ): RowSelection {
-  const held = new Set(selection.rows)
-
   if (options?.range && selection.anchor !== null) {
+    const held = new Set(selection.rows)
     const from = Math.min(selection.anchor, index)
     const to = Math.max(selection.anchor, index)
     for (let at = from; at <= to; at += 1) held.add(at)
@@ -216,9 +221,14 @@ export function selectRow(
     return { rows: [...held].sort(ascending), anchor: selection.anchor }
   }
 
-  if (held.has(index)) held.delete(index)
-  else held.add(index)
-  return { rows: [...held].sort(ascending), anchor: index }
+  if (options?.toggle) {
+    const held = new Set(selection.rows)
+    if (held.has(index)) held.delete(index)
+    else held.add(index)
+    return { rows: [...held].sort(ascending), anchor: index }
+  }
+
+  return { rows: [index], anchor: index }
 }
 
 function ascending(a: number, b: number): number {

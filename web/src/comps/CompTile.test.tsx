@@ -40,7 +40,7 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
   const onPortRows = vi.fn()
   const onCopyRows = vi.fn()
   const onDragRows = vi.fn()
-  const onEditTags = vi.fn()
+  const onSaveTags = vi.fn()
   const onToggleComments = vi.fn()
   const onFork = vi.fn()
   const tile = (next: CompSlot[]) => (
@@ -63,7 +63,7 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
       onPortRows={onPortRows}
       onCopyRows={onCopyRows}
       onDragRows={onDragRows}
-      onEditTags={says.interactive ? onEditTags : undefined}
+      onSaveTags={says.interactive ? onSaveTags : undefined}
       onToggleComments={says.interactive ? onToggleComments : undefined}
       onFork={says.interactive ? onFork : undefined}
     />
@@ -74,7 +74,7 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
     onPortRows,
     onCopyRows,
     onDragRows,
-    onEditTags,
+    onSaveTags,
     onToggleComments,
     onFork,
     rerenderWith: (next: CompSlot[]) => view.rerender(tile(next)),
@@ -89,12 +89,22 @@ const rowCosts = () => screen.getAllByTestId('comp-row-cost').map((cell) => cell
 const surcharges = () =>
   screen.getAllByTestId('comp-row-surcharge').map((cell) => cell.textContent).filter(Boolean)
 
-/** Open the search on the first empty slot: scope to the row, then find its control. */
+/**
+ * The search on the first empty slot.
+ *
+ * Nothing is clicked open: an empty row *is* its search, the way BurnSun's empty module slot
+ * is. Scoped to the row, because every empty row now carries one.
+ */
 function openSearch() {
   const firstEmpty = screen.getAllByTestId('comp-row-empty')[0]
-  if (!firstEmpty) throw new Error('the scaffold has no empty row to open')
-  fireEvent.click(within(firstEmpty).getByRole('button'))
-  return screen.getByTestId('ship-search-input')
+  if (!firstEmpty) throw new Error('the scaffold has no empty row to search in')
+  return within(firstEmpty).getByTestId('ship-search-input')
+}
+
+/** The search a filled row's magnifier opens, for swapping the hull already in it. */
+function openSwap(index: number) {
+  fireEvent.click(within(row(index)).getByTestId('comp-row-search'))
+  return within(row(index)).getByTestId('ship-search-input')
 }
 
 /** A hull as the search offers it — scoped, because the tile also names hulls in its rows. */
@@ -102,7 +112,13 @@ function option(name: RegExp) {
   return within(screen.getByTestId('ship-search-results')).getByRole('button', { name })
 }
 
-/** One row's select box, by the name a person hears — slot number and all. */
+/**
+ * One row's select box, by the name a person hears — slot number and all.
+ *
+ * Drawn nowhere: rows are picked out by clicking them. It is still here, still focusable and
+ * still named, because it is the only handle a keyboard or a screen reader has on the gesture
+ * — and a checkbox is a toggle, whatever the pointer's plain click does.
+ */
 function tick(name: string) {
   return screen.getByRole('checkbox', { name })
 }
@@ -164,23 +180,35 @@ describe('what the comp says it is', () => {
     const band = screen.getByTestId('comp-chips')
     expect(band.getAttribute('aria-hidden')).toBe('true')
     expect(screen.queryByTestId('comp-archetype-chip')).toBeNull()
-    expect(screen.queryByTestId('comp-tags-edit')).toBeNull()
+    expect(screen.queryByTestId('comp-tags-add')).toBeNull()
   })
 
-  it('offers the tag editor by a name that says which comp it edits', () => {
-    // A board of twenty otherwise offers twenty controls called "Edit tags".
-    const { onEditTags } = mount(slots(), true, { interactive: true })
+  it('offers both placeholders by names that say which comp they belong to', () => {
+    // A board of twenty otherwise offers twenty controls called "Add tag".
+    mount(slots(), true, { interactive: true })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit tags on Angel Shield Kite' }))
+    expect(screen.getByRole('button', { name: 'Add archetype to Angel Shield Kite' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add tags to Angel Shield Kite' })).toBeTruthy()
+  })
 
-    expect(onEditTags).toHaveBeenCalled()
+  it('writes the whole of what the comp says when a value is picked', () => {
+    // The band edits in place now, so the tile's own callback is the write — there is no panel
+    // in between to carry it.
+    const { onSaveTags } = mount(slots(), true, { interactive: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add tags to Angel Shield Kite' }))
+    fireEvent.change(screen.getByLabelText('Tags'), { target: { value: 'Cheap' } })
+    fireEvent.click(screen.getByTestId('comp-tag-create'))
+
+    expect(onSaveTags).toHaveBeenCalledWith({ archetype: null, tags: ['Cheap'] })
   })
 
   it('gives a viewer no way to change what it says', () => {
     mount(slots(SHIP.abaddon), false, { archetype: 'Kite', tags: ['Shield'] })
 
     expect(screen.getByTestId('comp-archetype-chip')).toBeTruthy()
-    expect(screen.queryByTestId('comp-tags-edit')).toBeNull()
+    expect(screen.queryByTestId('comp-tags-add')).toBeNull()
+    expect(screen.queryByTestId('comp-tag-remove')).toBeNull()
   })
 })
 
@@ -268,6 +296,24 @@ describe('the delta pill', () => {
 })
 
 describe('the hull search', () => {
+  it('is already there on an empty row, with nothing to click open first', () => {
+    // BurnSun's empty module slot, and the reason the "Add hull" button is gone: the row is
+    // a field behind a magnifier, and typing in it is the whole gesture.
+    mount(slots(SHIP.abaddon))
+
+    const firstEmpty = screen.getAllByTestId('comp-row-empty')[0]!
+    expect(within(firstEmpty).getByTestId('ship-search-input')).toBeTruthy()
+    // Named per slot: nine fields called "Search hulls" is one control nobody can address.
+    expect(screen.getByRole('textbox', { name: 'Add a hull in slot 2' })).toBeTruthy()
+  })
+
+  it('says nothing until it is typed in, so nine empty rows are nine bare fields', () => {
+    mount(slots())
+
+    expect(screen.queryByTestId('ship-search-results')).toBeNull()
+    expect(screen.queryByTestId('ship-search-option')).toBeNull()
+  })
+
   it('filters the roster as you type', () => {
     mount(slots())
 
@@ -275,6 +321,92 @@ describe('the hull search', () => {
 
     expect(option(/Vindicator/)).toBeTruthy()
     expect(screen.getAllByTestId('ship-search-option')).toHaveLength(1)
+  })
+
+  it('says so when the ruleset has nothing matching', () => {
+    mount(slots())
+
+    fireEvent.change(openSearch(), { target: { value: 'zzzz' } })
+
+    expect(screen.getByTestId('ship-search-empty')).toBeTruthy()
+    expect(screen.queryByTestId('ship-search-results')).toBeNull()
+  })
+
+  it('empties itself on a pick, because the row it was typed in may still be empty', () => {
+    // `withRow` appends, so a hull picked from the fifth empty row lands in the first. The
+    // field that was typed in is still on screen, and a menu left open over it would be a
+    // menu about a row nothing happened to.
+    mount(slots())
+    const field = openSearch()
+    fireEvent.change(field, { target: { value: 'vind' } })
+
+    fireEvent.click(option(/Vindicator/))
+
+    expect((field as HTMLInputElement).value).toBe('')
+    expect(screen.queryByTestId('ship-search-results')).toBeNull()
+  })
+
+  it('swaps a filled row from its magnifier, not from its name', () => {
+    const { onChange } = mount(slots(SHIP.abaddon))
+
+    fireEvent.change(openSwap(0), { target: { value: 'rifter' } })
+    fireEvent.click(option(/Rifter/))
+
+    expect(onChange).toHaveBeenCalledWith([{ typeId: SHIP.rifter, isFlagship: false }])
+  })
+
+  it('names the magnifier for the hull it would swap', () => {
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    expect(screen.getByRole('button', { name: 'Swap Abaddon' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Swap Rifter' })).toBeTruthy()
+  })
+
+  it('closes a swap when focus leaves it, so the row goes back to naming its hull', () => {
+    // A swap covers the name while it is open. One left behind by a click somewhere else is
+    // a row that will not say what is in it, and nothing on screen offers a way back.
+    const { onChange } = mount(slots(SHIP.abaddon))
+    const field = openSwap(0)
+
+    // Raised on the field, not on the control: what closes this is focus leaving the field
+    // and bubbling out past the menu, which is the path the browser actually takes.
+    fireEvent.focusOut(field, { relatedTarget: document.body })
+
+    expect(within(row(0)).queryByTestId('ship-search-input')).toBeNull()
+    expect(within(row(0)).getByTestId('comp-row-name').textContent).toBe('Abaddon')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('holds the search open while focus moves into its own menu', () => {
+    // The move from the field to an option is focus leaving the *field*, not the control —
+    // and a dismiss there would close the menu out from under the click that opened it.
+    mount(slots())
+    const field = openSearch()
+    fireEvent.change(field, { target: { value: 'vind' } })
+
+    fireEvent.focusOut(field, { relatedTarget: option(/Vindicator/) })
+
+    expect(screen.getByTestId('ship-search-results')).toBeTruthy()
+  })
+
+  it('picks the hull even though the option is clicked from outside the field', () => {
+    const { onChange } = mount(slots())
+    fireEvent.change(openSearch(), { target: { value: 'vind' } })
+
+    fireEvent.click(option(/Vindicator/))
+
+    expect(onChange).toHaveBeenCalledWith([{ typeId: SHIP.vindicator, isFlagship: false }])
+  })
+
+  it('closes a swap on Escape, leaving the hull alone', () => {
+    const { onChange } = mount(slots(SHIP.abaddon))
+    const field = openSwap(0)
+
+    fireEvent.keyDown(field, { key: 'Escape' })
+
+    expect(within(row(0)).queryByTestId('ship-search-input')).toBeNull()
+    expect(within(row(0)).getByTestId('comp-row-name').textContent).toBe('Abaddon')
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('prices a duplicate by what it does to the comp, not by its list value', () => {
@@ -357,6 +489,39 @@ describe('violations', () => {
     expect(flag.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it('opens on hover, and closes again when the pointer leaves', () => {
+    mount(slots(SHIP.abaddon, SHIP.abaddon, SHIP.abaddon))
+    const flag = screen.getByTestId('comp-issue-flag')
+    expect(screen.queryByTestId('comp-violations')).toBeNull()
+
+    fireEvent.mouseEnter(flag)
+    expect(screen.getByTestId('comp-violations')).toBeTruthy()
+    expect(flag.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.mouseLeave(flag)
+    expect(screen.queryByTestId('comp-violations')).toBeNull()
+  })
+
+  it('opens on focus too, so the flag is not a thing only a mouse can read', () => {
+    mount(slots(SHIP.abaddon, SHIP.abaddon, SHIP.abaddon))
+
+    fireEvent.focus(screen.getByTestId('comp-issue-flag'))
+
+    expect(screen.getByTestId('comp-violations')).toBeTruthy()
+  })
+
+  it('stays open when the flag is clicked, because a tap hovers before it clicks', () => {
+    // A toggle would hand the panel to a touch screen and take it straight back: the tap
+    // raises a mouseenter, which opens it, and then a click, which would shut it.
+    mount(slots(SHIP.abaddon, SHIP.abaddon, SHIP.abaddon))
+    const flag = screen.getByTestId('comp-issue-flag')
+
+    fireEvent.mouseEnter(flag)
+    fireEvent.click(flag)
+
+    expect(screen.getByTestId('comp-violations')).toBeTruthy()
+  })
+
   it('closes the popover on Escape', () => {
     mount(slots(SHIP.abaddon, SHIP.abaddon, SHIP.abaddon))
     fireEvent.click(screen.getByTestId('comp-issue-flag'))
@@ -417,6 +582,129 @@ describe('a hull the ruleset does not price', () => {
     expect(
       screen.getByRole('button', { name: 'Make Unknown hull 999999 the flagship' }),
     ).toBeTruthy()
+  })
+})
+
+describe('picking rows out by clicking them', () => {
+  it('picks the row that was clicked, with no tick to aim at', () => {
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.click(row(1))
+
+    expect(screen.getByTestId('comp-selection-status').textContent).toBe('1 hull selected')
+    // The box a screen reader reads is the same state, not a second one keeping its own score.
+    expect((tick('Select Rifter in slot 2') as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('replaces the selection on a plain click, the way a file list does', () => {
+    const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+
+    fireEvent.click(row(0))
+    fireEvent.click(row(2))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy to another comp' }))
+
+    expect(onCopyRows).toHaveBeenCalledWith([{ typeId: SHIP.orthrus, isFlagship: false }])
+  })
+
+  it('adds to the selection when control or command is held', () => {
+    const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+
+    fireEvent.click(row(0))
+    fireEvent.click(row(2), { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
+
+    expect(onPortRows).toHaveBeenCalledWith([0, 2])
+  })
+
+  it('honours command as well as control, so a Mac needs no separate gesture', () => {
+    const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
+
+    fireEvent.click(row(0))
+    fireEvent.click(row(1), { metaKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
+
+    expect(onPortRows).toHaveBeenCalledWith([0, 1])
+  })
+
+  it('extends a range from the row clicked last when shift is held', () => {
+    const { onPortRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus, SHIP.svipul))
+
+    fireEvent.click(row(1))
+    fireEvent.click(row(3), { shiftKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Port to a new comp' }))
+
+    expect(onPortRows).toHaveBeenCalledWith([1, 2, 3])
+  })
+
+  it('picks the row out when the hull name is clicked, now that the name is only text', () => {
+    // Swapping moved to the magnifier, so the name stopped being a secret button and went
+    // back to the row. Clicking it is a click on the row like any other.
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.click(screen.getAllByTestId('comp-row-name')[1]!)
+
+    expect(screen.getByTestId('comp-selection-status').textContent).toBe('1 hull selected')
+    expect(within(row(1)).queryByTestId('ship-search-input')).toBeNull()
+  })
+
+  it("leaves the row's own controls alone — they mean what they say, not this", () => {
+    // The magnifier swaps the hull. A click on it that also picked the row out would make
+    // two gestures one, and there would then be no way to swap without selecting.
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.click(within(row(1)).getByTestId('comp-row-search'))
+
+    expect(within(row(1)).getByTestId('ship-search-input')).toBeTruthy()
+    expect(screen.queryByTestId('comp-selection')).toBeNull()
+  })
+
+  it('does not pick rows out of a comp the viewer cannot edit', () => {
+    mount(slots(SHIP.abaddon, SHIP.rifter), false)
+
+    fireEvent.click(row(0))
+
+    expect(screen.queryByTestId('comp-selection')).toBeNull()
+  })
+
+  it('lets go when the click lands anywhere outside the tile', () => {
+    // The board's empty space, the rail, another tile: picking rows is a gesture inside one
+    // tile, so a click that lands outside it is the end of the gesture.
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+    fireEvent.click(row(0))
+    expect(screen.getByTestId('comp-selection')).toBeTruthy()
+
+    fireEvent.mouseDown(document.body)
+
+    expect(screen.queryByTestId('comp-selection')).toBeNull()
+  })
+
+  it('holds on when the click lands somewhere else in the same tile', () => {
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+    fireEvent.click(row(0))
+
+    fireEvent.mouseDown(screen.getByTestId('comp-rows'))
+
+    expect(screen.getByTestId('comp-selection')).toBeTruthy()
+  })
+
+  it('lets go on Escape', () => {
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+    fireEvent.click(row(0))
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(screen.queryByTestId('comp-selection')).toBeNull()
+  })
+
+  it('leaves Escape to a swap search while one is open', () => {
+    // Two things Escape could mean, and the open panel is the nearer of them.
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+    fireEvent.click(row(0))
+    fireEvent.click(within(row(1)).getByTestId('comp-row-search'))
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(screen.getByTestId('comp-selection')).toBeTruthy()
   })
 })
 
@@ -531,8 +819,12 @@ describe('a viewer', () => {
     expect(screen.queryByTestId('comp-row-flagship-toggle')).toBeNull()
     expect(screen.queryByTestId('comp-row-remove')).toBeNull()
     expect(screen.queryByTestId('comp-row-select')).toBeNull()
-    const firstEmpty = within(screen.getAllByTestId('comp-row-empty')[0]!).getByRole('button')
-    expect(firstEmpty.hasAttribute('disabled')).toBe(true)
+    expect(screen.queryByTestId('comp-row-search')).toBeNull()
+    // An empty slot keeps its rule, so the scaffold still reads as ten — but there is no
+    // field in it, because there is nothing a viewer could put there.
+    const firstEmpty = screen.getAllByTestId('comp-row-empty')[0]!
+    expect(within(firstEmpty).queryByTestId('ship-search-input')).toBeNull()
+    expect(firstEmpty.querySelector('.rowsearch-mute')).toBeTruthy()
   })
 })
 

@@ -17,21 +17,85 @@
 // the server, when the value is stored; a second opinion in the browser would be a second
 // answer to "is this the same tag?".
 
+import type { CSSProperties } from 'react'
+
 import type { CompDetail } from './types'
+
+/**
+ * BurnSun's `stableTagHash`, from `web/src/lib/fitTags.ts`.
+ *
+ * FNV-1a and then an avalanche finalizer. The finalizer is the part that matters: it makes a
+ * one-character difference move every bit rather than a couple of low ones. The multiply-by-31
+ * hash this replaced did not, which is why values as close as "Shield" and "Shields" used to
+ * come out a few degrees apart — a difference nobody can see on two small chips.
+ */
+function stableTagHash(value: string): number {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x7feb352d)
+  hash ^= hash >>> 15
+  hash = Math.imul(hash, 0x846ca68b)
+  hash ^= hash >>> 16
+  return hash >>> 0
+}
+
+/**
+ * Hash to hue, as a band and an offset rather than a plain `% 360`.
+ *
+ * Consecutive hashes come out a full 30° apart instead of 1°, so the handful of values a team
+ * adds in one sitting — the ones that will sit beside each other on a tile — are the ones
+ * furthest from each other on the wheel. Always lands in [0, 360).
+ */
+function distributedHue(hash: number): number {
+  const base = hash % 360
+  const band = base % 12
+  const offset = Math.floor(base / 12)
+  return band * 30 + offset
+}
+
+/**
+ * What gets hashed: casefolded, spaces to dashes — BurnSun's `normalizeFitTag`.
+ *
+ * Fed to the hash and nowhere else. It is never stored and never shown, so it is not the second
+ * opinion on spelling that the note at the top of this file rules out; the server still decides
+ * what a value *is*. What it buys is that "Shield" here and "shield" in BurnSun are one colour.
+ * Falls back to the raw value when normalizing would empty it, so every string still has a hue.
+ */
+function forHashing(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, '-') || value
+}
 
 /**
  * A stable hue per value, so a tag is the same colour everywhere it appears.
  *
- * The mockup's `tagHue`, unchanged: colour is identity here, and re-deriving it differently
- * would make one tag two colours between the tile and the rail. Set as `--h` on the chip;
- * `base.css` builds the border, background, text and dot from it.
+ * Ported whole from BurnSun rather than reinvented, for one reason: the two apps are looked at
+ * side by side, and a colour that means one thing here and another there would be worse than no
+ * colour at all. `tag-model.test.ts` pins five values measured from the running BurnSun, which
+ * is what will catch the two drifting apart.
  */
 export function hueFor(value: string): number {
-  let hash = 0
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0
-  }
-  return hash % 360
+  return distributedHue(stableTagHash(forHashing(value)))
+}
+
+/**
+ * The three custom properties a chip needs, as one object to spread onto `style`.
+ *
+ * Hue alone gives 360 buckets. The two adjustments take a little saturation and lightness
+ * jitter from other bits of the same hash, so two values that *do* collide on a hue still read
+ * apart. `base.css` builds the border, background, text and dot from all three — which is why
+ * they travel together rather than as three separate calls at each use site.
+ */
+export function chipVars(value: string): CSSProperties {
+  const hash = stableTagHash(forHashing(value))
+  return {
+    '--fit-tag-hue': String(distributedHue(hash)),
+    '--fit-tag-sat-adjust': `${((hash >>> 8) % 13) - 6}%`,
+    '--fit-tag-light-adjust': `${((hash >>> 20) % 9) - 4}%`,
+  } as CSSProperties
 }
 
 /** The two vocabularies a team has in use. Named apart, because §3.3 says they never mix. */

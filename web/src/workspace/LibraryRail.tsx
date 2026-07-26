@@ -18,7 +18,7 @@
 
 import { useMemo, useState } from 'react'
 
-import { hueFor, vocabularyOf } from '../comps/tag-model'
+import { chipVars, vocabularyOf } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import RailComp from './RailComp'
 
@@ -143,7 +143,7 @@ export default function LibraryRail({
                     type="button"
                     aria-pressed={on}
                     aria-label={`Filter by ${tag}`}
-                    style={{ '--h': hueFor(tag) } as React.CSSProperties}
+                    style={chipVars(tag)}
                     onClick={() =>
                       setTags((current) =>
                         current.includes(tag)

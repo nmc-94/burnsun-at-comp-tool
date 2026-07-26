@@ -506,7 +506,7 @@ describe('tagging a comp from its tile', () => {
   it('stores the archetype and puts the chip on the tile', async () => {
     const server = await openWithAlpha()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit tags on Alpha' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add archetype to Alpha' }))
     fireEvent.change(screen.getByLabelText('Archetype'), { target: { value: 'Kite' } })
     fireEvent.click(screen.getByTestId('comp-tag-create'))
 
@@ -524,7 +524,7 @@ describe('tagging a comp from its tile', () => {
       screen.getAllByTestId('library-group-toggle').map((head) => head.getAttribute('aria-label')),
     ).toEqual(['No archetype'])
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit tags on Alpha' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add archetype to Alpha' }))
     fireEvent.change(screen.getByLabelText('Archetype'), { target: { value: 'Kite' } })
     fireEvent.click(screen.getByTestId('comp-tag-create'))
 
@@ -539,7 +539,7 @@ describe('tagging a comp from its tile', () => {
     // §3.3's suggestion set is "values already in use on that team's comps", and it comes out of
     // the listing this screen already holds — so storing one is what makes it available.
     await openWithAlpha()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit tags on Alpha' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add tags to Alpha' }))
     fireEvent.change(screen.getByLabelText('Tags'), { target: { value: 'Shield' } })
     fireEvent.click(screen.getByTestId('comp-tag-create'))
     await waitFor(() => expect(screen.getByTestId('comp-tag-chip').textContent).toBe('Shield'))

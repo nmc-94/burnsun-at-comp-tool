@@ -43,6 +43,16 @@
   --fit-tag-text-light: 28%;
   --fit-tag-dot-sat: 55%;
   --fit-tag-dot-light: 45%;
+
+  /* The value-derived half of the same system, defaulted here rather than on `.chip`.
+     Two reasons. A chip whose hue is not set inline still has to render — an undefined custom
+     property inside `calc()` invalidates the whole declaration, so it would lose its border and
+     background outright rather than fall back. And pick-ban sets `--fit-tag-hue` on a *container*
+     (`.pb-red`, `.pb-blue`) and lets the chips inside inherit it, which a default on `.chip`
+     itself would shadow. On the root, both work: nearest declaration wins. */
+  --fit-tag-hue: 210;
+  --fit-tag-sat-adjust: 0%;
+  --fit-tag-light-adjust: 0%;
 }
 
 :root[data-theme="dark"] {

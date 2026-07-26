@@ -524,6 +524,17 @@
   background: var(--bg-soft);
 }
 
+/* The close button is drawn over the tile's own header, so the header keeps that corner clear
+   and the delta pill stops sitting underneath it. Reserved rather than made room for on hover:
+   the button only appears on hover, and a pill that slid sideways to admit it would move the
+   one number on the tile a person is looking at.
+ *
+ * Here rather than in comp-tile.css because the button is the *board's* — the tile knows
+ * nothing about being closable — so a tile drawn anywhere else keeps its own padding. */
+.board-tile .thead {
+  padding-right: 28px;
+}
+
 .board-tile-loading {
   border: 1px solid var(--line-1);
   border-radius: 11px;

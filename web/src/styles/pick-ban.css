@@ -10,10 +10,10 @@
  */
 
 .pb-red {
-  --h: 2;
+  --fit-tag-hue: 2;
 }
 .pb-blue {
-  --h: 222;
+  --fit-tag-hue: 222;
 }
 
 /* The way in, from the board strip. */

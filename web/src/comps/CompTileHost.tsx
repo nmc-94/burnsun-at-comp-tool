@@ -18,7 +18,6 @@ import CommentThread from './CommentThread'
 import SharePanel from './SharePanel'
 import CompTile from './CompTile'
 import type { Lineage } from './CompTile'
-import TagEditor from './TagEditor'
 import { EMPTY_VOCABULARY } from './tag-model'
 import type { TagVocabulary } from './tag-model'
 import { hrefFor } from '../router/route'
@@ -90,7 +89,6 @@ export default function CompTileHost({
   const [carried, setCarried] = useState<readonly CompSlot[] | null>(null)
   const [sent, setSent] = useState<string | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
-  const [tagsOpen, setTagsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   // The thread's own count, once it has loaded one. The listing's number is a snapshot from
   // when the board opened, and posting a comment should move the figure beside the control
@@ -325,7 +323,11 @@ export default function CompTileHost({
             }
             onDragRows={(rows) => setDragged(offerOf(rows))}
             onDragRowsEnd={() => setDragged(null)}
-            onEditTags={editable ? () => setTagsOpen((open) => !open) : undefined}
+            // The band edits in place now, so the cell hands down the vocabulary and the write
+            // rather than a control that opens a panel of its own. Fetching still lives here:
+            // `vocabulary` is derived from the listing this cell already holds.
+            onSaveTags={editable ? saveTags : undefined}
+            vocabulary={vocabulary ?? EMPTY_VOCABULARY}
             // Reading a thread is not editing, so a viewer gets this — they can comment even
             // where they cannot build.
             onToggleComments={() => setCommentsOpen((open) => !open)}
@@ -349,19 +351,9 @@ export default function CompTileHost({
             shareStale={comp.shareStale}
           />
 
-          {/* Both panels are rendered out here rather than inside the tile, the way the copy
+          {/* The share panel is rendered out here rather than inside the tile, the way the copy
               destinations already are: the control is part of the locked tile design and what
               it opens is the cell's, which is what keeps fetching out of the tile. */}
-          {tagsOpen && editable && (
-            <TagEditor
-              archetype={comp.archetype}
-              tags={comp.tags}
-              vocabulary={vocabulary ?? EMPTY_VOCABULARY}
-              onSave={saveTags}
-              onClose={() => setTagsOpen(false)}
-            />
-          )}
-
           {shareOpen && (
             <SharePanel
               compId={compId}

@@ -7,6 +7,12 @@
 // The panel is a disclosure, not a dialog. It does not trap focus, move focus in, or
 // restore it on close, so announcing it as a dialog would promise containment that is not
 // there. The trigger owns the relationship instead, via aria-expanded and aria-controls.
+//
+// It opens on hover, and on focus, and on a click — three ways in and one state, because
+// what a person wants from a flag on a tile is to read it, and no combination of the three
+// may leave them having to point at it twice. Which is why the click *opens* rather than
+// toggling: a tap on a touch screen raises a mouseenter and then a click, and a toggle would
+// hand the panel over and take it straight back.
 
 import { useEffect, useId, useRef } from 'react'
 
@@ -15,7 +21,7 @@ import type { Violation } from '../engine'
 interface Props {
   violations: readonly Violation[]
   open: boolean
-  onToggle: () => void
+  onOpen: () => void
   onClose: () => void
   /** Highlight the rows a violation blames while the reader is on it. */
   onHighlight: (slotIndexes: readonly number[]) => void
@@ -34,7 +40,7 @@ function WarningGlyph() {
 export default function ViolationsPopover({
   violations,
   open,
-  onToggle,
+  onOpen,
   onClose,
   onHighlight,
 }: Props) {
@@ -63,12 +69,24 @@ export default function ViolationsPopover({
   const count = violations.length
 
   return (
-    <span className="vanchor" ref={anchor}>
+    // The hover surface is the anchor rather than the flag, and the panel is a child of it,
+    // so crossing from one to the other never leaves it. `onFocus`/`onBlur` are React's
+    // focusin/focusout, so they fire for the trigger and for every entry in the panel — which
+    // is what lets a keyboard tab through the list without the list closing under it.
+    <span
+      className="vanchor"
+      ref={anchor}
+      onMouseEnter={onOpen}
+      onMouseLeave={onClose}
+      onFocus={onOpen}
+      onBlur={onClose}
+    >
       <button
         className="vtrig"
         data-testid="comp-issue-flag"
         type="button"
-        onClick={onToggle}
+        // Open, not toggle. See the note at the top of the file.
+        onClick={onOpen}
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={`${count} rule violation${count > 1 ? 's' : ''}`}

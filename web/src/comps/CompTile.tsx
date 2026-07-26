@@ -9,8 +9,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CompSlot, LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
-import ShipSearch from './ShipSearch'
-import { hueFor } from './tag-model'
+import ShipSearch, { SearchGlyph } from './ShipSearch'
+import TagBar from './TagBar'
+import { EMPTY_VOCABULARY } from './tag-model'
+import type { TagVocabulary } from './tag-model'
 import {
   deltaPill,
   EMPTY_SELECTION,
@@ -77,8 +79,13 @@ interface Props {
   onCopyRows?: (rows: CompSlot[]) => void
   onDragRows?: (rows: CompSlot[]) => void
   onDragRowsEnd?: () => void
-  /** Open the tag editor. Absent for a viewer, and for a tile nobody wired one to. */
-  onEditTags?: () => void
+  /**
+   * Say what the comp is. Absent for a viewer, and for a tile nobody wired one to — the band
+   * reads that absence as "read-only" rather than taking a separate flag.
+   */
+  onSaveTags?: (next: { archetype: string | null; tags: string[] }) => void
+  /** The team's two vocabularies, for the band's suggestions. The host holds the listing. */
+  vocabulary?: TagVocabulary
   /** Show or hide the thread. The panel itself is the cell's to render — see CompTileHost. */
   onToggleComments?: () => void
   commentsOpen?: boolean
@@ -112,7 +119,8 @@ export default function CompTile({
   onCopyRows,
   onDragRows,
   onDragRowsEnd,
-  onEditTags,
+  onSaveTags,
+  vocabulary,
   onToggleComments,
   commentsOpen,
   onFork,
@@ -128,6 +136,7 @@ export default function CompTile({
   const [selectedRows, setSelectedRows] = useState<RowSelection>(EMPTY_SELECTION)
   const [pickedFrom, setPickedFrom] = useState(slots)
   const nameField = useRef<HTMLInputElement>(null)
+  const root = useRef<HTMLDivElement>(null)
 
   // A selection is a list of row numbers, and removing a row renumbers every row below it.
   // Held across an edit it would quietly come to mean different hulls than the ones with
@@ -151,13 +160,37 @@ export default function CompTile({
     nameField.current?.select()
   }, [autoFocusName])
 
+  const picking = selectedRows.rows.length > 0
+
+  useEffect(() => {
+    // Nothing to let go of, and so no listener at all: a board opens twenty of these, and at
+    // most one of them has rows picked out at any moment.
+    if (!picking) return
+    function onPointerDown(event: MouseEvent) {
+      // Anywhere that is not this tile ends the gesture — the board's empty space, the rail,
+      // another tile. Picking rows is something done *inside* one tile, so a click that lands
+      // outside it is a person looking at something else, and leaving the rows picked would
+      // leave a selection bar acting on a highlight nobody is looking at any more.
+      if (!root.current?.contains(event.target as Node)) setSelectedRows(EMPTY_SELECTION)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      // Not while a row's hull search is open: Escape belongs to that panel first, and it is
+      // the nearer of the two things the key could mean.
+      if (event.key === 'Escape' && openRow === null) setSelectedRows(EMPTY_SELECTION)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [picking, openRow])
+
   const rows = useMemo(() => scaffold(result, ruleset.fieldSize), [result, ruleset.fieldSize])
   const blamed = useMemo(() => rowsBlamedBy(result.violations), [result.violations])
   const pill = deltaPill(result.summary)
   const highlightedRows = new Set(highlighted)
   const picked = new Set(selectedRows.rows)
-  // Filled when there is anything in it at all — a chip, or the control that puts one there.
-  const chipsBand = { filled: archetype !== null || tags.length > 0 || onEditTags !== undefined }
 
   function pick(index: number, typeId: number) {
     onChange(withRow(slots, index, typeId))
@@ -169,8 +202,32 @@ export default function CompTile({
     return slotsAt(slots, picked.has(index) ? selectedRows.rows : [index])
   }
 
+  /**
+   * A click on the row picks it out, with the modifiers a file list uses: plain replaces,
+   * control or command adds one, shift extends a range.
+   *
+   * The row is the target rather than a tick beside it, which is what lets the icon column go
+   * back to drawing hulls. Both modifiers are honoured everywhere rather than one being chosen
+   * from the user agent: neither key means anything else on a row, so taking both costs
+   * nothing and guessing the platform wrong would cost the gesture.
+   *
+   * A click that landed on a control inside the row is that control's, not the row's — the
+   * name swaps the hull, the star designates a flagship, the × empties the slot, and the row's
+   * own select box is how a keyboard reaches this. Each says what it does, and none says this.
+   */
+  function pickRow(event: React.MouseEvent, index: number) {
+    const target = event.target
+    if (target instanceof Element && target.closest('button, a, input, select, textarea')) return
+    setSelectedRows((current) =>
+      selectRow(current, index, {
+        range: event.shiftKey,
+        toggle: event.ctrlKey || event.metaKey,
+      }),
+    )
+  }
+
   return (
-    <div className="tile" data-testid="comp-tile">
+    <div className="tile" data-testid="comp-tile" ref={root}>
       <div className="thead">
         {editable ? (
           <input
@@ -196,7 +253,7 @@ export default function CompTile({
         <ViolationsPopover
           violations={result.violations}
           open={popoverOpen}
-          onToggle={() => setPopoverOpen((open) => !open)}
+          onOpen={() => setPopoverOpen(true)}
           onClose={() => setPopoverOpen(false)}
           onHighlight={setHighlighted}
         />
@@ -207,50 +264,17 @@ export default function CompTile({
       </div>
 
       <div className="tbody">
-        {/* What the comp says it is. The band was held open through Phases E–G so filling it
-            now is a change of content rather than a relayout of the tile — and it stays a
-            reserved spacer, aria-hidden, on a comp that says nothing and offers no editor. */}
-        <div
-          className={chipsBand.filled ? 'chips chipsrow' : 'chipsrow chipsrow-reserved'}
-          data-testid="comp-chips"
-          aria-hidden={chipsBand.filled ? undefined : true}
-        >
-          {archetype && (
-            <span
-              className="chip arch"
-              data-testid="comp-archetype-chip"
-              style={{ '--h': hueFor(archetype) } as React.CSSProperties}
-            >
-              {/* No dot on the archetype: the dashed border is what tells it from a tag in
-                  the locked design. */}
-              {archetype}
-            </span>
-          )}
-          {tags.map((tag) => (
-            <span
-              className="chip"
-              key={tag}
-              data-testid="comp-tag-chip"
-              style={{ '--h': hueFor(tag) } as React.CSSProperties}
-            >
-              <span className="cdot" />
-              {tag}
-            </span>
-          ))}
-          {onEditTags && (
-            <button
-              className="chips-edit"
-              data-testid="comp-tags-edit"
-              type="button"
-              // Named for the comp: a board of twenty otherwise offers twenty controls called
-              // "Edit tags", which is one control nobody can address.
-              aria-label={`Edit tags on ${name}`}
-              onClick={onEditTags}
-            >
-              {archetype || tags.length > 0 ? 'Edit tags' : '+ Tags'}
-            </button>
-          )}
-        </div>
+        {/* What the comp says it is, and — for an editor — the two placeholders that change
+            it. The band was held open through Phases E–G so filling it is a change of content
+            rather than a relayout of the tile; TagBar keeps that, drawing the reserved spacer
+            for a viewer looking at a comp that says nothing. */}
+        <TagBar
+          archetype={archetype}
+          tags={tags}
+          vocabulary={vocabulary ?? EMPTY_VOCABULARY}
+          onSave={onSaveTags}
+          compName={name}
+        />
 
         {/* A list, because that is what it is: one entry per slot the format allows. The
             three branches below render different controls but each is one <li>, so a row
@@ -260,49 +284,41 @@ export default function CompTile({
             const open = openRow === row.index
             const position = row.index + 1
 
-            if (open && editable) {
+            if (row.kind === 'empty') {
+              // An empty slot *is* its search, at rest — BurnSun's shape, and it saves the
+              // click that used to stand between wanting a hull and typing its name. A viewer
+              // gets the bar without the field: the slot still reads as one of ten, and there
+              // is nothing there for them to do.
               return (
                 <li
-                  className="trow trow-open"
+                  className="trow trow-empty"
                   key={row.index}
-                  data-testid="comp-row-open"
+                  data-testid="comp-row-empty"
                   data-row={row.index}
                 >
-                  <ShipSearch
-                    slots={slots}
-                    index={row.index}
-                    ruleset={ruleset}
-                    current={result}
-                    onPick={(typeId) => pick(row.index, typeId)}
-                    onCancel={() => setOpenRow(null)}
-                  />
-                </li>
-              )
-            }
-
-            if (row.kind === 'empty') {
-              return (
-                <li key={row.index} data-testid="comp-row-empty" data-row={row.index}>
-                  <button
-                    className="trow empty"
-                    type="button"
-                    disabled={!editable}
-                    // Every placeholder otherwise reads "Add hull" identically, which makes
-                    // nine of them indistinguishable to anyone not looking at the screen.
-                    aria-label={`Add hull in slot ${position}`}
-                    onClick={() => setOpenRow(row.index)}
-                  >
-                    <span className="ic">
-                      <span className="ph" />
-                    </span>
-                    <span className="nm">
-                      <span className="t">Add hull</span>
-                    </span>
-                    <span className="dup" />
-                    <span className="cost" aria-hidden="true">
-                      –
-                    </span>
-                  </button>
+                  {/* Spans the icon track as well as the name: an empty slot has no hull to
+                      picture, so the field starts flush with the left edge of the hull icons
+                      above it rather than indented past a blank. */}
+                  <span className="nm">
+                    {editable ? (
+                      <ShipSearch
+                        slots={slots}
+                        index={row.index}
+                        ruleset={ruleset}
+                        current={result}
+                        label={`Add a hull in slot ${position}`}
+                        onPick={(typeId) => pick(row.index, typeId)}
+                        onDismiss={() => setOpenRow(null)}
+                      />
+                    ) : (
+                      <span className="rowsearch rowsearch-mute" />
+                    )}
+                  </span>
+                  {/* No cost cell at all, not a dash standing in for one. An empty slot costs
+                      nothing, and a column of dashes down the unfilled half of every comp was
+                      punctuation pretending to be data. The tracks are fixed, so the numbers on
+                      the filled rows above stay exactly where they are. */}
+                  <span className="dup" />
                 </li>
               )
             }
@@ -320,17 +336,21 @@ export default function CompTile({
             if (picked.has(row.index)) classes.push('picked')
 
             return (
-              // A row is a list item that can be dragged, which is what `draggable` and the
-              // two handlers below are for and what the rule objects to. The objection is
-              // answered rather than waived: the drag is a shortcut over "Copy selected
-              // hulls to another comp" in the bar below, which is a real control with a real
-              // name, and nothing here is reachable only by dragging.
-              // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+              // A row is a list item that can be dragged and clicked, which is what
+              // `draggable` and the three handlers below are for and what the two rules
+              // object to. Both objections are answered rather than waived. The drag is a
+              // shortcut over "Copy selected hulls to another comp" in the bar below, which
+              // is a real control with a real name; and the click is a shortcut over the
+              // row's own select box, which is still here, still focusable and still named
+              // for its hull and its slot — it is merely not drawn. Nothing on this row is
+              // reachable by pointer alone.
+              // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
               <li
                 className={classes.join(' ')}
                 key={row.index}
                 data-testid="comp-row"
                 data-row={row.index}
+                onClick={editable ? (event) => pickRow(event, row.index) : undefined}
                 draggable={editable && onDragRows !== undefined}
                 onDragStart={(event) => {
                   onDragRows?.(dragging(row.index))
@@ -362,25 +382,42 @@ export default function CompTile({
                           // it, so the native event is the one carrying the shift key — and
                           // the space bar raises a click too, which is how the keyboard gets
                           // the same gesture without a second handler.
-                          selectRow(current, row.index, { range: shiftHeld(event.nativeEvent) }),
+                          //
+                          // A toggle whatever the pointer does, because this is a checkbox:
+                          // a plain *click on the row* replaces the selection, but a box that
+                          // cleared its neighbours when ticked would not be one.
+                          selectRow(current, row.index, {
+                            range: shiftHeld(event.nativeEvent),
+                            toggle: true,
+                          }),
                         )
                       }
                     />
                   )}
                 </span>
                 <span className="nm">
-                  <button
-                    className="t linkish"
-                    data-testid="comp-row-name"
-                    type="button"
-                    disabled={!editable}
-                    // Named for what it does, not just for the hull: the bare hull name
-                    // collides with the same hull offered in the search results.
-                    aria-label={editable ? `Swap ${hullName}` : undefined}
-                    onClick={() => setOpenRow(row.index)}
-                  >
-                    {hullName}
-                  </button>
+                  {/* Text, not a control. Swapping is the magnifier's job now, so the name is
+                      only what the row says it is — and the search takes its place while it
+                      is open, which is what makes the swap read as happening to this row. */}
+                  {open && editable ? (
+                    <ShipSearch
+                      slots={slots}
+                      index={row.index}
+                      ruleset={ruleset}
+                      current={result}
+                      label={`Swap ${hullName} in slot ${position}`}
+                      takeFocus
+                      onPick={(typeId) => pick(row.index, typeId)}
+                      onCancel={() => setOpenRow(null)}
+                      // Looking away is cancelling. A swap covers the hull's name while it is
+                      // open, so one left behind is a row that will not say what is in it.
+                      onDismiss={() => setOpenRow(null)}
+                    />
+                  ) : (
+                    <span className="t" data-testid="comp-row-name">
+                      {hullName}
+                    </span>
+                  )}
                   {slot.isFlagship && (
                     <span className="flagpill" data-testid="comp-row-flagship">
                       Flagship
@@ -406,16 +443,38 @@ export default function CompTile({
                       ★
                     </button>
                   )}
+                </span>
+                {/* What can be done to the row, at the end of it rather than in a margin before
+                    the hull icon: inset that far from the card's edge the two marks read as
+                    belonging to nothing. Search then remove, so the destructive one is furthest
+                    from the name it would take away and nearest the numbers, which are the only
+                    other things on this side of the row. Both are BurnSun's own glyphs.
+                 *
+                 * Keeping the swap out of the name is still what hands the name back to the row:
+                 * it is text, so clicking it picks the row out like anywhere else. */}
+                <span className="rowacts">
                   {editable && (
-                    <button
-                      className="rowclear"
-                      data-testid="comp-row-remove"
-                      type="button"
-                      aria-label={`Remove ${hullName}`}
-                      onClick={() => onChange(withRow(slots, row.index, null))}
-                    >
-                      ×
-                    </button>
+                    <>
+                      <button
+                        className="rowact"
+                        data-testid="comp-row-search"
+                        type="button"
+                        aria-label={`Swap ${hullName}`}
+                        aria-expanded={open}
+                        onClick={() => setOpenRow(open ? null : row.index)}
+                      >
+                        <SearchGlyph />
+                      </button>
+                      <button
+                        className="rowact rowact-clear"
+                        data-testid="comp-row-remove"
+                        type="button"
+                        aria-label={`Remove ${hullName}`}
+                        onClick={() => onChange(withRow(slots, row.index, null))}
+                      >
+                        <ClearGlyph />
+                      </button>
+                    </>
                   )}
                 </span>
                 {/* Every copy of a duplicated hull carries the same surcharge — the charge
@@ -596,6 +655,15 @@ function ForkGlyph() {
       <circle cx="6" cy="18" r="2.5" />
       <circle cx="18" cy="8" r="2.5" />
       <path d="M6 8.5v7M18 10.5c0 4-6 2-12 5" />
+    </svg>
+  )
+}
+
+/** BurnSun's clear mark, beside its magnifier in the row's margin and drawn to match it. */
+function ClearGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false">
+      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   )
 }
