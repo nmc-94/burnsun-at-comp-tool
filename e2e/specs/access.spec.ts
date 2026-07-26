@@ -27,7 +27,7 @@ test('a second character reaches nothing of the first', async ({
   await expect(theirs.getByTestId('user-character-name')).toHaveText(
     stranger.identity.characterName,
   )
-  await expect(theirs.getByTestId('team-list-empty')).toBeVisible()
+  await expect(theirs.getByTestId('team-first-screen')).toBeVisible()
 
   // And a deep link to somebody else's team is a dead end, not a way in.
   await theirs.goto(`/teams/${team.id}`)
@@ -38,7 +38,7 @@ test('a second character reaches nothing of the first', async ({
   await expect(page.getByTestId('team-list-item')).toHaveCount(1)
 })
 
-test('signed out, a team URL shows the sign-in card rather than the team', async ({
+test('signed out, a team URL shows the sign-in screen rather than the team', async ({
   browser,
   baseURL,
   team,
@@ -48,7 +48,7 @@ test('signed out, a team URL shows the sign-in card rather than the team', async
     const visiting = await anonymous.newPage()
     await visiting.goto(`/teams/${team.id}`)
 
-    await expect(visiting.getByTestId('sign-in-card')).toBeVisible()
+    await expect(visiting.getByTestId('sign-in-screen')).toBeVisible()
     await expect(visiting.getByTestId('workspace')).toHaveCount(0)
   } finally {
     await anonymous.close()

@@ -96,17 +96,22 @@ describe('a visitor with no session', () => {
 
     render(<App />)
 
-    await waitFor(() => expect(screen.getByTestId('app-shell')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('sign-in-screen')).toBeTruthy())
     expect(window.location.pathname).toBe('/teams/t1/boards/b2')
   })
 
-  it('still shows the sign-in card for a route that needs an identity', async () => {
+  it('shows the sign-in screen instead of the shell for a route that needs an identity', async () => {
     stubSignedOut()
     goTo('/teams/t1/boards/b2')
 
     render(<App />)
 
-    await waitFor(() => expect(screen.queryByTestId('workspace')).toBeNull())
+    await waitFor(() => expect(screen.getByTestId('sign-in-screen')).toBeTruthy())
+    expect(screen.queryByTestId('workspace')).toBeNull()
     expect(screen.queryByTestId('share-view')).toBeNull()
+    // Not "inside the shell with the screens hidden": the signed-out page has no header, and
+    // the sign-in control it does have is the only one on it.
+    expect(screen.queryByTestId('app-shell')).toBeNull()
+    expect(screen.getAllByTestId('sign-in-button')).toHaveLength(1)
   })
 })

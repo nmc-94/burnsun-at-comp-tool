@@ -13,20 +13,19 @@
  * what the handoff complained about; none of it is here.
  */
 
-/* The workspace is the one screen that wants the whole window rather than the centred
- * column every other screen sits in.
+/* The workspace pins itself to the window exactly, where every other screen is free to grow
+ * past it and scroll.
  *
  * Written as `.app-shell.app-shell-wide` rather than the modifier alone, and that is not
  * decoration. base.css pulls this file in with an @import at its top, so every rule here
- * lands *before* base.css's own `.app-shell { max-width: 720px }`. At equal specificity the
- * later rule wins, so a bare `.app-shell-wide` loses to the very rule it exists to override
- * — silently, and only in a browser, because jsdom loads no stylesheet at all. Two classes
- * beat one, and the element always carries both. */
+ * lands *before* base.css's own `.app-shell`. At equal specificity the later rule wins, so a
+ * bare `.app-shell-wide` loses to the very rule it exists to override — silently, and only in
+ * a browser, because jsdom loads no stylesheet at all. Two classes beat one, and the element
+ * always carries both. */
 .app-shell.app-shell-wide {
-  max-width: none;
-  margin: 0;
-  padding: 0;
-  /* dvh, not vh: mobile browser chrome would otherwise clip the bottom of the grid. */
+  /* dvh, not vh: mobile browser chrome would otherwise clip the bottom of the grid. `height`
+   * rather than the shell's `min-height`, because the grid scrolls inside the window and the
+   * page itself must not. */
   height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -40,8 +39,7 @@
   display: flex;
 }
 
-.app-shell.app-shell-wide .app-header,
-.app-shell.app-shell-wide .app-footer {
+.app-shell.app-shell-wide .app-header {
   padding: 8px 16px;
   margin: 0;
 }

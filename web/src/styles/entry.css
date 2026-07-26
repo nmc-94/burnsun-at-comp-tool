@@ -1,0 +1,395 @@
+/* The three entry screens: signing in, naming a first team, and picking one to open.
+ *
+ * These are the only surfaces in the app that spend a gradient or a shadow. REQUIREMENTS §6.4
+ * bans both in application UI and reserves them for landing surfaces; the sign-in screen is
+ * one outright, and the two signed-in screens spend exactly two things — a `--halo-far` page
+ * wash and a `--halo` shadow under the single primary control. Each is one declaration, and
+ * deleting either changes no layout.
+ *
+ * Note the cascade: base.css @imports this file at its top, so everything here lands *before*
+ * base.css's own rules. Nothing in this file may rely on overriding one of them at equal
+ * specificity — it would lose, and only in a browser. New selectors only. */
+
+/* --- shared ------------------------------------------------------------- */
+
+/* The small tracked label above each screen's subject. */
+.tag {
+  font-family: var(--font-brand);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* `.level` reads as running text in the grant list, where it is one column of many. Here it is
+   one of two things beside a team's name and wants an edge. */
+.level.pill {
+  font-family: var(--font-brand);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  border: 1px solid var(--line-1);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.level.pill.owner {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+
+.wordmark-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-1);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.wordmark-link svg {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.wordmark-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* --- 1 · signed out ------------------------------------------------------ */
+
+/* Rendered instead of `.app-shell`, not inside it. Four elements on an empty page. */
+.signin-screen {
+  position: relative;
+  overflow: hidden;
+  min-height: 100dvh;
+  display: grid;
+  background: var(--bg-app);
+}
+.signin-wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(60vw 52vw at 50% 34%, var(--halo-far) 0%, transparent 62%);
+}
+/* Positioned, so it stacks above the wash rather than under it. */
+.signin-mid {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+}
+.signin-mark {
+  color: var(--accent);
+  display: block;
+  margin-bottom: 26px;
+}
+.signin-word {
+  margin: 0;
+  font-family: var(--font-brand);
+  font-weight: 500;
+  font-size: clamp(30px, 4.6vw, 46px);
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+.signin-screen .tag {
+  margin-top: 14px;
+}
+.signin-go {
+  margin-top: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  height: 48px;
+  padding: 0 26px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-brand);
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 14px 34px -16px var(--halo);
+  transition:
+    background 0.13s ease,
+    box-shadow 0.16s ease,
+    transform 0.1s ease;
+}
+.signin-go:hover {
+  background: var(--accent-strong);
+  box-shadow: 0 18px 42px -14px var(--halo);
+}
+.signin-go:active {
+  transform: scale(0.985);
+}
+.signin-go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+/* Whatever stands in for the button: the session probe still running, or a deployment with no
+   EVE application behind it. Same slot, so the screen does not jump when the probe lands. */
+.signin-note {
+  margin-top: 44px;
+  max-width: 42ch;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+/* --- 2 · signed in, no team ---------------------------------------------- */
+
+.first {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 40px 0;
+}
+.first-in {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 clamp(18px, 3vw, 32px);
+}
+.first .tag {
+  display: block;
+  margin-bottom: 18px;
+}
+.first h1 {
+  font-size: clamp(26px, 3.4vw, 38px);
+  letter-spacing: -0.03em;
+}
+.first-form {
+  margin-top: 34px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 2px solid var(--line-1);
+  transition: border-color 0.14s;
+}
+/* The focus indicator, and the reason the input below drops its own outline: a ring around a
+   borderless field that is already 62px tall reads as a second box, where the rule lighting up
+   is the field itself answering. */
+.first-form:focus-within {
+  border-bottom-color: var(--accent);
+}
+.first-form input {
+  flex: 1;
+  min-width: 0;
+  height: 62px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  font-family: var(--font-brand);
+  font-size: clamp(20px, 2.5vw, 27px);
+  letter-spacing: -0.02em;
+}
+.first-form input::placeholder {
+  color: var(--text-5);
+}
+.first-form input:focus {
+  outline: none;
+}
+.first-note {
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.first-note b {
+  color: var(--text-2);
+  font-weight: 500;
+}
+/* Quiet enough to ignore, present enough that an archived-only character is not stranded. */
+.first-more {
+  display: block;
+  margin-top: 30px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line-1);
+  text-underline-offset: 3px;
+}
+.first-more:hover {
+  color: var(--text-1);
+}
+.first-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* --- 3 · signed in, on a team -------------------------------------------- */
+
+/* Built for what a small group actually has: one team, opened constantly. The rest are a
+   footnote, and the archived ones are a footnote on the footnote. */
+.picker {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+  overflow: hidden;
+}
+.picker-wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(52vw 46vw at 50% 36%, var(--halo-far) 0%, transparent 62%);
+}
+.picker-in {
+  position: relative;
+  width: min(480px, 100%);
+}
+.picker .tag {
+  display: block;
+  margin-bottom: 14px;
+}
+.picker-name {
+  margin: 0;
+  font-family: var(--font-brand);
+  font-size: clamp(24px, 3.2vw, 34px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.picker-meta {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+}
+.picker-when {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.picker-open {
+  margin-top: 30px;
+  width: 100%;
+  height: 52px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-brand);
+  font-size: 15px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  box-shadow: 0 14px 34px -16px var(--halo);
+  transition:
+    background 0.13s,
+    box-shadow 0.16s,
+    transform 0.1s;
+}
+.picker-open:hover {
+  background: var(--accent-strong);
+  box-shadow: 0 18px 42px -14px var(--halo);
+}
+.picker-open:active {
+  transform: scale(0.99);
+}
+.picker-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.picker-others {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-1);
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+/* Its own class rather than `.btn subtle`: half of these are links, and base.css's button
+   hover would win the tie against anything declared here anyway. */
+.picker-chip {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.picker-chip:hover {
+  color: var(--text-1);
+  background: var(--bg-soft);
+}
+.picker-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.picker-chip svg {
+  flex: 0 0 auto;
+}
+/* The archived list, and the create form when it is asked for. Both replace the promoted team
+   rather than crowding in beside it. */
+.picker-stack {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.picker-form {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.picker-form input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  background: var(--bg-app);
+  color: var(--text-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 14px;
+}
+.picker-form input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.picker-status {
+  margin-top: 16px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.picker-error,
+.first-error {
+  margin-top: 14px;
+  color: var(--danger);
+  font-size: 12.5px;
+}

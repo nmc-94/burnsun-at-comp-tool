@@ -25,6 +25,15 @@
   --accent-soft: rgba(196, 122, 30, 0.12);
   --accent-strong: #9f6519;
 
+  /* Text on an amber fill, and dark in *both* themes rather than the paper white the light
+     theme's own text ramp would suggest: `#fffaf2` on `#c47a1e` measures 3.3:1, short of AA
+     for a 15px label. Dark gives 5.4 here and 9.1 in the dark theme. */
+  --on-accent: #1c1305;
+  /* The one place the entry screens depart from flat fills — a shadow under the primary
+     button and a wash behind the page. Derived from `--accent` so a rebrand carries them. */
+  --halo: rgba(196, 122, 30, 0.18);
+  --halo-far: rgba(196, 122, 30, 0.045);
+
   --success: #4a9a6a;
   --danger: #c05050;
   --info: #aac4ff;
@@ -75,6 +84,10 @@
   --accent: #e8a44a;
   --accent-soft: rgba(232, 164, 74, 0.14);
   --accent-strong: #f0c070;
+
+  --on-accent: #120c02;
+  --halo: rgba(232, 164, 74, 0.22);
+  --halo-far: rgba(232, 164, 74, 0.055);
 
   --fit-tag-bg-sat: 50%;
   --fit-tag-bg-light: 17%;

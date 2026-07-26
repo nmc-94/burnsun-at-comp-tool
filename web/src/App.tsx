@@ -2,14 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { ApiError, request } from './api'
 import { brand } from './brand/brandConfig'
+import SunMark from './brand/SunMark'
 import CompResolver from './comps/CompResolver'
 import PickBanScreen from './pickban/PickBanScreen'
 import { hrefFor, isPublic, isWide, parseRoute, workspaceRoute } from './router/route'
 import type { Route } from './router/route'
-import { navigate, useRoute } from './router/useRoute'
+import { navigate, useLinkProps, useRoute } from './router/useRoute'
 import type { Session } from './session'
 import { fetchSession } from './session'
 import ShareView from './share/ShareView'
+import SignInScreen from './SignInScreen'
 import TeamList from './teams/TeamList'
 import TeamScreen from './teams/TeamScreen'
 import { readThemePref, resolveTheme, toggleTheme } from './theme'
@@ -87,64 +89,98 @@ export default function App() {
     }
   }, [])
 
+  // A public route renders while `session` is still null, and that is the point: a share view
+  // depends on no session, so it paints in parallel with the /auth/me probe rather than behind
+  // it. Everywhere else, no character means the sign-in screen — which replaces the shell
+  // rather than sitting inside it, so there is no chrome around it to explain itself twice.
+  if (!isPublic(route) && !session?.character) {
+    return <SignInScreen session={session} />
+  }
+
   return (
-    // header and footer sit outside main deliberately: nested inside it they are generic
-    // elements rather than the banner and contentinfo landmarks, so nothing could navigate
-    // to them.
-    // The workspace wants the whole window; every other screen is a card in a centred
-    // column. One modifier rather than a second shell, so the header and footer landmarks
-    // stay exactly where they are.
+    // The header sits outside main deliberately: nested inside it it is a generic element
+    // rather than the banner landmark, so nothing could navigate to it. There is no
+    // contentinfo any more — the footer's two occupants moved, the theme toggle into the bar
+    // and the health line into a banner that only appears when the API stops answering.
+    // The workspace wants the whole window; the teams screen wants its height but not its
+    // scroll; everything else is a card in a centred column. One shell, three mains.
     <div
       className={`app-shell${isWide(route) ? ' app-shell-wide' : ''}`}
       data-testid="app-shell"
     >
-      <header className="app-header" data-testid="app-header">
-        <span className="wordmark">{brand.wordmark.primary}</span>
-        <span className="wordmark-suffix">{brand.wordmark.suffix}</span>
-        <h1 className="product-label">{brand.productLabel}</h1>
-        <span className="header-actions">
-          {session && <UserChip session={session} onChanged={onSessionChanged} />}
-        </span>
-      </header>
+      <AppHeader
+        session={session}
+        theme={theme}
+        onThemeChange={setTheme}
+        onSessionChanged={onSessionChanged}
+      />
 
-      {/* A public route renders while `session` is still null, and that is the point: a share
-          view depends on no session, so it paints in parallel with the /auth/me probe rather
-          than behind it. */}
-      <main>
-        {isPublic(route) || session?.character ? (
-          renderRoute(route)
-        ) : (
-          <SignedOut session={session} />
-        )}
+      {/* Silent while the API is answering. The probe's own words are kept, because "cannot
+          reach" and "503" send someone to different places, but they are framed rather than
+          left to speak for themselves — `TypeError: Failed to fetch` is not a sentence. */}
+      {health.kind === 'error' && (
+        <p className="app-health" data-testid="app-health" role="alert">
+          Cannot reach the API ({health.message}). Anything you change may not be saved.
+        </p>
+      )}
+
+      <main className={mainClass(route)}>
+        {renderRoute(route, session?.character?.characterName ?? null)}
       </main>
+    </div>
+  )
+}
 
-      <footer className="app-footer" data-testid="app-footer">
-        <span className="health" data-testid="app-health" role="status">
-          {health.kind === 'loading' && 'checking…'}
-          {health.kind === 'ok' && <span className="ok">api {health.status}</span>}
-          {health.kind === 'error' && <span className="err">{health.message}</span>}
+interface HeaderProps {
+  session: Session | null
+  theme: 'light' | 'dark'
+  onThemeChange: (theme: 'light' | 'dark') => void
+  onSessionChanged: () => void
+}
+
+function AppHeader({ session, theme, onThemeChange, onSessionChanged }: HeaderProps) {
+  const home = useLinkProps({ kind: 'teams' })
+  return (
+    <header className="app-header" data-testid="app-header">
+      <a className="wordmark-link" {...home}>
+        <SunMark size={18} />
+        <span className="wordmark">
+          {brand.wordmark.primary}
+          <span className="wordmark-suffix">{brand.wordmark.suffix}</span>
         </span>
+      </a>
+      <h1 className="product-label">{brand.productLabel}</h1>
+      <span className="header-actions">
         <button
-          className="theme-toggle"
+          className="btn subtle"
           data-testid="theme-toggle"
           type="button"
           // The state belongs in aria-pressed, not baked into the name — a name that
           // changes with state cannot be matched exactly by anything.
           aria-pressed={theme === 'dark'}
           aria-label="Dark theme"
-          onClick={() => setTheme(toggleTheme())}
+          onClick={() => onThemeChange(toggleTheme())}
         >
           Theme: {theme}
         </button>
-      </footer>
-    </div>
+        {session && <UserChip session={session} onChanged={onSessionChanged} />}
+      </span>
+    </header>
   )
 }
 
-function renderRoute(route: Route) {
+/** The workspace is sized by `workspace.css`; the rest choose between filling and columning. */
+function mainClass(route: Route): string | undefined {
+  if (isWide(route)) return undefined
+  return route.kind === 'teams' ? 'main-full' : 'main-column'
+}
+
+// The character's name is threaded in rather than fetched again: the teams screen tells someone
+// waiting on an invitation what to give a captain, and a grant is made against a name.
+function renderRoute(route: Route, characterName: string | null) {
   switch (route.kind) {
     case 'teams':
-      return <TeamList onOpen={(id) => navigate(workspaceRoute(id))} />
+      return <TeamList characterName={characterName} />
     case 'workspace':
       // `view` is Phase G's compare screen. Until it exists a compare URL still resolves to
       // a real board rather than to nothing, which is what keeps a shared link from rotting.
@@ -181,37 +217,3 @@ function renderRoute(route: Route) {
   }
 }
 
-function SignedOut({ session }: { session: Session | null }) {
-  if (session === null) {
-    return (
-      <section className="card" data-testid="session-loading" role="status">
-        Loading…
-      </section>
-    )
-  }
-  return (
-    <section className="card" data-testid="sign-in-card" aria-labelledby="sign-in-title">
-      <h2 className="card-title" id="sign-in-title">
-        Sign in
-      </h2>
-      <div className="card-body">
-        {session.ssoEnabled ? (
-          <>
-            <p>
-              Teams and comps belong to an EVE character. Sign in to see the teams you own or
-              have been added to.
-            </p>
-            {/* No button here: UserChip already renders one in the header for exactly this
-                state, and two identical "Sign in with EVE" controls on one screen are
-                indistinguishable to anything that goes looking for one. */}
-          </>
-        ) : (
-          <p>
-            This deployment has no EVE application configured, so signing in is unavailable.
-            Published ruleset data is still readable.
-          </p>
-        )}
-      </div>
-    </section>
-  )
-}

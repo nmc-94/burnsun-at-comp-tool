@@ -3,6 +3,7 @@
 @import "./workspace.css";
 @import "./pick-ban.css";
 @import "./share.css";
+@import "./entry.css";
 
 * {
   box-sizing: border-box;
@@ -32,39 +33,80 @@ h3 {
   font-weight: 500;
 }
 
+/* One shell for every route that has an identity behind it. The signed-out screen is not one
+   of them — it renders in place of this, with no chrome at all, which is the whole of why the
+   footer's contents had to move somewhere they still exist. */
 .app-shell {
+  /* dvh, not vh: mobile browser chrome would otherwise put the fold above the real bottom. */
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.app-shell > main {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The centred column every card route sits in. On the shell until the entry screens wanted the
+   whole window; it belongs to `main` now, so one route can opt out without a second shell. */
+.main-column {
+  width: 100%;
   max-width: 720px;
-  margin: 8vh auto;
-  padding: 24px;
+  margin: 0 auto;
+  padding: 24px 24px 64px;
+}
+.main-full {
+  display: flex;
+  flex-direction: column;
 }
 
+/* Full-bleed and bordered, so the bar reads as chrome rather than as the first thing in the
+   column. The workspace already overrode the padding; it gains the border with everything else. */
 .app-header {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
+  row-gap: 8px;
+  /* Wraps rather than overflows. The bar holds a wordmark, a theme control and a character
+     with two sign-out buttons, which is more than a phone has room for on one line — and a
+     bar that scrolls sideways takes the whole page with it. */
+  flex-wrap: wrap;
+  padding: 14px clamp(18px, 3vw, 32px);
+  border-bottom: 1px solid var(--line-1);
 }
 .header-actions {
-  margin-left: 12px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  row-gap: 8px;
 }
 .wordmark {
   font-family: var(--font-brand);
   font-weight: 500;
-  font-size: 18px;
+  font-size: 16px;
   letter-spacing: 0.01em;
 }
 .wordmark-suffix {
-  color: var(--text-2);
+  color: var(--text-3);
   font-weight: 300;
 }
 /* The page's h1. Sized here rather than left to the browser's heading default — it is a
    quiet label in the corner, and only its role in the document is large. */
 .product-label {
-  margin: 0 0 0 auto;
+  margin: 0 0 0 2px;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--text-3);
+}
+/* First thing to go when the bar runs out of room: it repeats what the wordmark already says. */
+@media (max-width: 760px) {
+  .product-label {
+    display: none;
+  }
 }
 
 .card {
@@ -105,6 +147,7 @@ h3 {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.12s;
 }
 .btn:hover:not(:disabled) {
@@ -117,6 +160,24 @@ h3 {
 .btn.primary {
   color: var(--text-1);
   border-color: var(--line-2, var(--line-1));
+}
+/* A filled control, for the one thing a screen is actually for. `.primary` only darkens its
+   text, which was enough when every button sat in a card and none of them was the point. */
+.btn.accent {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  font-family: var(--font-brand);
+  font-weight: 500;
+}
+.btn.accent:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.btn.big {
+  height: 42px;
+  padding: 0 20px;
+  font-size: 14px;
 }
 .btn.subtle {
   background: none;
@@ -151,13 +212,21 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 .portrait {
   border-radius: 50%;
   vertical-align: middle;
+  flex: 0 0 auto;
 }
+/* Truncates rather than wrapping. An EVE name broken across three lines makes the whole bar
+   as tall as the thing it labels, and there is no width at which that is the better trade. */
 .character-name {
   font-weight: 500;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chip-muted {
   color: var(--text-3);
@@ -180,13 +249,11 @@ h3 {
   color: var(--text-3);
 }
 
-.team-list,
 .grant-list {
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.team-list li,
 .grant-list li {
   display: flex;
   align-items: center;
@@ -252,37 +319,18 @@ h3 {
   flex: 1;
 }
 
-.app-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 24px;
-}
-.health {
-  font-size: 11px;
-  color: var(--text-3);
-}
-.health .ok {
-  color: var(--success);
-}
-.health .err {
-  color: var(--danger);
-}
-
-.theme-toggle {
-  margin-left: auto;
-  height: 30px;
-  padding: 0 12px;
+/* Only ever drawn when the API probe failed, and full-bleed between the header and the screen
+   rather than in a footer nobody scrolls to. A signed-out visitor sees none of this — the
+   sign-in screen has no chrome — so the case it exists for is a session that already works
+   against a backend that has stopped answering. */
+.app-health {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 9px clamp(18px, 3vw, 32px);
   background: var(--bg-panel-alt);
-  color: var(--text-2);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-md);
-  font: inherit;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.theme-toggle:hover {
-  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line-1);
+  color: var(--danger);
+  font-size: 12px;
 }
 
 /* Archetype/Tags chips. The colour comes from the value itself, via the three custom properties

@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AT Comp Tool — locked entry screens + implementation reference</title>
+<link rel="icon" href="../web/public/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Azeret+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===========================================================================
+   THE LOCKED ENTRY SCREENS — visual reference and implementation spec.
+
+   Three screens are settled. This file holds them at full fidelity plus the
+   notes needed to build them, so there is one thing to point at rather than
+   three exploration files with the losers still in them.
+
+     1  Signed out          "Field"             (was landing-signin #5)
+     2  Signed in, no team  "Name it"           (was post-signin #3)
+     3  Signed in, on teams "Straight through"  (was post-signin #8)
+     4  Spec                what it costs to build them
+
+   Superseded, keep only for provenance:
+     docs/landing-iterations.html          six marketing pages, all dropped
+     docs/landing-signin-iterations.html   six sign-in screens, #5 won
+     docs/post-signin-iterations.html      ten team screens, #3 and #8 won
+
+   Every colour, radius and font is web/src/styles/tokens.css verbatim. The
+   only additions are `--halo` and `--on-accent`, both derived from --accent
+   (see the spec tab).
+   =========================================================================== */
+
+/* ---- tokens: verbatim from web/src/styles/tokens.css --------------------- */
+:root {
+  color-scheme: light;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-brand: "Azeret Mono", ui-monospace, monospace;
+
+  --bg-app: #f5f0e8;
+  --bg-panel: #ffffff;
+  --bg-panel-alt: #ede8df;
+  --bg-soft: #f2ece2;
+
+  --line-1: #c8bfb0;
+  --line-2: #d8d0c4;
+
+  --text-1: #0d1220;
+  --text-2: #8a7f6e;
+  --text-3: #9b8f7d;
+  --text-4: #b8aea0;
+  --text-5: #d9d1c7;
+
+  --accent: #c47a1e;
+  --accent-soft: rgba(196, 122, 30, 0.12);
+  --accent-strong: #9f6519;
+
+  --success: #4a9a6a;
+  --danger: #c05050;
+  --info: #aac4ff;
+  --warn: #c47a1e;
+
+  --radius-sm: 4px;
+  --radius-md: 5px;
+  --radius-lg: 6px;
+
+  /* NEW — the two the entry screens add. Both derive from --accent, so a
+     rebrand carries them. See spec §6. */
+  --halo: rgba(196, 122, 30, 0.18);
+  --halo-far: rgba(196, 122, 30, 0.045);
+  --on-accent: #1c1305;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-app: #080b12;
+  --bg-panel: #0d1220;
+  --bg-panel-alt: #141c2e;
+  --bg-soft: #11182a;
+
+  --line-1: #2a3550;
+  --line-2: #3a4866;
+
+  --text-1: #f5f0e8;
+  --text-2: #b8c4d8;
+  --text-3: #8897b2;
+  --text-4: #5f6d87;
+  --text-5: #39455f;
+
+  --accent: #e8a44a;
+  --accent-soft: rgba(232, 164, 74, 0.14);
+  --accent-strong: #f0c070;
+
+  --halo: rgba(232, 164, 74, 0.22);
+  --halo-far: rgba(232, 164, 74, 0.055);
+  --on-accent: #120c02;
+}
+
+/* ---- reset -------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg-app); color: var(--text-1);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+h1, h2, h3 { margin: 0; font-family: var(--font-brand); font-weight: 500; }
+p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+input { font: inherit; }
+::selection { background: var(--accent); color: var(--on-accent); }
+
+/* ---- shared ------------------------------------------------------------- */
+.mk { color: var(--accent); display: block; }
+.wm {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--font-brand); font-weight: 500; font-size: 16px;
+  letter-spacing: 0.01em; text-decoration: none; color: var(--text-1);
+}
+.wm i { font-style: normal; font-weight: 300; color: var(--text-3); }
+.tag {
+  font-family: var(--font-brand); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-3);
+}
+
+/* Signed-in header. Identical on screens 2 and 3; absent from screen 1. */
+.appbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px clamp(18px, 3vw, 32px); border-bottom: 1px solid var(--line-1);
+}
+.appbar .prod {
+  font-family: var(--font-brand); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--text-3);
+  margin-left: 12px;
+}
+.appbar .who { margin-left: auto; display: inline-flex; align-items: center; gap: 9px; }
+.appbar .who b { font-weight: 500; font-size: 13px; }
+/* Stand-in for the real CCP portrait — see spec §5. */
+.avatar {
+  width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
+  display: grid; place-items: center; background: var(--accent-soft); color: var(--accent);
+  font-family: var(--font-brand); font-size: 10px; font-weight: 500;
+}
+
+.btn {
+  height: 30px; padding: 0 12px; border-radius: var(--radius-md);
+  background: var(--bg-panel-alt); color: var(--text-2);
+  border: 1px solid var(--line-1); font-size: 12.5px; cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+}
+.btn:hover { background: var(--bg-soft); color: var(--text-1); }
+.btn.subtle { background: none; border-color: transparent; color: var(--text-3); }
+.btn.subtle:hover { color: var(--text-1); background: var(--bg-soft); }
+.btn.accent {
+  background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+  font-family: var(--font-brand); font-weight: 500;
+}
+.btn.accent:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
+.btn.big { height: 42px; padding: 0 20px; font-size: 14px; }
+.btn:active { transform: scale(0.985); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.lvl {
+  font-family: var(--font-brand); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3);
+  border: 1px solid var(--line-1); border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+}
+.lvl.owner { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+
+#stage > .screen { min-height: 100vh; display: flex; flex-direction: column; }
+#stage > .screen[hidden] { display: none; }
+#stage > .screen:not([hidden]) { animation: fade 0.3s ease both; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.stagemain { flex: 1; display: flex; flex-direction: column; }
+.wrap { width: 100%; max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+/* =========================================================================
+   SCREEN 1 — SIGNED OUT · "Field"
+   Four elements on an empty page. No header, no footer, no status line.
+   ========================================================================= */
+.sc1 { position: relative; overflow: hidden; display: grid; background: var(--bg-app); }
+.sc1-wash {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(60vw 52vw at 50% 34%, var(--halo-far) 0%, transparent 62%);
+}
+.sc1-mid {
+  position: relative; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; padding: 40px 20px;
+}
+.sc1-sun { width: 46px; height: 46px; margin-bottom: 26px; }
+.sc1-word {
+  font-family: var(--font-brand); font-weight: 500;
+  font-size: clamp(30px, 4.6vw, 46px); letter-spacing: -0.035em; line-height: 1;
+}
+.sc1-word i { font-style: normal; font-weight: 300; color: var(--text-3); }
+.sc1-mid .tag { margin-top: 14px; }
+.signin {
+  margin-top: 44px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 11px;
+  height: 48px; padding: 0 26px; border: 0; border-radius: var(--radius-lg);
+  background: var(--accent); color: var(--on-accent);
+  font-family: var(--font-brand); font-size: 14.5px; font-weight: 500;
+  letter-spacing: 0.01em; cursor: pointer; white-space: nowrap;
+  box-shadow: 0 14px 34px -16px var(--halo);
+  transition: background 0.13s ease, box-shadow 0.16s ease, transform 0.1s ease;
+}
+.signin:hover { background: var(--accent-strong); box-shadow: 0 18px 42px -14px var(--halo); }
+.signin:active { transform: scale(0.985); }
+.signin:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.signin svg { width: 16px; height: 16px; color: currentColor; }
+
+/* =========================================================================
+   SCREEN 2 — SIGNED IN, NO TEAM · "Name it"
+   One question, asked large. Nothing competes with the caret.
+   ========================================================================= */
+.sc2 .stagemain { justify-content: center; padding: 40px 0; }
+.sc2 .tag { display: block; margin-bottom: 18px; }
+.sc2 h1 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.03em; }
+.sc2-big {
+  margin-top: 34px; display: flex; align-items: center; gap: 16px;
+  border-bottom: 2px solid var(--line-1); transition: border-color 0.14s;
+}
+.sc2-big:focus-within { border-bottom-color: var(--accent); }
+.sc2-big input {
+  flex: 1; min-width: 0; height: 62px; padding: 0; border: 0; background: none; color: var(--text-1);
+  font-family: var(--font-brand); font-size: clamp(20px, 2.5vw, 27px); letter-spacing: -0.02em;
+}
+.sc2-big input::placeholder { color: var(--text-5); }
+.sc2-big input:focus { outline: none; }
+.sc2 .hint { margin-top: 14px; font-size: 12.5px; color: var(--text-3); }
+
+/* =========================================================================
+   SCREEN 3 — SIGNED IN, ON TEAMS · "Straight through"
+   Built for what a small group has: one team, opened constantly. The rest
+   are a footnote.
+   ========================================================================= */
+.sc3 .stagemain {
+  position: relative; align-items: center; justify-content: center;
+  text-align: center; padding: 40px 24px; overflow: hidden;
+}
+.sc3-wash {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(52vw 46vw at 50% 36%, var(--halo-far) 0%, transparent 62%);
+}
+.sc3-in { position: relative; width: min(480px, 100%); }
+.sc3 .tag { display: block; margin-bottom: 14px; }
+.sc3-name {
+  font-family: var(--font-brand); font-size: clamp(24px, 3.2vw, 34px);
+  font-weight: 500; letter-spacing: -0.03em;
+}
+.sc3-meta { margin-top: 12px; display: flex; gap: 10px; justify-content: center; align-items: center; }
+.sc3-meta .when { font-size: 12.5px; color: var(--text-3); }
+.sc3-open {
+  margin-top: 30px; width: 100%; height: 52px; border: 0; border-radius: var(--radius-lg);
+  background: var(--accent); color: var(--on-accent); cursor: pointer;
+  font-family: var(--font-brand); font-size: 15px; font-weight: 500;
+  display: inline-flex; align-items: center; justify-content: center; gap: 11px;
+  box-shadow: 0 14px 34px -16px var(--halo);
+  transition: background 0.13s, box-shadow 0.16s, transform 0.1s;
+}
+.sc3-open:hover { background: var(--accent-strong); box-shadow: 0 18px 42px -14px var(--halo); }
+.sc3-open:active { transform: scale(0.99); }
+.sc3-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sc3-others {
+  margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line-1);
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+}
+.sc3-others .btn { background: none; border-color: transparent; color: var(--text-3); }
+.sc3-others .btn:hover { color: var(--text-1); background: var(--bg-soft); }
+
+/* =========================================================================
+   SCREEN 4 — THE SPEC
+   A document, not a design. Styled to read, not to match.
+   ========================================================================= */
+.sc4 { background: var(--bg-app); }
+.sc4 .doc { width: 100%; max-width: 820px; margin: 0 auto; padding: 56px 24px 120px; }
+.sc4 .doctop { border-bottom: 1px solid var(--line-1); padding-bottom: 22px; margin-bottom: 34px; }
+.sc4 h1 { font-size: 24px; letter-spacing: -0.025em; }
+.sc4 .doctop p { margin-top: 8px; color: var(--text-2); }
+.sc4 section { margin-bottom: 40px; }
+.sc4 h2 {
+  font-size: 12px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--accent);
+  padding-bottom: 8px; border-bottom: 1px solid var(--line-1); margin-bottom: 16px;
+}
+.sc4 h3 { font-size: 14.5px; margin: 20px 0 6px; }
+.sc4 p { color: var(--text-2); margin-bottom: 10px; }
+.sc4 .doc ul { margin: 0 0 12px; }
+.sc4 .doc li { color: var(--text-2); padding: 4px 0 4px 18px; position: relative; }
+.sc4 .doc li::before {
+  content: ""; position: absolute; left: 3px; top: 12px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--text-4);
+}
+.sc4 code {
+  font-family: var(--font-brand); font-size: 12px;
+  background: var(--bg-soft); border: 1px solid var(--line-1); border-radius: var(--radius-sm);
+  padding: 1px 5px; color: var(--text-1);
+}
+.sc4 b, .sc4 strong { color: var(--text-1); font-weight: 500; }
+.sc4 table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+.sc4 th {
+  text-align: left; padding: 0 10px 8px 0; border-bottom: 1px solid var(--line-1);
+  font-family: var(--font-brand); font-size: 9.5px; font-weight: 400;
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--text-4);
+}
+.sc4 td {
+  padding: 9px 10px 9px 0; vertical-align: top; font-size: 13px; color: var(--text-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--line-1) 50%, transparent);
+}
+.sc4 td:first-child { color: var(--text-1); white-space: nowrap; }
+/* File paths inside <code> have no break opportunities, so a cell holding one sets a
+   min-content wider than the phone viewport and the whole page scrolls sideways. */
+.sc4 td, .sc4 th { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .sc4 td:first-child { white-space: normal; }
+}
+/* A decision that is not made yet, or a convention this contradicts. */
+.flag {
+  border-left: 2px solid var(--accent); background: var(--accent-soft);
+  padding: 12px 16px; border-radius: 0 var(--radius-md) var(--radius-md) 0; margin: 14px 0;
+}
+.flag p { color: var(--text-1); margin: 0; font-size: 13.5px; }
+.flag p + p { margin-top: 8px; }
+.flag .lbl {
+  display: block; font-family: var(--font-brand); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px;
+}
+.done { color: var(--success); }
+.todo { color: var(--danger); }
+
+/* ---- switcher ----------------------------------------------------------- */
+.switch {
+  position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 50;
+  display: flex; align-items: center; gap: 4px; padding: 5px;
+  border-radius: 999px; border: 1px solid var(--line-1);
+  background: color-mix(in srgb, var(--bg-panel) 90%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.55);
+  font-family: var(--font-brand); max-width: calc(100vw - 20px); flex-wrap: wrap;
+  justify-content: center; opacity: 0.44; transition: opacity 0.18s ease;
+}
+.switch:hover, .switch:focus-within { opacity: 1; }
+.switch[hidden] { display: none; }
+.switch button {
+  height: 29px; padding: 0 13px; border: 0; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--text-3);
+  font-size: 11.5px; font-weight: 500; letter-spacing: 0.03em;
+  display: inline-flex; align-items: center; gap: 7px; transition: background 0.13s, color 0.13s;
+}
+.switch button:hover { color: var(--text-1); background: var(--bg-soft); }
+.switch button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.switch button em { font-style: normal; opacity: 0.55; font-variant-numeric: tabular-nums; }
+.switch .div { width: 1px; height: 17px; background: var(--line-1); margin: 0 4px; }
+.switch .util { color: var(--text-2); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+@media (max-width: 760px) { .appbar .prod { display: none; } }
+@media (max-width: 620px) { .switch button span.lbl { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="sunmark" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="7" fill="currentColor"/>
+    <g stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+      <line x1="16" y1="2" x2="16" y2="6"/><line x1="16" y1="26" x2="16" y2="30"/>
+      <line x1="2" y1="16" x2="6" y2="16"/><line x1="26" y1="16" x2="30" y2="16"/>
+      <line x1="6.2" y1="6.2" x2="9" y2="9"/><line x1="23" y1="23" x2="25.8" y2="25.8"/>
+      <line x1="6.2" y1="25.8" x2="9" y2="23"/><line x1="23" y1="9" x2="25.8" y2="6.2"/>
+    </g>
+  </symbol>
+  <symbol id="chev" viewBox="0 0 16 16">
+    <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="plus" viewBox="0 0 16 16">
+    <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  </symbol>
+</svg>
+
+<main id="stage">
+
+<!-- ============== 1 · SIGNED OUT ============== -->
+<section class="screen sc1" data-name="Signed out">
+  <div class="sc1-wash"></div>
+  <div class="sc1-mid">
+    <svg class="mk sc1-sun"><use href="#sunmark"/></svg>
+    <p class="sc1-word">burnsun<i>.space</i></p>
+    <span class="tag">AT Comp Tool</span>
+    <button class="signin" type="button">
+      <svg><use href="#sunmark"/></svg>
+      Sign in with EVE
+    </button>
+  </div>
+</section>
+
+<!-- ============== 2 · NO TEAM ============== -->
+<section class="screen sc2" data-name="No team" hidden>
+  <header class="appbar">
+    <a class="wm" href="#"><svg class="mk" width="18" height="18"><use href="#sunmark"/></svg>burnsun<i>.space</i></a>
+    <span class="prod">AT Comp Tool</span>
+    <span class="who"><span class="avatar">RT</span><b>Ryn Talvik</b><button class="btn subtle" type="button">Sign out</button></span>
+  </header>
+
+  <div class="stagemain">
+    <div class="wrap">
+      <span class="tag">First team</span>
+      <h1>What are you calling it?</h1>
+      <form class="sc2-big" onsubmit="return false">
+        <input placeholder="Sun Reavers" maxlength="200" aria-label="New team name">
+        <button class="btn accent big" type="submit">Create</button>
+      </form>
+      <p class="hint">Waiting on a captain instead? They add <b>Ryn Talvik</b> by name.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============== 3 · ON A TEAM ============== -->
+<section class="screen sc3" data-name="On a team" hidden>
+  <header class="appbar">
+    <a class="wm" href="#"><svg class="mk" width="18" height="18"><use href="#sunmark"/></svg>burnsun<i>.space</i></a>
+    <span class="prod">AT Comp Tool</span>
+    <span class="who"><span class="avatar">RT</span><b>Ryn Talvik</b><button class="btn subtle" type="button">Sign out</button></span>
+  </header>
+
+  <div class="stagemain">
+    <div class="sc3-wash"></div>
+    <div class="sc3-in">
+      <span class="tag">Most recent</span>
+      <p class="sc3-name">Sun Reavers</p>
+      <div class="sc3-meta">
+        <span class="lvl owner">owner</span>
+        <span class="when">edited 2 hours ago</span>
+      </div>
+      <button class="sc3-open" type="button">
+        Open board
+        <svg style="width:16px;height:16px"><use href="#chev"/></svg>
+      </button>
+      <div class="sc3-others">
+        <button class="btn" type="button">AT XXII Practice</button>
+        <button class="btn" type="button">Scrim Pool</button>
+        <button class="btn" type="button"><svg style="width:13px;height:13px"><use href="#plus"/></svg>New team</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== 4 · SPEC ============== -->
+<section class="screen sc4" data-name="Spec" hidden>
+  <div class="doc">
+
+    <div class="doctop">
+      <h1>Entry screens — implementation reference</h1>
+      <p>
+        Three screens are locked. Everything below is what it cost to build them — the shell
+        change they forced, the states they did not cover, and the one convention they
+        contradict.
+      </p>
+      <p>
+        <b class="done">Built.</b> Every open question below carries the answer it was given.
+        The code is <code>SignInScreen.tsx</code>, <code>teams/FirstTeam.tsx</code>,
+        <code>teams/TeamPicker.tsx</code> and <code>styles/entry.css</code>; this stays as the
+        record of what was decided and why, not as a to-do list.
+      </p>
+    </div>
+
+    <section>
+      <h2>1 · What is locked</h2>
+      <table>
+        <thead><tr><th>Screen</th><th>Name</th><th>Was</th></tr></thead>
+        <tbody>
+          <tr><td>Signed out</td><td>Field — mark, wordmark, label, button. Nothing else.</td><td>landing-signin #5</td></tr>
+          <tr><td>No team</td><td>Name it — one question, one oversized input.</td><td>post-signin #3</td></tr>
+          <tr><td>On teams</td><td>Straight through — most recent team as a door, rest as a footnote.</td><td>post-signin #8</td></tr>
+        </tbody>
+      </table>
+      <p>
+        The three exploration files are superseded and worth keeping only for provenance:
+        <code>landing-iterations.html</code>, <code>landing-signin-iterations.html</code>,
+        <code>post-signin-iterations.html</code>.
+      </p>
+    </section>
+
+    <section>
+      <h2>2 · The shell consequence</h2>
+      <p>
+        This is the largest item and it is structural, not cosmetic. Today
+        <code>App.tsx</code> renders one shell for every route:
+      </p>
+      <ul>
+        <li><code>.app-shell</code> — <code>max-width: 720px; margin: 8vh auto</code></li>
+        <li><code>.app-header</code> — wordmark, product label, and <code>UserChip</code></li>
+        <li><code>&lt;main&gt;</code> — the route, or <code>SignedOut</code></li>
+        <li><code>.app-footer</code> — the health line and the theme toggle</li>
+      </ul>
+
+      <h3>Signed out must leave the shell entirely</h3>
+      <p>
+        Field has no header, no footer and no 720px column. It cannot be a card inside
+        <code>&lt;main&gt;</code> — the signed-out branch has to render <em>instead of</em>
+        <code>.app-shell</code>. Three things follow from that, and all three are real losses
+        that were accepted by locking Field:
+      </p>
+      <ul>
+        <li>
+          <b>The header sign-in button goes.</b> Good: <code>UserChip</code> currently renders one
+          and the old card deliberately did not, to avoid two controls with the same name. Field's
+          own button calls <code>signIn()</code> directly.
+        </li>
+        <li>
+          <b>The theme toggle goes while signed out.</b> <code>applyTheme</code> persists to
+          <code>localStorage</code> and <code>index.html</code> re-applies it pre-paint, so a
+          returning user keeps their choice. A first-time visitor gets <code>system</code> and no
+          way to override until they are signed in.
+        </li>
+        <li>
+          <b>The health line goes.</b> If the API is down, sign-in fails with nothing on screen
+          explaining why.
+        </li>
+      </ul>
+
+      <div class="flag">
+        <span class="lbl">Decided — the footer went, both occupants moved</span>
+        <p>
+          <b>The theme toggle moved into the header</b>, so it exists on every signed-in route
+          including the workspace, where the footer had it before. Signed out still has neither,
+          and that loss stands: a returning visitor keeps their choice out of
+          <code>localStorage</code>, a first-time one gets <code>system</code>.
+        </p>
+        <p>
+          <b>The health line became a banner that only renders when the probe fails</b>, full-bleed
+          under the header rather than in a footer nobody scrolls to. It frames the probe's own
+          words rather than printing them raw — <code>TypeError: Failed to fetch</code> is not a
+          sentence. The footer element is gone entirely, and with it
+          <code>data-testid="app-footer"</code>.
+        </p>
+      </div>
+
+      <h3>Signed in gets a full-bleed header</h3>
+      <p>
+        Screens 2 and 3 use <code>.appbar</code> — full width, <code>14px</code> block padding, a
+        <code>1px</code> bottom border. The current <code>.app-header</code> is inside the 720px
+        column, has no border, and sits <code>8vh</code> down the page.
+      </p>
+      <p>
+        The workspace route already goes full-bleed via <code>.app-shell-wide</code>. So adopting
+        <code>.appbar</code> on the teams route makes the two <em>more</em> consistent, not less —
+        but it is a change to <code>base.css</code> and the shell, not just to
+        <code>TeamList.tsx</code>.
+      </p>
+      <div class="flag">
+        <span class="lbl">Decided — one header for every signed-in route</span>
+        <p>
+          <code>.app-header</code> <em>is</em> the appbar now: full-bleed, bordered, wordmark linking
+          home. <code>.app-shell</code> became a full-height flex column and the 720px column moved
+          off it onto <code>&lt;main&gt;</code> as <code>.main-column</code>, so the teams screen can
+          opt out with <code>.main-full</code> without a second shell. <code>isWide()</code> was
+          <em>not</em> touched — <code>route.test.ts</code> pins <code>teams</code> as not-wide, and
+          the workspace keeps its own <code>height: 100dvh</code> override.
+        </p>
+        <p>
+          It wraps by row below about 620px. A bar holding a wordmark, a theme control and a
+          character with two sign-out buttons does not fit a phone on one line, and a bar that
+          scrolls sideways takes the whole page with it.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>3 · Component map</h2>
+      <table>
+        <thead><tr><th>File</th><th>Change</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>App.tsx</code></td>
+            <td>
+              Split the signed-out branch out of <code>.app-shell</code> so Field owns the viewport.
+              <code>SignedOut</code> (the <code>.card</code> with the "Sign in" title) is replaced
+              outright.
+            </td>
+          </tr>
+          <tr>
+            <td><code>UserChip.tsx</code></td>
+            <td>
+              <b>Unchanged.</b> An earlier draft here said it would lose its signed-out branch, on
+              the assumption that nothing renders it signed out any more. Wrong: a <em>share</em>
+              link is public, so it keeps the shell with no character, and that branch is what puts
+              a sign-in button in the bar for a visitor reading someone's comp.
+            </td>
+          </tr>
+          <tr>
+            <td><code>TeamList.tsx</code></td>
+            <td>
+              Keeps the fetch, the create and the archived switch; hands off to
+              <code>FirstTeam</code> or <code>TeamPicker</code>. Not renamed —
+              <code>TeamScreen.tsx</code> (team settings) already lives one letter away.
+            </td>
+          </tr>
+          <tr>
+            <td><code>styles/entry.css</code></td>
+            <td>
+              New, and <code>@import</code>ed from <code>base.css</code> beside
+              <code>workspace.css</code>. <b>New selectors only</b> — the import lands before
+              <code>base.css</code>'s own rules, so anything here that tried to override one at
+              equal specificity would lose, and only in a browser. That is why the shell change went
+              into <code>base.css</code> directly, and why the footnote chips are
+              <code>.picker-chip</code> rather than <code>.btn subtle</code>.
+            </td>
+          </tr>
+          <tr>
+            <td><code>styles/base.css</code></td>
+            <td>
+              The shell change from §2, plus <code>.btn.accent</code> / <code>.btn.big</code>.
+              <code>.card</code> and <code>.row</code> stay — other screens still use them.
+              <code>.team-list</code> went, with its last caller.
+            </td>
+          </tr>
+          <tr>
+            <td><code>brand/SunMark.tsx</code>, <code>lib/ago.ts</code></td>
+            <td>
+              New. The mark is <code>public/favicon.svg</code> in <code>currentColor</code>, beside
+              <code>brandConfig</code> so a rebrand is one directory.
+            </td>
+          </tr>
+          <tr>
+            <td><code>styles/tokens.css</code></td>
+            <td>Add <code>--halo</code>, <code>--halo-far</code>, <code>--on-accent</code> per §6.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4 · Data</h2>
+      <p>Every value on these screens is something the API already returns. Nothing needs inventing.</p>
+      <table>
+        <thead><tr><th>Screen</th><th>Reads</th></tr></thead>
+        <tbody>
+          <tr><td>Signed out</td><td><code>Session.ssoEnabled</code></td></tr>
+          <tr><td>No team</td><td><code>Session.character.characterName</code>; <code>createTeam(name)</code></td></tr>
+          <tr><td>On teams</td><td><code>Team.name</code>, <code>.yourLevel</code>, <code>.updatedAt</code>, <code>.archived</code>; <code>Session.character</code></td></tr>
+        </tbody>
+      </table>
+
+      <div class="flag">
+        <span class="lbl">Decided — sorted client-side</span>
+        <p>
+          "Straight through" promotes the most recently edited team. <code>comptool/teams.py</code>
+          sorts with <code>.order_by(Team.name)</code>, so the API returns teams alphabetically.
+          <code>TeamList</code> reorders by <code>updatedAt</code> descending on arrival rather than
+          changing the query: at this size it costs nothing, and alphabetical is still what the
+          endpoint's other callers want.
+        </p>
+        <p>
+          The tag reads <b>"Most recent"</b>, not "last opened", deliberately: <code>updatedAt</code>
+          is when anyone last edited the team, and there is no per-character last-opened anywhere in
+          the schema. If "last opened by you" is what is actually wanted, that is new state to persist.
+        </p>
+      </div>
+
+      <div class="flag">
+        <span class="lbl">Decided — the existing rule was scoped, not broken</span>
+        <p>
+          Screen 3 shows <b>"edited 2 hours ago"</b>. <code>CommentThread.tsx</code> explicitly
+          rejects relative timestamps: <em>"a relative time that is rendered once and never re-rendered
+          goes quietly wrong the longer a board stays open"</em>, and formats absolute instead via
+          <code>toLocaleString</code>.
+        </p>
+        <p>
+          That reasoning is about a <em>long-lived</em> surface. The teams screen is on for the few
+          seconds it takes to pick a board, so a phrase there cannot drift far enough to mislead.
+          <code>lib/ago.ts</code> carries the scoping in its docblock; absolute stays the default
+          anywhere a screen outlives its own strings. It takes <code>now</code> and
+          <code>locales</code> as parameters rather than reading the ambient clock, which is the only
+          reason it is testable.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>5 · The states the mocks did not draw</h2>
+      <p>
+        The three locked screens cover the three happy paths. These are everything else, and what
+        each one was given:
+      </p>
+      <table>
+        <thead><tr><th>State</th><th>As built</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>ssoEnabled: false</code></td>
+            <td>
+              <span class="done">Same layout, one muted line.</span> Mark, wordmark and tag stay put;
+              the button's slot holds the explanation instead. A button that could only ever 503 is
+              worse than no button, and this screen is otherwise nothing but the button — so the
+              sentence has to <em>take its place</em> rather than sit beside it.
+            </td>
+          </tr>
+          <tr>
+            <td>Session loading</td>
+            <td>
+              The same slot again, as <code>role="status"</code>: "Checking your session…". Measured
+              at 9px of movement when it becomes the button, so the page does not jump.
+            </td>
+          </tr>
+          <tr>
+            <td>Teams loading / error</td>
+            <td>
+              A centred <code>role="status"</code> line where the promoted block goes, and
+              <code>role="alert"</code> beneath it. <code>TeamList</code> also clears
+              <code>error</code> with the list it belonged to — left standing, one failed load kept
+              its message through every later success.
+            </td>
+          </tr>
+          <tr>
+            <td>Archived teams</td>
+            <td>
+              A chip at the end of the footnote row, and a quiet text button on "Name it" — without
+              the second one, archiving your only team strands it, because restore lives on the
+              team's own settings screen. Archived teams <em>replace</em> the screen rather than
+              joining it: <code>archived</code> is a switch, not an include, so the two sets are
+              never in hand at once.
+            </td>
+          </tr>
+          <tr>
+            <td>Create-team failure</td>
+            <td>
+              <code>role="alert"</code> under the form on both screens. <b>Not</b> duplicate names —
+              an earlier draft of this row claimed those; there is no unique constraint on
+              <code>Team.name</code> and <code>create_team</code> does no lookup, so no 409 exists.
+              The real cases are 401 and 5xx. <code>maxLength</code> and the blank guard are load
+              bearing: they are exactly the server's two constraints, and a 422 that slips past them
+              arrives with an array-shaped <code>detail</code> that <code>messageFor</code> cannot
+              unwrap.
+            </td>
+          </tr>
+          <tr>
+            <td>"Sign out everywhere"</td>
+            <td>
+              <span class="done">Kept.</span> The mock's bar showed only "Sign out"; dropping the
+              second control would have been a regression against REQUIREMENTS §5.3. The bar has
+              room, so <code>UserChip</code> renders both, restyled.
+            </td>
+          </tr>
+          <tr>
+            <td>Character portrait</td>
+            <td>
+              The real <code>buildCcpPortraitUrl(characterId, 64)</code>. The initials
+              <code>.avatar</code> above was only ever there to keep the mock offline.
+            </td>
+          </tr>
+          <tr>
+            <td>Long character names</td>
+            <td>
+              Not anticipated here at all, and found at 430px: the name wrapped to three lines and
+              "everywhere" fell off the right edge. The name truncates and the bar wraps by row.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6 · Tokens</h2>
+      <p>
+        No new colours. Every surface, line and text value is <code>tokens.css</code> verbatim. Three
+        custom properties are added, all derived from <code>--accent</code> so a rebrand carries them:
+      </p>
+      <table>
+        <thead><tr><th>Token</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td><code>--on-accent</code></td><td>Text on an amber fill. Dark in <em>both</em> themes: paper-white on light's <code>#c47a1e</code> is 3.3:1, short of AA for a 15px label. Dark gives 5.4 light / 9.1 dark.</td></tr>
+          <tr><td><code>--halo</code></td><td>The glow under the two primary buttons.</td></tr>
+          <tr><td><code>--halo-far</code></td><td>The page wash behind screens 1 and 3.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        <b>On §6.4.</b> REQUIREMENTS bans gradient, blur, glow and drop shadow "in application UI" and
+        reserves them for "marketing/landing surfaces". Screen 1 is squarely a landing surface. Screens
+        2 and 3 are application UI and spend only two things: a <code>--halo-far</code> page wash and a
+        <code>--halo</code> shadow under the single primary button. <b>Kept</b> — locking the screens
+        as drawn was taken as the sign-off. Both are still one declaration each, in
+        <code>styles/entry.css</code>, and deleting either changes no layout.
+      </p>
+    </section>
+
+    <section>
+      <h2>7 · Accepted inconsistency</h2>
+      <p>
+        Screen 2 is left-aligned in a 720px column; screens 1 and 3 are centred. A given character only
+        ever sees one of 2 or 3, so the two never sit side by side — but the flow signed-out → first team
+        → returning does go centred, left, centred. Shipped that way, because both were locked as
+        drawn. Cheapest reconciliation if it starts to grate: centre screen 2's block and keep the
+        oversized input.
+      </p>
+    </section>
+
+  </div>
+</section>
+
+</main>
+
+<nav class="switch" aria-label="Screen switcher">
+  <button type="button" data-go="0" aria-pressed="true"><em>1</em><span class="lbl">Signed out</span></button>
+  <button type="button" data-go="1"><em>2</em><span class="lbl">No team</span></button>
+  <button type="button" data-go="2"><em>3</em><span class="lbl">On a team</span></button>
+  <span class="div"></span>
+  <button type="button" data-go="3"><em>4</em><span class="lbl">Spec</span></button>
+  <span class="div"></span>
+  <button type="button" id="themeBtn" class="util">Dark</button>
+</nav>
+
+<script>
+(function () {
+  var screens = Array.prototype.slice.call(document.querySelectorAll('#stage .screen'));
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.switch [data-go]'));
+  var themeBtn = document.getElementById('themeBtn');
+  var current = 0;
+
+  function setTheme(mode) {
+    document.documentElement.setAttribute('data-theme', mode);
+    themeBtn.textContent = mode === 'dark' ? 'Dark' : 'Light';
+  }
+
+  function show(index) {
+    current = (index + screens.length) % screens.length;
+    screens.forEach(function (section, i) { section.hidden = i !== current; });
+    tabs.forEach(function (tab, i) { tab.setAttribute('aria-pressed', String(i === current)); });
+    location.hash = String(current + 1);
+    window.scrollTo(0, 0);
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () { show(Number(tab.dataset.go)); });
+  });
+  themeBtn.addEventListener('click', function () {
+    setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // A number typed into the team-name field is part of a team name, not a command.
+    if (event.target && event.target.tagName === 'INPUT') return;
+    if (event.key >= '1' && event.key <= '4') show(Number(event.key) - 1);
+    else if (event.key === 'ArrowRight') show(current + 1);
+    else if (event.key === 'ArrowLeft') show(current - 1);
+    else if (event.key.toLowerCase() === 't') themeBtn.click();
+    else if (event.key.toLowerCase() === 'h') {
+      var bar = document.querySelector('.switch');
+      bar.hidden = !bar.hidden;
+    }
+  });
+
+  var fromHash = parseInt(location.hash.slice(1), 10);
+  show(fromHash >= 1 && fromHash <= screens.length ? fromHash - 1 : 0);
+})();
+</script>
+</body>
+</html>

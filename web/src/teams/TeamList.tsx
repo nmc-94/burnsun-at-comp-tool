@@ -1,25 +1,39 @@
 import { useEffect, useState } from 'react'
+import type { FormEvent } from 'react'
 
 import { messageFor } from '../api'
 import { createTeam, listTeams } from './api'
+import FirstTeam from './FirstTeam'
+import TeamPicker, { TeamChip } from './TeamPicker'
 import type { Team } from './types'
 
 interface Props {
-  onOpen: (teamId: string) => void
+  characterName: string | null
 }
 
-export default function TeamList({ onOpen }: Props) {
+/**
+ * Where a signed-in character lands, and the owner of everything the three states below read.
+ *
+ * The states are different enough to be different screens — a character with no team is asked
+ * a question, and a character with teams is shown a door — so this holds the fetch, the create
+ * and the archived switch, and renders one of them.
+ */
+export default function TeamList({ characterName }: Props) {
   const [teams, setTeams] = useState<Team[] | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     setTeams(null)
+    // Cleared with the list it belonged to. Left standing, one failed load kept its message on
+    // screen through every later success.
+    setError(null)
     listTeams(showArchived)
       .then((found) => {
-        if (!cancelled) setTeams(found)
+        if (!cancelled) setTeams(byRecent(found))
       })
       .catch((problem: unknown) => {
         if (!cancelled) setError(messageFor(problem))
@@ -29,97 +43,121 @@ export default function TeamList({ onOpen }: Props) {
     }
   }, [showArchived])
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault()
     if (!name.trim()) return
     setError(null)
     try {
       const team = await createTeam(name.trim())
       setName('')
-      setTeams((current) => [...(current ?? []), team])
+      setCreating(false)
+      setTeams((current) => byRecent([...(current ?? []), team]))
     } catch (problem: unknown) {
       setError(messageFor(problem))
     }
   }
 
-  return (
-    <section className="card" data-testid="team-list-screen" aria-labelledby="team-list-title">
-      <h2 className="card-title" id="team-list-title">
-        Your teams
-        <button
-          className="btn subtle right"
-          data-testid="team-show-archived"
-          type="button"
-          aria-pressed={showArchived}
-          aria-label="Show archived teams"
-          onClick={() => setShowArchived((on) => !on)}
-        >
-          {showArchived ? 'show active' : 'show archived'}
-        </button>
-      </h2>
-
-      <div className="card-body">
-        {teams === null && !error && (
-          <p data-testid="team-list-loading" role="status">
-            Loading…
-          </p>
-        )}
-        {teams !== null && teams.length === 0 && (
-          <p className="empty" data-testid="team-list-empty">
-            {showArchived
-              ? 'Nothing archived.'
-              : // A character with no grant anywhere sees this, not somebody else's teams.
-                'You are not on any team yet. Create one, or ask a captain to add your character.'}
-          </p>
-        )}
-        {teams !== null && teams.length > 0 && (
-          <ul className="team-list" data-testid="team-list" aria-label="Your teams">
-            {teams.map((team) => (
-              <li key={team.id} data-testid="team-list-item">
-                <button
-                  className="link"
-                  data-testid="team-open"
-                  type="button"
-                  onClick={() => onOpen(team.id)}
-                >
-                  {team.name}
-                </button>
-                <span className="level" data-testid="team-level">
-                  {team.yourLevel}
-                </span>
-                {team.archived && <span className="badge">archived</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {!showArchived && (
-          <form className="row" data-testid="team-create-form" onSubmit={submit}>
-            <input
-              data-testid="team-create-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="New team name"
-              maxLength={200}
-              aria-label="New team name"
-            />
-            <button
-              className="btn primary"
-              data-testid="team-create-submit"
-              type="submit"
-              disabled={!name.trim()}
-            >
-              Create
-            </button>
-          </form>
-        )}
-
-        {error && (
-          <p className="err" data-testid="team-list-error" role="alert">
-            {error}
-          </p>
-        )}
+  if (teams === null) {
+    return (
+      <div className="picker" data-testid="team-home">
+        <div className="picker-in">
+          {error ? (
+            <p className="picker-error" data-testid="team-list-error" role="alert">
+              {error}
+            </p>
+          ) : (
+            <p className="picker-status" data-testid="team-list-loading" role="status">
+              Loading…
+            </p>
+          )}
+        </div>
       </div>
-    </section>
+    )
+  }
+
+  if (showArchived) {
+    return <Archived teams={teams} onShowActive={() => setShowArchived(false)} />
+  }
+
+  if (teams.length === 0) {
+    return (
+      <FirstTeam
+        characterName={characterName}
+        name={name}
+        onName={setName}
+        onSubmit={submit}
+        onShowArchived={() => setShowArchived(true)}
+        error={error}
+      />
+    )
+  }
+
+  return (
+    <TeamPicker
+      teams={teams}
+      name={name}
+      onName={setName}
+      onSubmit={submit}
+      creating={creating}
+      onCreating={setCreating}
+      onShowArchived={() => setShowArchived(true)}
+      error={error}
+    />
+  )
+}
+
+/**
+ * Most recently edited first.
+ *
+ * The endpoint sorts by name (`comptool/teams.py`), which is the right order for a directory
+ * and the wrong one for a screen whose whole shape is "here is the team you are working in".
+ * Reordered here rather than in the query: at this size it costs nothing, and the endpoint's
+ * order is still what its other callers want.
+ */
+function byRecent(teams: Team[]): Team[] {
+  return [...teams].sort((a, b) => at(b.updatedAt) - at(a.updatedAt))
+}
+
+function at(iso: string): number {
+  const parsed = Date.parse(iso)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+/**
+ * The archived teams, which replace the screen rather than sitting under it.
+ *
+ * That is the endpoint's shape and not a choice: `archived` is a switch, not an include, so
+ * the two sets are never in hand at once.
+ */
+function Archived({ teams, onShowActive }: { teams: Team[]; onShowActive: () => void }) {
+  return (
+    <div className="picker" data-testid="team-home">
+      <div className="picker-in">
+        <span className="tag">Archived</span>
+        {teams.length === 0 ? (
+          <p className="picker-status" data-testid="team-list-empty">
+            Nothing archived.
+          </p>
+        ) : (
+          <div className="picker-stack">
+            {teams.map((team) => (
+              <TeamChip key={team.id} team={team} />
+            ))}
+          </div>
+        )}
+        <div className="picker-others">
+          <button
+            className="picker-chip"
+            data-testid="team-show-archived"
+            type="button"
+            aria-pressed={true}
+            aria-label="Show archived teams"
+            onClick={onShowActive}
+          >
+            show active
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

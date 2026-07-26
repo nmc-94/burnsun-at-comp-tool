@@ -44,8 +44,8 @@ test('a share link opens with no cookie, and goes stale when the comp moves on',
     await expect(visiting.getByTestId('share-view')).toBeVisible()
     await expect(visiting.getByTestId('share-comp-name')).toHaveText('Angel Shield Kite')
     await expect(visiting.getByTestId('share-hull-row')).toHaveCount(1)
-    // It renders the comp without ever rendering the app's signed-in shell.
-    await expect(visiting.getByTestId('sign-in-card')).toHaveCount(0)
+    // It renders the comp without ever demanding an identity for it.
+    await expect(visiting.getByTestId('sign-in-screen')).toHaveCount(0)
   } finally {
     await visitor.close()
   }
