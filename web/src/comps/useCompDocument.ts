@@ -28,10 +28,19 @@ import type { SaveState } from './CompTile'
 import { trackWrite, whenWritesSettle } from './in-flight'
 import { toEngineComp } from './tile-model'
 import type { CompDetail, CompTagsWrite } from './types'
+import { noteEdited, registerUndoTarget } from './undo-keys'
 
 /** How long to let edits settle before writing them. Long enough to cover a burst of
  *  clicks, short enough that closing the tab straight after an edit is still unusual. */
 const SAVE_DEBOUNCE_MS = 600
+
+/** How far back Ctrl+Z reaches in one tile. Deep enough to cover a session's fumbling over a
+ *  ten-hull comp, shallow enough that twenty tiles holding one each is nothing. */
+const UNDO_DEPTH = 50
+
+/** What the last undo or redo key press did — but only the two outcomes with no other signal.
+ *  A step that moved is visible in the comp itself, which is better than a sentence about it. */
+export type UndoOutcome = 'nothing-to-undo' | 'nothing-to-redo'
 
 export interface CompDocument {
   readonly comp: CompDetail | null
@@ -43,6 +52,11 @@ export interface CompDocument {
   readonly error: string | null
   readonly editable: boolean
   readonly change: (next: CompSlot[]) => void
+  /** Step back one slot-list edit, or forward again. True when something actually moved. */
+  readonly undo: () => boolean
+  readonly redo: () => boolean
+  /** What the last key press did, for the cell to say. Null while it had something to do. */
+  readonly undoOutcome: UndoOutcome | null
   readonly rename: (name: string) => void
   /** Store what the comp says it is. Wholesale, because that is the shape of the route. */
   readonly saveTags: (next: CompTagsWrite) => void
@@ -72,11 +86,42 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   const persisted = useRef<string>('')
   const pending = useRef<CompSlot[] | null>(null)
 
+  // Whole-list snapshots, because a slot's identity *is* its index: removing row 2 renumbers
+  // every row below it, so there is no operation here to name and invert. `past` holds the
+  // comps this tile has been, newest last; `future` holds the ones an undo stepped out of.
+  //
+  // Refs rather than state, and that stays true only while nothing draws them. The gesture is
+  // a key press, so there is no control whose disabled-ness has to keep up — and a board runs
+  // twenty of these, so a second render per edit would be twenty second renders.
+  const past = useRef<CompSlot[][]>([])
+  const future = useRef<CompSlot[][]>([])
+
+  // The comp as it stands on screen. Held here as well as in state so `change` can read what
+  // it is about to replace without taking `slots` as a dependency — it is handed to the tile
+  // as `onChange` and sits in a dependency list in the cell, and a fresh identity on every
+  // edit would re-run both.
+  const onScreen = useRef<CompSlot[]>([])
+
+  // How many writes this hook has issued and not yet heard back from. The guard in `save`
+  // needs it: `persisted` is what the server has *confirmed*, and a write still on its way is
+  // about to make the server disagree with it.
+  const inFlight = useRef(0)
+
+  const [undoOutcome, setUndoOutcome] = useState<UndoOutcome | null>(null)
+
   useEffect(() => {
     let cancelled = false
     setComp(null)
     setRuleset(null)
     setError(null)
+    // The stacks belong to *this* comp. A hook instance is reused across comps, and an undo
+    // that reached back past a load would put another comp's hulls into this one. Cleared
+    // here rather than once the comp arrives, so a load that fails or is cancelled cannot
+    // leave the previous comp's history reachable either.
+    past.current = []
+    future.current = []
+    onScreen.current = []
+    setUndoOutcome(null)
 
     // Waited on before the read, not after: closing a tile flushes its last edit from a
     // cleanup nobody can await, so a tile opening on the same comp — the same comp on two
@@ -92,6 +137,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
           isFlagship: slot.isFlagship,
         }))
         setSlots(loaded)
+        onScreen.current = loaded
         persisted.current = JSON.stringify(loaded)
         // Pinned, not latest. Fetched after the comp because only the comp knows which, and
         // through the cache so a board of tiles shares one payload and one object identity.
@@ -109,7 +155,19 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
 
   const save = useCallback(
     async (next: CompSlot[]) => {
+      // An undo that walks back to exactly what the server already holds is not a write. The
+      // comparison is only sound with nothing in the air: `persisted` is the last *confirmed*
+      // state, and a write still on its way is about to make the server disagree with it — so
+      // comparing against it mid-flight would skip the very write that puts the comp back.
+      if (inFlight.current === 0 && JSON.stringify(next) === persisted.current) {
+        setSaveState('idle')
+        // Cleared for the same reason the success path clears it: screen and server agree, so
+        // whatever a previous attempt failed to say is no longer true of this comp.
+        setError(null)
+        return
+      }
       setSaveState('saving')
+      inFlight.current += 1
       try {
         const updated = await trackWrite(compId, replaceSlots(compId, next.map(toWire)))
         persisted.current = JSON.stringify(next)
@@ -121,6 +179,8 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
         // on screen, and the failure is nearly always the connection rather than the edit.
         setSaveState('error')
         setError(messageFor(problem))
+      } finally {
+        inFlight.current -= 1
       }
     },
     [compId],
@@ -149,16 +209,82 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     [slots, ruleset],
   )
 
-  // Declared with the other hooks rather than after an early return, which is where they sat
-  // when this was a component. The ordering inside `change` is the part that matters.
-  const change = useCallback((next: CompSlot[]) => {
+  /**
+   * The half of an edit that is not stack bookkeeping: put the comp on screen and start it
+   * down the same debounce a click would.
+   *
+   * Shared by all three callers, because **an undo is a real edit**. A comp restored on screen
+   * and never written back would come back changed on the next load.
+   *
+   * Declared with the other hooks rather than after an early return, which is where these sat
+   * when this was a component. The ordering inside here is the part that matters.
+   */
+  const apply = useCallback((next: CompSlot[]) => {
+    onScreen.current = next
     pending.current = next
     setSlots(next)
     // Said immediately, not when the debounce fires: between the edit and the write the comp
     // on screen and the comp on the server genuinely differ, and the tile should not claim
-    // otherwise.
+    // otherwise. That holds for an undo too — the write it needs has not happened yet.
     setSaveState('pending')
   }, [])
+
+  const change = useCallback(
+    (next: CompSlot[]) => {
+      // The comp as it was *before* this edit, which is exactly what an undo restores.
+      past.current = [...past.current, onScreen.current].slice(-UNDO_DEPTH)
+      // A fresh edit throws the way forward away. Redo means "put back the thing I just took
+      // back", and once something else has happened there is no such thing.
+      future.current = []
+      // An identity update, so a tile with nothing to clear does not re-render to clear it.
+      setUndoOutcome((current) => (current === null ? current : null))
+      noteEdited(compId)
+      apply(next)
+    },
+    [compId, apply],
+  )
+
+  /**
+   * Step back one edit, and say whether there was one to step back to.
+   *
+   * The boolean is what the keyboard needs: with nothing left, the key is the browser's to
+   * keep rather than ours to swallow.
+   */
+  const undo = useCallback((): boolean => {
+    const previous = past.current.at(-1)
+    if (previous === undefined) {
+      setUndoOutcome('nothing-to-undo')
+      return false
+    }
+    past.current = past.current.slice(0, -1)
+    future.current = [...future.current, onScreen.current]
+    setUndoOutcome(null)
+    apply(previous)
+    return true
+  }, [apply])
+
+  const redo = useCallback((): boolean => {
+    const next = future.current.at(-1)
+    if (next === undefined) {
+      setUndoOutcome('nothing-to-redo')
+      return false
+    }
+    future.current = future.current.slice(0, -1)
+    past.current = [...past.current, onScreen.current]
+    setUndoOutcome(null)
+    apply(next)
+    return true
+  }, [apply])
+
+  const editable = comp?.yourLevel === 'editor' || comp?.yourLevel === 'owner'
+
+  useEffect(() => {
+    // Only a comp this person can change, and only while its tile is on screen. A viewer's
+    // tile has nothing to take back, and registering one would put a comp nobody can edit in
+    // the way of the key.
+    if (!editable) return
+    return registerUndoTarget(compId, { undo, redo })
+  }, [compId, editable, undo, redo])
 
   // Held in a ref so a caller's inline arrow does not have to appear in a dependency list and
   // rebuild the callbacks below on every render of the board.
@@ -229,8 +355,11 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     result,
     saveState,
     error,
-    editable: comp?.yourLevel === 'editor' || comp?.yourLevel === 'owner',
+    editable,
     change,
+    undo,
+    redo,
+    undoOutcome,
     rename,
     saveTags,
     patchShare,

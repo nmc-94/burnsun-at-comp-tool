@@ -566,8 +566,13 @@
 }
 
 /* Said in the tile the hulls came *from*: a copy changes a comp somewhere else on the
-   board, and otherwise nothing moves where the person is looking. */
-.board-tile-transfer {
+   board, and otherwise nothing moves where the person is looking.
+ *
+ * The undo line is the same kind of remark for the same reason — a key press that found an
+ * empty stack, which is the one outcome that changes nothing on screen — so it takes the same
+ * type rather than a second rule that would have to be kept in step with this one. */
+.board-tile-transfer,
+.board-tile-undo {
   margin: 4px 0 0;
   font-size: 11px;
   color: var(--text-3);

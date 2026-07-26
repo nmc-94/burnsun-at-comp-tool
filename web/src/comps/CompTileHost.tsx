@@ -81,6 +81,7 @@ export default function CompTileHost({
     error,
     editable,
     change,
+    undoOutcome,
     rename,
     saveTags,
     patchShare,
@@ -412,6 +413,30 @@ export default function CompTileHost({
       {preview && (
         <p className="board-tile-preview" data-testid="board-tile-preview" role="status">
           {previewLabel(preview.count, preview.delta, preview.breaks)}
+        </p>
+      )}
+
+      {/* Said where the person is looking, for the same reason the transfer line above is —
+          and only when the key did *nothing*. A step that moved is already visible in the comp
+          it moved: a row comes back, the delta pill shifts, the save state changes. The case
+          with no other signal at all is the key that found an empty stack, and undo has no
+          control to grey out to say so beforehand.
+
+          Only one tile can be the one edited most recently, so this is at most one live region
+          on a board of twenty — which is why the argument that keeps `comp-save-state` silent
+          does not apply here. */}
+      {undoOutcome && (
+        <p
+          className="board-tile-undo"
+          data-testid="board-tile-undo"
+          // The state itself, not just its wording, the way `data-save-state` is: a driver
+          // waits on this rather than on a phrase, and it survives the label being rephrased.
+          data-undo-outcome={undoOutcome}
+          role="status"
+        >
+          {undoOutcome === 'nothing-to-undo'
+            ? 'Nothing left to take back'
+            : 'Nothing to put back'}
         </p>
       )}
 

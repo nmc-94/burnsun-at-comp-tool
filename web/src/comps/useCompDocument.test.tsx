@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 import { resetRulesetCache } from '../rulesets/cache'
 import { resetInFlightWrites, trackWrite } from './in-flight'
+import { resetUndoTargets } from './undo-keys'
 import { useCompDocument } from './useCompDocument'
 
 const COMP = {
@@ -43,7 +44,7 @@ interface Stubbed {
   text: () => Promise<string>
 }
 
-function stubFetch(options: { failWrites?: boolean } = {}) {
+function stubFetch(options: { failWrites?: boolean; comps?: Record<string, unknown> } = {}) {
   const calls: Recorded[] = []
   const fetchMock = vi.fn(async (url: string, init: RequestInit = {}): Promise<Stubbed> => {
     calls.push({ url, init })
@@ -56,9 +57,10 @@ function stubFetch(options: { failWrites?: boolean } = {}) {
         text: async () => '{"detail":"nope"}',
       }
     }
+    const named = options.comps?.[url.replace('/api/v1/comps/', '').replace('/slots', '')]
     const body = url.includes('/rulesets/')
       ? { slug: 'atxxii', versionLabel: 'v2026-07-23', payload: atxxiiRuleset }
-      : COMP
+      : (named ?? COMP)
     return {
       ok: true,
       status: 200,
@@ -70,6 +72,38 @@ function stubFetch(options: { failWrites?: boolean } = {}) {
   vi.stubGlobal('fetch', fetchMock)
   return calls
 }
+
+/**
+ * A stub whose writes hang until they are let go, so a second edit can be made while the first
+ * is still on its way. The only way to reach the case the in-flight guard exists for.
+ */
+function stubHangingWrites() {
+  const calls: Recorded[] = []
+  const landings: (() => void)[] = []
+  const fetchMock = vi.fn(async (url: string, init: RequestInit = {}): Promise<Stubbed> => {
+    calls.push({ url, init })
+    const body = url.includes('/rulesets/')
+      ? { slug: 'atxxii', versionLabel: 'v2026-07-23', payload: atxxiiRuleset }
+      : COMP
+    const answer: Stubbed = {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    }
+    if (init.method !== 'PUT') return answer
+    return new Promise<Stubbed>((resolve) => landings.push(() => resolve(answer)))
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return { calls, land: () => landings.splice(0).forEach((landing) => landing()) }
+}
+
+const ABADDON = { typeId: SHIP.abaddon, isFlagship: false }
+const VINDICATOR = { typeId: SHIP.vindicator, isFlagship: false }
+
+/** A comp of `count` abaddons, so a state is identifiable by nothing but its length. */
+const comp = (count: number) => Array.from({ length: count }, () => ({ ...ABADDON }))
 
 const writes = (calls: Recorded[]) => calls.filter((call) => call.init.method === 'PUT')
 
@@ -89,6 +123,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   resetRulesetCache()
   resetInFlightWrites()
+  resetUndoTargets()
 })
 
 describe('loading', () => {
@@ -203,6 +238,212 @@ describe('saving', () => {
     await waitFor(() => expect(view.result.current.saveState).toBe('error'))
     expect(view.result.current.slots).toEqual([{ typeId: SHIP.vindicator, isFlagship: false }])
     expect(view.result.current.error).toBeTruthy()
+  })
+})
+
+describe('undoing', () => {
+  it('steps back to the comp as it was before the last edit', async () => {
+    stubFetch()
+    const view = await loaded()
+
+    act(() => view.result.current.change([VINDICATOR]))
+    act(() => {
+      view.result.current.undo()
+    })
+
+    expect(view.result.current.slots).toEqual([ABADDON])
+  })
+
+  it('steps forward again, and a fresh edit throws the way forward away', async () => {
+    stubFetch()
+    const view = await loaded()
+
+    act(() => view.result.current.change([VINDICATOR]))
+    act(() => {
+      view.result.current.undo()
+    })
+    act(() => {
+      expect(view.result.current.redo()).toBe(true)
+    })
+    expect(view.result.current.slots).toEqual([VINDICATOR])
+
+    act(() => {
+      view.result.current.undo()
+    })
+    act(() => view.result.current.change(comp(3)))
+    // Redo means "put back the thing I just took back". Something else has happened, so there
+    // is no such thing any more.
+    act(() => {
+      expect(view.result.current.redo()).toBe(false)
+    })
+    expect(view.result.current.slots).toEqual(comp(3))
+  })
+
+  it('walks back through a burst of edits one at a time', async () => {
+    stubFetch()
+    const view = await loaded()
+
+    act(() => view.result.current.change(comp(2)))
+    act(() => view.result.current.change(comp(3)))
+    act(() => view.result.current.change(comp(4)))
+
+    for (const length of [3, 2, 1]) {
+      act(() => {
+        view.result.current.undo()
+      })
+      expect(view.result.current.slots).toHaveLength(length)
+    }
+    act(() => {
+      expect(view.result.current.undo()).toBe(false)
+    })
+  })
+
+  it('writes the restored comp, so it does not come back changed on the next load', async () => {
+    const calls = stubFetch()
+    const view = await loaded()
+
+    act(() => view.result.current.change([VINDICATOR]))
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await waitFor(() => expect(writes(calls).length).toBe(1))
+
+    act(() => {
+      view.result.current.undo()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+
+    // An undo is an edit, not a local rewind. Without the second write the comp comes back as
+    // the vindicator the moment anybody reloads.
+    await waitFor(() => expect(writes(calls).length).toBe(2))
+    expect(JSON.parse(String(writes(calls)[1]?.init.body)).slots).toEqual([ABADDON])
+  })
+
+  it('writes nothing when an undo lands back on what the server already holds', async () => {
+    const calls = stubFetch()
+    const view = await loaded()
+
+    act(() => view.result.current.change([VINDICATOR]))
+    act(() => {
+      view.result.current.undo()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+
+    expect(writes(calls).length).toBe(0)
+    await waitFor(() => expect(view.result.current.saveState).toBe('idle'))
+  })
+
+  it('still writes an undo taken while the first write is still in the air', async () => {
+    // The guard above compares against what the server has *confirmed*. A write already on its
+    // way is about to make the server disagree with that, so skipping here would leave the
+    // vindicator stored, the abaddon on screen, and the tile saying it had saved.
+    const { calls, land } = stubHangingWrites()
+    const view = await loaded()
+
+    act(() => view.result.current.change([VINDICATOR]))
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    expect(writes(calls).length).toBe(1)
+
+    act(() => {
+      view.result.current.undo()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+
+    expect(writes(calls).length).toBe(2)
+    expect(JSON.parse(String(writes(calls)[1]?.init.body)).slots).toEqual([ABADDON])
+    await act(async () => land())
+  })
+
+  it('caps how far back it can reach', async () => {
+    stubFetch()
+    const view = await loaded()
+
+    for (let length = 2; length <= 56; length += 1) {
+      act(() => view.result.current.change(comp(length)))
+    }
+    for (let step = 0; step < 50; step += 1) {
+      act(() => {
+        view.result.current.undo()
+      })
+    }
+
+    // Fifty steps back from the last of fifty-five edits, and no further.
+    expect(view.result.current.slots).toHaveLength(6)
+    act(() => {
+      expect(view.result.current.undo()).toBe(false)
+    })
+  })
+
+  it('forgets the previous comp when the hook is pointed at another one', async () => {
+    stubFetch({
+      comps: {
+        c1: COMP,
+        c2: { ...COMP, id: 'c2', slots: [{ position: 0, typeId: SHIP.rifter, isFlagship: false }] },
+      },
+    })
+    const view = renderHook(({ id }) => useCompDocument(id), { initialProps: { id: 'c1' } })
+    await waitFor(() => expect(view.result.current.result).not.toBeNull())
+
+    act(() => view.result.current.change([VINDICATOR]))
+    view.rerender({ id: 'c2' })
+    await waitFor(() => expect(view.result.current.slots).toEqual([{ typeId: SHIP.rifter, isFlagship: false }]))
+
+    // An undo that reached back past a load would put one comp's hulls into another.
+    act(() => {
+      expect(view.result.current.undo()).toBe(false)
+    })
+    expect(view.result.current.slots).toEqual([{ typeId: SHIP.rifter, isFlagship: false }])
+  })
+
+  it('settles a comp the server refused, without writing what it already holds', async () => {
+    stubFetch({ failWrites: true })
+    const view = await loaded()
+
+    act(() => view.result.current.change([VINDICATOR]))
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await waitFor(() => expect(view.result.current.saveState).toBe('error'))
+
+    act(() => {
+      view.result.current.undo()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+
+    // The failed write never advanced what the server is known to hold, so stepping back onto
+    // it is genuinely nothing to write — and the failure it was reporting is no longer true.
+    await waitFor(() => expect(view.result.current.saveState).toBe('idle'))
+    expect(view.result.current.error).toBeNull()
+  })
+
+  it('says so when there is nothing left to take back, and nothing otherwise', async () => {
+    stubFetch()
+    const view = await loaded()
+
+    expect(view.result.current.undoOutcome).toBeNull()
+    act(() => {
+      view.result.current.undo()
+    })
+    expect(view.result.current.undoOutcome).toBe('nothing-to-undo')
+
+    act(() => {
+      view.result.current.redo()
+    })
+    expect(view.result.current.undoOutcome).toBe('nothing-to-redo')
+
+    // An edit is the answer to the remark, so it clears it.
+    act(() => view.result.current.change([VINDICATOR]))
+    expect(view.result.current.undoOutcome).toBeNull()
   })
 })
 
