@@ -53,8 +53,17 @@ describe('offering hulls', () => {
   it('hands the hulls over once, so a copy cannot land twice', () => {
     offerHulls('c2', offer({ typeIds: [587, 609] }))
 
-    expect(takeOffer('c2')?.typeIds).toEqual([587, 609])
+    expect(takeOffer('c2')?.offer.typeIds).toEqual([587, 609])
     expect(takeOffer('c2')).toBeUndefined()
+  })
+
+  it('hands the landing over with them, because where they go is half of what was said', () => {
+    offerHulls('c2', offer({ typeIds: [587] }), 4)
+
+    const taken = takeOffer('c2')
+
+    expect(taken?.offer.typeIds).toEqual([587])
+    expect(taken?.atIndex).toBe(4)
   })
 
   it('announces the taking as well as the offering, so the affordance goes away', () => {
@@ -102,6 +111,36 @@ describe('proposing hulls', () => {
     propose('c2', offer({ typeIds: [24_692, 587] }))
 
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('speaks up when the same hulls are proposed against a different row', () => {
+    // A drag moving down a column of rows is one offer proposed against each of them in turn.
+    // A dedupe blind to the row would answer the first and then go quiet, and the mark would
+    // stay on the row the cursor left.
+    propose('c2', offer(), 3)
+    const listener = vi.fn()
+    subscribeTransfer('c2', listener)
+
+    propose('c2', offer(), 4)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(peekTransfer('c2')?.atIndex).toBe(4)
+  })
+
+  it('stays quiet when the same hulls are proposed against the same row', () => {
+    propose('c2', offer(), 3)
+    const listener = vi.fn()
+    subscribeTransfer('c2', listener)
+
+    propose('c2', offer(), 3)
+
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('names no row when it is not given one, which is the end of the comp', () => {
+    propose('c2', offer())
+
+    expect(peekTransfer('c2')?.atIndex).toBeNull()
   })
 
   it('withdraws the question when the cursor leaves', () => {

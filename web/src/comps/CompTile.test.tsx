@@ -574,6 +574,35 @@ describe('the flagship', () => {
     ])
   })
 
+  it('offers the star only on the rows that could hold one', () => {
+    // The visible point of the rule. Eligibility here is battleships minus a short list, so a
+    // comp of mixed hulls used to carry a star on every row and mean it on two — and the answer
+    // to clicking one of the others was a violation raised a moment later.
+    mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.scimitar, SHIP.bhaalgorn))
+
+    expect(within(row(0)).queryByTestId('comp-row-flagship-toggle')).toBeTruthy()
+    expect(within(row(1)).queryByTestId('comp-row-flagship-toggle')).toBeNull()
+    expect(within(row(2)).queryByTestId('comp-row-flagship-toggle')).toBeNull()
+    expect(within(row(3)).queryByTestId('comp-row-flagship-toggle')).toBeNull()
+  })
+
+  it('keeps the star on an ineligible row that holds the designation, so it can be cleared', () => {
+    // Reachable by swapping a hull under a flagship, which keeps the designation on purpose.
+    // Without the control there is no way back out, and `flagship-not-eligible` becomes a
+    // violation the tile reports and offers nothing to act on.
+    const { onChange } = mount([
+      { typeId: SHIP.bhaalgorn, isFlagship: true },
+      { typeId: SHIP.abaddon, isFlagship: false },
+    ])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear flagship from Bhaalgorn' }))
+
+    expect(onChange).toHaveBeenCalledWith([
+      { typeId: SHIP.bhaalgorn, isFlagship: false },
+      { typeId: SHIP.abaddon, isFlagship: false },
+    ])
+  })
+
   it('raises the battleship cap once a flagship is designated', () => {
     const three: CompSlot[] = [
       { typeId: SHIP.vindicator, isFlagship: true },
@@ -596,9 +625,7 @@ describe('a hull the ruleset does not price', () => {
 
     expect(screen.getByTestId('comp-row-name').textContent).toBe('Unknown hull 999999')
     expect(screen.getByRole('button', { name: 'Remove Unknown hull 999999' })).toBeTruthy()
-    expect(
-      screen.getByRole('button', { name: 'Make Unknown hull 999999 the flagship' }),
-    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Swap Unknown hull 999999' })).toBeTruthy()
   })
 })
 

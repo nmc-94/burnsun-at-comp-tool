@@ -18,7 +18,7 @@ import type { CompSlot, Violation } from '../engine'
 import CommentThread from './CommentThread'
 import SharePanel from './SharePanel'
 import CompTile from './CompTile'
-import type { Lineage } from './CompTile'
+import type { Lineage, RowDrop } from './CompTile'
 import { EMPTY_VOCABULARY } from './tag-model'
 import type { TagVocabulary } from './tag-model'
 import { hrefFor } from '../router/route'
@@ -35,7 +35,7 @@ import {
   takeOffer,
 } from '../workspace/hull-transfer'
 import type { CarriedRows } from '../workspace/hull-transfer'
-import { introducedBy, previewHulls, slotsAt, withHullsAdded } from './tile-model'
+import { introducedBy, previewHulls, slotsAt, withHullsAdded, withRow } from './tile-model'
 import type { CompDetail } from './types'
 import { registerUndoTarget } from './undo-keys'
 import { useCompDocument } from './useCompDocument'
@@ -46,8 +46,16 @@ import { useCompDocument } from './useCompDocument'
  * itself simply passes nothing, the way `onPort`'s absence already disables porting.
  */
 export interface TileDrag {
-  /** This tile has been picked up. False when there is nothing to rearrange. */
-  readonly lift: (compId: string) => boolean
+  /**
+   * This tile has been picked up. False when there is nothing to rearrange.
+   *
+   * `settle` is this cell's own flush, handed over rather than called — the same arrangement
+   * `CarriedRows` makes, and for the same reason. One of the places a tile can be let go of is
+   * the new-comp tile, where it forks, and a fork reads the comp's rows on the *server*: taken
+   * inside the save debounce it would derive from the comp as it was before the last keystroke.
+   * Nothing above this cell can reach its outstanding edits, so they travel with the gesture.
+   */
+  readonly lift: (compId: string, settle: () => Promise<void>) => boolean
   /** The gesture is over, dropped or not. */
   readonly end: () => void
 }
@@ -147,7 +155,14 @@ export default function CompTileHost({
     // Taken even when this comp cannot be edited, because taking it is what clears the
     // affordance. A viewer's tile is no more a destination than it is a drop target, and
     // neither route can reach one — this is the belt to that pair of braces.
-    if (editable) change(withHullsAdded(slots, taken.typeIds))
+    if (!editable) return
+    const landing = taken.atIndex
+    const arriving = taken.offer.typeIds
+    // A row named, or the end of the comp. `withRow` reads a null type id as "empty this row",
+    // so an offer that somehow carried no hulls must not reach it — an empty landing is
+    // nothing happening, never a slot being cleared.
+    if (landing === null) change(withHullsAdded(slots, arriving))
+    else if (arriving[0] !== undefined) change(withRow(slots, landing, arriving[0]))
   }, [compId, comp, editable, transfer, slots, change])
 
   /**
@@ -156,9 +171,16 @@ export default function CompTileHost({
    * Computed in the receiving tile because that is the only place it can be: comps on one
    * board can be pinned to different ruleset versions, so the price of an arriving hull is
    * this comp's ruleset's to say and not the sending comp's.
+   *
+   * **Only for a landing on the comp as a whole**, which is the one that has something to
+   * say: hulls going on the end of a ten-row scaffold need somewhere to report what they will
+   * cost, and there is nowhere else. A hull going into a *named* slot has the slot — the row
+   * marks itself, the hull it would replace is written on it, and a line of prose underneath
+   * the tile is a caption on the one thing already answering the question.
    */
   const preview = useMemo(() => {
     if (!ruleset || !result || transfer?.phase !== 'proposed') return null
+    if (transfer.atIndex !== null) return null
     const after = previewHulls(slots, transfer.offer.typeIds, ruleset.payload)
     return {
       count: transfer.offer.typeIds.length,
@@ -236,6 +258,50 @@ export default function CompTileHost({
   }
 
   /**
+   * Whether a drag now over row `index` is one that row can take.
+   *
+   * Note what this deliberately does *not* refuse: a drag out of this same comp. The tile-wide
+   * drop above refuses one, because appending your own hulls to yourself by letting go anywhere
+   * on the card is not something anybody means; putting one of them into a *named* slot is, and
+   * it derives rather than moves — the row it came from keeps its hull, the same bargain every
+   * other landing in this file makes.
+   *
+   * One hull only. A slot holds one, and a multi-hull drag is the tile's append, which lands on
+   * the end wherever it was let go of.
+   */
+  function landableOn(index: number): CarriedRows | null {
+    if (!editable) return null
+    const dragging = getDragged()
+    if (!dragging || dragging.offer.typeIds.length !== 1) return null
+    // Back where it started is not an edit, and `change` is not free: it arms the save
+    // debounce, drops the tile's row selection and stales anything copied out of this comp.
+    if (dragging.offer.fromCompId === compId && dragging.positions.includes(index)) return null
+    return dragging
+  }
+
+  /**
+   * The rows as a landing place, for the tile to hang its handlers on.
+   *
+   * Built in the render rather than memoised: `landing` changes with the transfer, the two
+   * functions read module state at the moment they are called, and `CompTile` re-renders with
+   * this cell anyway — a memo here would be bookkeeping for nothing.
+   */
+  const rowDrop: RowDrop = {
+    landing: transfer?.phase === 'proposed' ? transfer.atIndex : null,
+    over(index) {
+      const dragging = landableOn(index)
+      if (!dragging) return false
+      propose(compId, dragging.offer, index)
+      return true
+    },
+    drop(index) {
+      const dragging = landableOn(index)
+      if (!dragging) return
+      offerHulls(compId, dragging.offer, index)
+    },
+  }
+
+  /**
    * Whether a press here is a press on the tile rather than on something in it.
    *
    * Empty space, and the header. Everything else in a tile already answers a press — a hull
@@ -304,6 +370,9 @@ export default function CompTileHost({
     // that has to `preventDefault` for a copy to be possible at all.
     // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <section
+      // Which is only ever a landing on the comp as a whole — a hull going into a named slot
+      // is the same claim about one row, and the row draws it. Saying it twice, once around the
+      // card and once around the row inside it, reads as two things happening.
       className={`board-tile${preview ? ' board-tile-receiving' : ''}`}
       data-testid="board-tile"
       data-comp-id={compId}
@@ -334,14 +403,20 @@ export default function CompTileHost({
         // the event is raised *at* the source node, and the source is always the nearest
         // draggable ancestor of the press.
         if (event.target !== event.currentTarget) return
-        if (!tileDrag?.lift(compId)) {
+        if (!tileDrag?.lift(compId, flush)) {
           event.preventDefault()
           return
         }
         if (event.dataTransfer) {
-          // `move`, where a row's drag says `copy`: a row derives and stays where it is, and
-          // this really does take the thing under the cursor somewhere else.
-          event.dataTransfer.effectAllowed = 'move'
+          // Both, because there are two landings and they are genuinely different acts: the
+          // board moves the tile, the new-comp tile forks the comp and leaves this one where
+          // it is. Each target then says which of the two it means by setting `dropEffect`,
+          // and the cursor shows it.
+          //
+          // Not `move` alone, and this is load-bearing rather than cosmetic: a `dropEffect`
+          // outside `effectAllowed` is reset to `none` and the drop is *cancelled*, so the
+          // new-comp tile would light up, take the dragover, and then never fire.
+          event.dataTransfer.effectAllowed = 'copyMove'
           event.dataTransfer.setData('text/plain', name)
         }
       }}
@@ -352,7 +427,14 @@ export default function CompTileHost({
       }}
       onDragEnter={(event) => {
         const dragging = receivable()
-        if (!dragging) return
+        if (!dragging) {
+          // The cursor has stepped off a row and onto the tile's own space. For a drag out of
+          // another comp the offer below replaces the row's; for one out of *this* comp there
+          // is no tile-wide offer to replace it with, so the row's has to be withdrawn here or
+          // it stands with nothing pointing at it.
+          if (getDragged()) propose(compId, null)
+          return
+        }
         event.preventDefault()
         propose(compId, dragging.offer)
       }}
@@ -367,9 +449,11 @@ export default function CompTileHost({
         if (receivable()) event.preventDefault()
       }}
       onDragLeave={(event) => {
-        // Gated, so a tile drag crossing this tile does not withdraw a hull offer that was
-        // never made. Harmless today only because the store refuses to withdraw nothing.
-        if (!receivable()) return
+        // Gated on there being a hull drag at all, so a *tile* being carried across this one
+        // does not withdraw an offer it had nothing to do with. Not on `receivable()`, which
+        // refuses a drag out of this same comp — and one of those can still have proposed
+        // against a row in here, which has to be withdrawn when the cursor leaves.
+        if (!getDragged()) return
         // dragleave fires again every time the cursor crosses into a child element, so a
         // bare handler flickers the preview off and on all the way across the tile.
         const related = event.relatedTarget
@@ -419,6 +503,7 @@ export default function CompTileHost({
             onDragRows={(positions) => setDragged(lift(positions))}
             onDragRowsEnd={() => setDragged(null)}
             onCopyRows={(positions) => setCopied(lift(positions))}
+            rowDrop={rowDrop}
             // The band edits in place now, so the cell hands down the vocabulary and the write
             // rather than a control that opens a panel of its own. Fetching still lives here:
             // `vocabulary` is derived from the listing this cell already holds.

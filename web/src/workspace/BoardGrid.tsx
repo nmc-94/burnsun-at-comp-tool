@@ -14,6 +14,7 @@ import type { TagVocabulary } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import { inTextField, isPaste } from '../lib/keys'
 import GhostTile from './GhostTile'
+import type { TileFork } from './GhostTile'
 import { getCopied } from './hull-transfer'
 import type { CarriedRows } from './hull-transfer'
 import { beginReorder } from './reorder'
@@ -39,6 +40,12 @@ interface Props {
    * board.
    */
   readonly onPort?: (compId: string, positions: readonly number[]) => void
+  /**
+   * The whole comp, which is the all-rows case of the same operation (§4.1c).
+   *
+   * Reached two ways: the tile's own control, and carrying the tile onto the new-comp tile —
+   * where a drag that would otherwise rearrange the board derives a comp instead.
+   */
   readonly onFork?: (compId: string) => void
   /**
    * Put a comp's tile at a given position on this board.
@@ -70,6 +77,10 @@ export default function BoardGrid({
   /** The tile being carried, if one is. A ref and not state: the whole point of `reorder.ts`
    *  is that dragging one tile over twenty others re-renders none of them. */
   const carrying = useRef<Reorder | null>(null)
+  /** That tile's cell's flush, travelling with it. Only one of the two landings needs it —
+   *  a fork reads the comp's rows on the server — but it is handed over at the lift, because
+   *  which landing this turns out to be is not known until it is let go of. */
+  const settling = useRef<(() => Promise<void>) | null>(null)
 
   useEffect(() => {
     // Switching boards keeps the scroll offset otherwise, so the second board opens
@@ -110,9 +121,10 @@ export default function BoardGrid({
   const tileDrag = useMemo<TileDrag | undefined>(() => {
     if (!onReorder) return undefined
     return {
-      lift(compId) {
+      lift(compId, settle) {
         if (!grid.current) return false
         carrying.current = beginReorder(grid.current, compId)
+        settling.current = settle
         return carrying.current !== null
       },
       end() {
@@ -120,21 +132,60 @@ export default function BoardGrid({
         // and only one of them means "put it back".
         carrying.current?.cancel()
         carrying.current = null
+        settling.current = null
       },
     }
   }, [onReorder])
+
+  /**
+   * The other place a carried tile can be let go of: the new-comp tile, where it forks.
+   *
+   * Gated on `onFork` the way `tileDrag` is on `onReorder`, so a board that cannot fork simply
+   * has a new-comp tile that refuses tiles — the browser then declines the drop rather than a
+   * handler having to.
+   */
+  const tileFork = useMemo<TileFork | undefined>(() => {
+    if (!onFork) return undefined
+    return {
+      carrying: () => carrying.current !== null,
+      hover: () => {
+        carrying.current?.home()
+      },
+      drop() {
+        const held = carrying.current
+        const settle = settling.current
+        if (!held || !settle) return
+        // Home, animated, where a reorder's drop settles: a fork leaves the board's arrangement
+        // exactly as it was, so the tile goes back to the space it came out of.
+        held.cancel()
+        carrying.current = null
+        settling.current = null
+        // Settled first, for the reason `port` is: a fork reads the comp's rows on the server,
+        // and this one may have been edited a keystroke ago.
+        void settle().then(() => onFork(held.carried))
+      },
+    }
+  }, [onFork])
 
   /** Let go of, wherever on the board that was. */
   const drop = useCallback(() => {
     const held = carrying.current
     if (!held || !onReorder) return false
     const toIndex = held.order().indexOf(held.carried)
+    // A tile picked up and put back down where it was is not a rearrangement, and this is the
+    // board saying so rather than handing the question upstream. The layout it would produce
+    // is equal to the last one but not the *same* object, so it survives every reference check
+    // between here and the write and is caught only by a full comparison against what was
+    // persisted — which is a real answer, and a long way from the gesture that asked. A board
+    // of one tile is this case every time.
+    const moved = held.moved()
     // Left where it is being shown rather than animated home, because the commit below is
     // about to put the DOM in the same order — in this same event, so the arrangement it
     // replaces is never painted.
     held.settle()
     carrying.current = null
-    if (toIndex !== -1) onReorder(held.carried, toIndex)
+    settling.current = null
+    if (moved && toIndex !== -1) onReorder(held.carried, toIndex)
     return true
   }, [onReorder])
 
@@ -213,7 +264,12 @@ export default function BoardGrid({
         />
       ))}
 
-      <GhostTile onCreate={onCreate} busy={creating} onPortDropped={onPort ? port : undefined} />
+      <GhostTile
+        onCreate={onCreate}
+        busy={creating}
+        onPortDropped={onPort ? port : undefined}
+        tileFork={tileFork}
+      />
 
       {compIds.length === 0 && (
         <p className="board-empty" data-testid="board-empty">

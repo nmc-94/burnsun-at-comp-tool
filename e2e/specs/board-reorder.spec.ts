@@ -15,7 +15,7 @@
 import { expect, test } from '../src/fixtures'
 import type { Page } from '@playwright/test'
 import type { Api } from '../src/api'
-import { tileFor } from '../src/locators'
+import { tileFor, tileNamed } from '../src/locators'
 import { expectLayoutSaved } from '../src/wait'
 
 const ABADDON = 24_692
@@ -236,6 +236,91 @@ test('a cursor held still rearranges the board once and then leaves it alone', a
 
   expect(orders.length - 1).toBe(1)
   await expect(grid).toHaveAttribute('data-tile-order', `${gamma.id},${alpha.id},${beta.id}`)
+})
+
+test('carried onto the new-comp tile, the whole comp forks and the board is left alone', async ({
+  page,
+  api,
+  team,
+}) => {
+  // Two things only a browser decides. The tile's drag says `copyMove` and the new-comp tile
+  // answers `copy`: a `dropEffect` outside `effectAllowed` is reset to `none` and the drop is
+  // cancelled outright, so a mismatch here would light the tile up, take every `dragover`, and
+  // then never fire — and jsdom raises `drop` regardless, so no component test can see it. And
+  // the board must be back at rest underneath, having been rearranging itself on the way past.
+  const { alpha, beta, gamma } = await threeComps(api, team.id)
+  const board = await api.openBoard(team.id, [alpha.id, beta.id, gamma.id])
+
+  await page.goto(`/teams/${team.id}/boards/${board.id}`)
+  const grid = await boardReady(page, 3)
+
+  await tileFor(page, gamma.id).dragTo(page.getByTestId('board-new-comp'), {
+    sourcePosition: GRIP,
+  })
+
+  const forked = tileNamed(page, 'Gamma (fork)')
+  await expect(forked).toBeVisible()
+  // The all-rows case of a port: same hulls, pinned to the parent's version, recording it.
+  await expect(forked.getByTestId('comp-row-name')).toHaveText(['Abaddon'])
+  await expect(forked.getByTestId('comp-lineage')).toContainText('Gamma')
+  const parentVersion = await tileFor(page, gamma.id).getByTestId('comp-ruleset-version').textContent()
+  await expect(forked.getByTestId('comp-ruleset-version')).toHaveText(parentVersion ?? '')
+
+  // The comp it came from is untouched, and so is the arrangement — the fork lands on the end
+  // because that is where an opened comp lands, not because the carried tile went there.
+  await expect(tileFor(page, gamma.id).getByTestId('comp-row')).toHaveCount(1)
+  await expect(grid).toHaveAttribute('data-comp-count', '4')
+  const order = (await grid.getAttribute('data-tile-order'))?.split(',') ?? []
+  expect(order.slice(0, 3)).toEqual([alpha.id, beta.id, gamma.id])
+  await expect(grid).toHaveAttribute('data-reordering', 'false')
+  await expect(page.locator('[data-testid="board-tile"][data-lifted="true"]')).toHaveCount(0)
+})
+
+test('a comp edited a moment ago forks with the edit, debounce and all', async ({
+  page,
+  api,
+  team,
+}) => {
+  // The same race a partial port runs, and the reason the tile's flush travels with the drag: a
+  // fork reads the comp's rows on the *server*, so one taken inside the 600 ms save debounce
+  // would derive from the comp as it was before the last click.
+  const { alpha, beta } = await threeComps(api, team.id)
+  const board = await api.openBoard(team.id, [alpha.id, beta.id])
+
+  await page.goto(`/teams/${team.id}/boards/${board.id}`)
+  await boardReady(page, 2)
+
+  const tile = tileFor(page, alpha.id)
+  await expect(tile.getByTestId('comp-row')).toHaveCount(2)
+  await tile.getByTestId('comp-row-remove').nth(1).click()
+
+  // Not saved, and said so: the tile has one row and the server still has two. No waiting here —
+  // waiting is the bug this test exists to catch.
+  await expect(tile.getByTestId('comp-row')).toHaveCount(1)
+  await expect(tile.getByTestId('comp-save-state')).toHaveAttribute('data-save-state', 'pending')
+
+  await tile.dragTo(page.getByTestId('board-new-comp'), { sourcePosition: GRIP })
+
+  await expect(tileNamed(page, 'Alpha (fork)').getByTestId('comp-row-name')).toHaveText(['Abaddon'])
+})
+
+test('the only tile on a board can still be carried out to a fork', async ({ page, api, team }) => {
+  // A board of one has nothing to rearrange, which is why the tile used not to arm at all. It
+  // still has somewhere to go.
+  const { alpha } = await threeComps(api, team.id)
+  const board = await api.openBoard(team.id, [alpha.id])
+
+  await page.goto(`/teams/${team.id}/boards/${board.id}`)
+  await boardReady(page, 1)
+
+  await tileFor(page, alpha.id).dragTo(page.getByTestId('board-new-comp'), {
+    sourcePosition: GRIP,
+  })
+
+  await expect(tileNamed(page, 'Alpha (fork)').getByTestId('comp-row-name')).toHaveText([
+    'Abaddon',
+    'Scimitar',
+  ])
 })
 
 test('the other tiles are animated out of the way, at the agreed speed', async ({

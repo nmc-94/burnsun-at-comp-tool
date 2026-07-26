@@ -242,6 +242,11 @@ await expect(tile.getByTestId('comp-save-state')).toHaveAttribute('data-save-sta
 await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-layout-state', 'idle')
 ```
 
+Not every row carries every control. `comp-row-flagship-toggle` is drawn only where a flagship
+is possible — the format allows one and the hull is eligible for it, which in ATXXII is
+battleships minus a short list — plus any row that already holds the designation, so there is
+always a way to take one back. A test that expects it on an arbitrary row will not find it.
+
 Moving hulls out of a comp starts by picking rows out. Clicking a row picks it; ctrl- or
 shift-clicking a second adds to or extends the selection, and dragging any row in the selection
 takes the whole selection with it. Each row also keeps a checkbox named for the hull *and its
@@ -288,6 +293,26 @@ The copy always lands. If it breaks a rule the target says so through its own
 Copying into a comp that already exists is still the drag and only the drag — there is no way
 to say *which* comp without pointing at one.
 
+**Let go of on a hull row rather than on the tile**, a single hull *replaces* the one in that
+slot instead of going on the end. The row it came from keeps its hull either way, and this is
+the one landing that accepts a drag out of the comp it is already in — a slot is named, so
+"put this hull there" means something that "append these to yourself" does not. Only a single
+hull: several arriving at once are the tile's landing and go on the end wherever the pointer
+was.
+
+`data-landing` on `comp-row` says which row a drop would replace; it is written at rest as
+`"false"` on every row, so it can be waited on rather than polled for existence. It is the
+*only* thing a row landing marks — neither `board-tile-receiving` nor `board-tile-preview`
+appears, because the marked row has already said where the hull is going and carries the name
+of the one it would replace. Both of those belong to the tile-wide landing, which has nowhere
+else to report itself.
+
+```javascript
+// Aim at the row, not the tile. The source's centre is its hull name, which is what carries.
+await from.getByTestId('comp-row').nth(0).dragTo(onto.getByTestId('comp-row').nth(1))
+await expect(onto.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Rifter'])
+```
+
 **Rearranging a board** is a drag of the whole tile. A press takes hold of the tile unless it
 lands on something that already answers one — a hull row carries the hull, a button clicks, a
 search box is typed in — with the header as the deliberate exception, so a tile is picked up
@@ -333,10 +358,24 @@ Reordering has no keyboard route and is not owed one — see §6.8's note on the
 suppressions. The arrangement is convenience state, and every comp on the board is present and
 editable whatever order it is in.
 
-**Forking a whole comp** is the same mechanism with no rows named, from the fork control in
-the tile's foot. The new comp keeps the parent's ruleset version — a fork exists to be
-compared against what it came from — and says where it came from, whether or not the parent
-is still there.
+**Forking a whole comp** is the same mechanism with no rows named. Two ways to ask: the fork
+control in the tile's foot, and carrying the tile onto the new-comp tile at the end of the
+board — the all-rows case of the port that lands there. The new comp keeps the parent's ruleset
+version — a fork exists to be compared against what it came from — and says where it came from,
+whether or not the parent is still there.
+
+Carried to the new-comp tile, the board puts itself back: the tiles it had been shuffling aside
+on the way past return to where they were, `data-tile-order` reads as it did before the drag,
+and the fork lands on the end because that is where an opened comp lands. Nothing is
+rearranged.
+
+```javascript
+// Same grip as a rearrangement, different landing.
+await tileFor(page, gamma.id).dragTo(page.getByTestId('board-new-comp'), {
+  sourcePosition: { x: 60, y: 12 },
+})
+await expect(tileNamed(page, 'Gamma (fork)')).toBeVisible()
+```
 
 ```javascript
 await tile.getByRole('button', { name: 'Fork Angel Shield Kite' }).click()

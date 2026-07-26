@@ -151,6 +151,10 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
     }
   }, [comps])
 
+  // Announces the arrangement as outstanding without judging whether it is. Whether there is
+  // anything to write is the effect below's question — it has to ask it anyway, on every
+  // change, to decide whether to arm the debounce, and asking it in both places would be one
+  // rule in two spellings a few lines apart.
   const arrange = useCallback((next: WorkspaceLayout) => {
     pending.current = next
     setLayout(next)
@@ -176,7 +180,24 @@ export default function WorkspaceScreen({ teamId, boardId }: Props) {
   useEffect(() => {
     if (layoutState === 'unavailable') return
     const next = pending.current
-    if (next === null || JSON.stringify(next) === persisted.current) return
+    if (next === null) return
+    if (JSON.stringify(next) === persisted.current) {
+      // Nothing to write, and the board has to be told so rather than merely not written for:
+      // `arrange` announced this one as outstanding, and if the announcement is not withdrawn
+      // here there is nothing left in the sequence that could ever withdraw it — the board goes
+      // on claiming unsaved work for the rest of the session.
+      //
+      // Two ways in, and neither is exotic. An edit *undone* inside the debounce, whose timer
+      // is cleared on the way past. And a change that was never one: `layout.ts`'s helpers
+      // hand back a rebuilt layout whether or not anything in it differs, so renaming a board
+      // to the name it already has arrives here as a new object holding the old arrangement.
+      //
+      // Only out of `pending`. `saving` and `error` are `save`'s to set and to leave: a write
+      // in flight is not finished because the arrangement has been reverted behind it, and a
+      // failed one is worth keeping on screen.
+      setLayoutState((state) => (state === 'pending' ? 'idle' : state))
+      return
+    }
     const timer = setTimeout(() => void save(next), LAYOUT_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [layout, layoutState, save])

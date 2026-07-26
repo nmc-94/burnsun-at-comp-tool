@@ -47,6 +47,9 @@ const COMPS: Record<
   a: { name: 'Alpha', typeIds: [SHIP.abaddon], version: 'v2026-07-23' },
   b: { name: 'Beta', typeIds: [SHIP.abaddon, SHIP.abaddon], version: 'v2026-07-23' },
   d: { name: 'Delta', typeIds: [SHIP.maulus], version: 'v2026-08-01' },
+  // Two hulls that are not each other and not an Abaddon, so a replacement is visible in a
+  // list of names whichever direction it goes.
+  g: { name: 'Gamma', typeIds: [SHIP.rifter, SHIP.scimitar], version: 'v2026-07-23' },
   r: { name: 'Rho', typeIds: [SHIP.rifter], version: 'v2026-07-23', level: 'viewer' },
 }
 
@@ -131,12 +134,16 @@ const hulls = (name: string) =>
     .map((cell) => cell.textContent)
 const writes = (calls: Recorded[]) => calls.filter((call) => call.init.method === 'PUT')
 
+/** One filled row of a tile — a drag source, and now also somewhere a hull can be put down. */
+function rowOf(name: string, index: number) {
+  const found = within(tile(name)).getAllByTestId('comp-row')[index]
+  if (!found) throw new Error(`${name} has no row ${index}`)
+  return found
+}
+
 /** Pick a hull up out of one tile, the way a person starts a drag. */
 function lift(from: string, row = 0) {
-  const rows = within(tile(from)).getAllByTestId('comp-row')
-  const picked = rows[row]
-  if (!picked) throw new Error(`${from} has no row ${row}`)
-  fireEvent.dragStart(picked)
+  fireEvent.dragStart(rowOf(from, row))
 }
 
 /** The dashed tile at the end of the board — a button, and the one place a port can land. */
@@ -265,6 +272,127 @@ describe('the preview under the cursor', () => {
     fireEvent.dragEnter(tile('Alpha'))
 
     expect(within(tile('Alpha')).queryByTestId('board-tile-preview')).toBeNull()
+  })
+})
+
+describe('dragging a hull onto a slot', () => {
+  it('replaces what is in that row, and leaves the row it came from alone', async () => {
+    const calls = stubFetch()
+    grid(['g', 'b'])
+    await settled(['Gamma', 'Beta'])
+
+    lift('Gamma')
+    fireEvent.drop(rowOf('Beta', 1))
+
+    await waitFor(() => expect(hulls('Beta')).toEqual(['Abaddon', 'Rifter']))
+    // A copy, not a move — the same bargain every other landing here makes.
+    expect(hulls('Gamma')).toEqual(['Rifter', 'Scimitar'])
+
+    await waitFor(() => expect(writes(calls)).toHaveLength(1), { timeout: 2000 })
+    expect(writes(calls).map((call) => call.url)).toEqual(['/api/v1/comps/b/slots'])
+  })
+
+  it('marks the row, and says nothing else at all', async () => {
+    stubFetch()
+    grid(['g', 'b'])
+    await settled(['Gamma', 'Beta'])
+
+    lift('Gamma')
+    fireEvent.dragEnter(rowOf('Beta', 1))
+
+    expect(rowOf('Beta', 1).dataset.landing).toBe('true')
+    expect(rowOf('Beta', 0).dataset.landing).toBe('false')
+    // Neither the tile's outline nor its caption. Both exist to answer "where would these go
+    // and what would they cost", and a marked row has answered the first on its own — the hull
+    // being replaced is written along it. A line of prose under the tile about a swap the
+    // cursor is merely passing over is a caption on the thing already saying it.
+    expect(tile('Beta').className).not.toContain('board-tile-receiving')
+    expect(within(tile('Beta')).queryByTestId('board-tile-preview')).toBeNull()
+  })
+
+  it('lets go of the row when the cursor steps off it onto the tile', async () => {
+    stubFetch()
+    grid(['g', 'b'])
+    await settled(['Gamma', 'Beta'])
+
+    lift('Gamma')
+    fireEvent.dragEnter(rowOf('Beta', 1))
+    fireEvent.dragEnter(tile('Beta'))
+
+    expect(rowOf('Beta', 1).dataset.landing).toBe('false')
+    // And the tile takes over both halves of the affordance: these hulls are going on the end
+    // now, which is the landing that has nowhere but a caption to report itself.
+    expect(tile('Beta').className).toContain('board-tile-receiving')
+    expect(within(tile('Beta')).getByTestId('board-tile-preview').textContent).toContain(
+      'Copying 1 hull here',
+    )
+  })
+
+  it('takes a hull from the comp it is already in, which the tile as a whole will not', async () => {
+    // The one place a same-comp drag means something: a slot is named, so "put this hull there"
+    // is a real edit rather than a card being dropped on itself.
+    stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    fireEvent.dragEnter(rowOf('Gamma', 1))
+    expect(rowOf('Gamma', 1).dataset.landing).toBe('true')
+
+    fireEvent.drop(rowOf('Gamma', 1))
+
+    await waitFor(() => expect(hulls('Gamma')).toEqual(['Rifter', 'Rifter']))
+  })
+
+  it('refuses the row the hull was picked up from', async () => {
+    // Putting it back where it already is is not an edit, and the write it would arm is not
+    // free: it drops the tile's row selection and stales anything copied out of this comp.
+    stubFetch()
+    const calls = stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    fireEvent.dragEnter(rowOf('Gamma', 0))
+    fireEvent.drop(rowOf('Gamma', 0))
+
+    expect(rowOf('Gamma', 0).dataset.landing).toBe('false')
+    expect(within(tile('Gamma')).queryByTestId('board-tile-preview')).toBeNull()
+    expect(hulls('Gamma')).toEqual(['Rifter', 'Scimitar'])
+    expect(writes(calls)).toHaveLength(0)
+  })
+
+  it('appends when more than one hull is coming, wherever it was let go of', async () => {
+    // A slot holds one hull. Several arriving at once is the tile's landing, and it is the end
+    // of the comp — pointing at a row cannot make it mean anything else.
+    stubFetch()
+    grid(['g', 'b'])
+    await settled(['Gamma', 'Beta'])
+
+    fireEvent.click(rowOf('Gamma', 0))
+    fireEvent.click(rowOf('Gamma', 1), { ctrlKey: true })
+    lift('Gamma')
+    fireEvent.dragEnter(rowOf('Beta', 1))
+    expect(rowOf('Beta', 1).dataset.landing).toBe('false')
+
+    fireEvent.drop(rowOf('Beta', 1))
+
+    await waitFor(() =>
+      expect(hulls('Beta')).toEqual(['Abaddon', 'Abaddon', 'Rifter', 'Scimitar']),
+    )
+  })
+
+  it('offers nothing to a comp this person can only read', async () => {
+    stubFetch()
+    grid(['a', 'r'])
+    await settled(['Alpha', 'Rho'])
+
+    lift('Alpha')
+    fireEvent.dragEnter(rowOf('Rho', 0))
+    fireEvent.drop(rowOf('Rho', 0))
+
+    expect(rowOf('Rho', 0).dataset.landing).toBe('false')
+    expect(hulls('Rho')).toEqual(['Rifter'])
   })
 })
 

@@ -299,7 +299,7 @@ describe('arranging', () => {
   })
 
   it('will not open the same comp twice on one board', async () => {
-    stubServer({
+    const server = stubServer({
       boards: [{ id: 'b1', name: 'Angel', tiles: [{ compId: 'b' }] }],
       activeBoardId: 'b1',
       updatedAt: null,
@@ -310,6 +310,57 @@ describe('arranging', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open Beta' }))
 
     expect(tileNames()).toEqual(['b'])
+    await vi.advanceTimersByTimeAsync(900)
+    expect(savesOf(server.calls).length).toBe(0)
+  })
+
+  it('settles again when a rename leaves the name as it was', async () => {
+    // One gesture, and the shortest way to an arrangement that is new to `arrange` and
+    // identical to the server's: `withBoardRenamed` writes the name whether or not it differs,
+    // and `mapBoard` rebuilds the layout around it regardless. Without the effect settling, the
+    // board says it has unsaved work for the rest of the session, over a write that was
+    // correctly never sent — and nothing later in the session could ever clear it.
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Angel', tiles: [] }],
+      activeBoardId: 'b1',
+      updatedAt: null,
+    })
+    await open()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename board Angel' }))
+    fireEvent.blur(screen.getByTestId('board-tab-name'))
+    await vi.advanceTimersByTimeAsync(900)
+
+    expect(savesOf(server.calls).length).toBe(0)
+    expect(screen.getByTestId('workspace-layout-state').dataset.layoutState).toBe('idle')
+  })
+
+  it('settles again when an arrangement is undone inside the debounce', async () => {
+    // The other half, and the one `arrange`'s own comparison cannot reach: by the time the
+    // second click lands there is a real write armed and the board is honestly saying so. The
+    // effect clears that timer on the way past — and has to put the state back with it, or the
+    // board goes on reporting an outstanding write that has been cancelled.
+    const server = stubServer({
+      boards: [{ id: 'b1', name: 'Angel', tiles: [{ compId: 'a' }, { compId: 'b' }] }],
+      activeBoardId: 'b1',
+      updatedAt: null,
+    })
+    await open()
+    // Waited out here, before anything is edited, because the tile's close button is named for
+    // the comp and is called "Close Loading comp" until it has one — and waiting once a write
+    // is armed would spend the very debounce this test is standing inside.
+    await waitFor(() => expect(screen.getByLabelText('Beta')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Beta' }))
+    expect(screen.getByTestId('workspace-layout-state').dataset.layoutState).toBe('pending')
+    await vi.advanceTimersByTimeAsync(300)
+    // Back on the end, where it was: the same arrangement by a different route.
+    fireEvent.click(screen.getByRole('button', { name: 'Open Beta' }))
+    await vi.advanceTimersByTimeAsync(900)
+
+    expect(tileNames()).toEqual(['a', 'b'])
+    expect(savesOf(server.calls).length).toBe(0)
+    expect(screen.getByTestId('workspace-layout-state').dataset.layoutState).toBe('idle')
   })
 
   it('closes a tile without touching the comp', async () => {
@@ -408,10 +459,12 @@ describe('arranging', () => {
     fireEvent.dragEnd(screen.getByLabelText('Alpha'))
     await vi.advanceTimersByTimeAsync(900)
 
-    // The move is asked for and arrives at the comparison against what was last persisted,
-    // which is what stops an arrangement being written every time somebody thinks better of
-    // moving something.
+    // Nothing moved, so the board reports nothing — and even if it did, the arrangement would
+    // arrive at the comparison against what was last persisted. Two guards, because they close
+    // different things: this one stops the request being made, and that one stops any equal
+    // arrangement, however it got here, being written or announced.
     expect(savesOf(server.calls).length).toBe(0)
+    expect(screen.getByTestId('workspace-layout-state').dataset.layoutState).toBe('idle')
   })
 
   it('adds a board and moves to it', async () => {

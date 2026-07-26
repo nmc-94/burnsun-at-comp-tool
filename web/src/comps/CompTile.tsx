@@ -17,6 +17,7 @@ import type { TagVocabulary } from './tag-model'
 import {
   deltaPill,
   EMPTY_SELECTION,
+  offersFlagship,
   rowsBlamedBy,
   scaffold,
   selectRow,
@@ -32,6 +33,22 @@ import ViolationsPopover from './ViolationsPopover'
  * claim about their work that is not true.
  */
 export type SaveState = 'idle' | 'pending' | 'saving' | 'error'
+
+/**
+ * A hull let go of over one of these rows, which replaces the one in it.
+ *
+ * The tile knows nothing about where a hull comes from — whether there is one under the cursor
+ * at all, and whether this row would take it, are the cell's to answer, the same way `onDragRows`
+ * leaves where the rows *go* to the cell. All this component contributes is which row the
+ * pointer is over.
+ */
+export interface RowDrop {
+  /** The row a drag would land on, so it can be drawn as the one. Null when none would. */
+  readonly landing: number | null
+  /** A drag is over row `index`. True when the row will take it. */
+  readonly over: (index: number) => boolean
+  readonly drop: (index: number) => void
+}
 
 /** Where a fork came from: what to call it, and where to go to see it. */
 export interface Lineage {
@@ -82,6 +99,14 @@ interface Props {
   onDragRowsEnd?: () => void
   onCopyRows?: (positions: number[]) => void
   /**
+   * A hull arriving on one of the rows.
+   *
+   * Optional so a bare `<CompTile>` is still a whole tile, but a cell that draws one always
+   * passes it — including a viewer's, whose rows answer "no" rather than not being asked. The
+   * marking is the same either way, which is what lets `data-landing` be read at rest.
+   */
+  rowDrop?: RowDrop
+  /**
    * Say what the comp is. Absent for a viewer, and for a tile nobody wired one to — the band
    * reads that absence as "read-only" rather than taking a separate flag.
    */
@@ -120,6 +145,7 @@ export default function CompTile({
   onDragRows,
   onDragRowsEnd,
   onCopyRows,
+  rowDrop,
   onSaveTags,
   vocabulary,
   onToggleComments,
@@ -353,10 +379,14 @@ export default function CompTile({
             const hullName = slot.resolved ? slot.name : `Unknown hull ${slot.typeId}`
 
             if (picked.has(row.index)) classes.push('picked')
+            // Where a hull under the cursor would land. Marked on the row rather than on the
+            // tile: the tile's own outline means "this comp will take these hulls", and this
+            // is the same claim about one slot, so drawing both says it twice.
+            if (rowDrop?.landing === row.index) classes.push('landing')
 
             return (
-              // A row is a list item that can be dragged and clicked, which is what
-              // `draggable` and the three handlers below are for and what the two rules
+              // A row is a list item that can be dragged, clicked and dropped on, which is what
+              // `draggable` and the six handlers below are for and what the two rules
               // object to.
               //
               // The click is answered rather than waived: it is a shortcut over the row's own
@@ -368,12 +398,22 @@ export default function CompTile({
               // operation the new-comp tile's drop performs, through the same code. Carrying
               // them into a comp that *already exists* is still the drag and only the drag —
               // there is no way to say which comp without pointing at one.
+              //
+              // A row is now also somewhere a hull can be *put down*, and that half has no
+              // keyboard twin either: the row's own search does the same edit by name, and it
+              // is a button, focusable and labelled for its hull and its slot. What the drop
+              // owes on its own account is that its state can be read rather than inferred,
+              // which is `data-landing` below.
               // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
               <li
                 className={classes.join(' ')}
                 key={row.index}
                 data-testid="comp-row"
                 data-row={row.index}
+                // Whether a hull let go of now would replace this row's — the same bargain the
+                // new-comp tile's `data-receiving` makes, and written at rest as well so a
+                // driver can find it before the gesture starts.
+                data-landing={rowDrop?.landing === row.index ? 'true' : 'false'}
                 onClick={editable ? (event) => pickRow(event, row.index) : undefined}
                 draggable={editable && onDragRows !== undefined}
                 onDragStart={(event) => {
@@ -390,6 +430,32 @@ export default function CompTile({
                   }
                 }}
                 onDragEnd={() => onDragRowsEnd?.()}
+                // A hull let go of here replaces this row's. All three stop the event as well
+                // as cancelling it: the tile around this list answers a drag too, and its
+                // `dragenter` would overwrite the offer this row has just made with one that
+                // names no row at all — landing the hull on the end of the comp instead.
+                //
+                // `over` is asked again on every event rather than remembered, because it is
+                // the store's own dedupe that keeps a `dragover` firing several times a second
+                // from being several re-renders.
+                onDragEnter={(event) => {
+                  if (!rowDrop?.over(row.index)) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onDragOver={(event) => {
+                  // preventDefault is the whole of what makes this a drop target, and dragover
+                  // fires continuously — so nothing else may happen in here.
+                  if (!rowDrop?.over(row.index)) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onDrop={(event) => {
+                  if (!rowDrop?.over(row.index)) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  rowDrop.drop(row.index)
+                }}
               >
                 <span className="ic">
                   {icon && <img className="hicon" src={icon} alt="" width={18} height={18} />}
@@ -450,7 +516,11 @@ export default function CompTile({
                       Flagship
                     </span>
                   )}
-                  {editable && (
+                  {/* Only where a flagship is possible — which is a handful of rows on a comp
+                      of ten, not all of them. A row that already holds the designation keeps
+                      the control whatever its hull is, because it is the only way back out;
+                      see `offersFlagship`. */}
+                  {editable && offersFlagship(ruleset, slot) && (
                     <button
                       className="flagset"
                       data-testid="comp-row-flagship-toggle"

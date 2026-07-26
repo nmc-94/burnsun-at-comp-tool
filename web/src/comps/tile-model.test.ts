@@ -17,6 +17,7 @@ import {
   deltaPill,
   EMPTY_SELECTION,
   introducedBy,
+  offersFlagship,
   previewHulls,
   previewRow,
   rowsBlamedBy,
@@ -341,6 +342,49 @@ describe('withFlagship', () => {
     expect(judge(designated).violations.map((violation) => violation.code)).toContain(
       'flagship-not-eligible',
     )
+  })
+})
+
+describe('offersFlagship — where the star is worth drawing', () => {
+  /** The row the tile would be rendering, which is what the star is attached to. */
+  function row(typeId: number, isFlagship = false) {
+    const judged = judge([{ typeId, isFlagship }])
+    const slot = judged.slots[0]
+    if (!slot) throw new Error('a one-hull comp has one slot')
+    return slot
+  }
+
+  const noFlagships = {
+    ...atxxiiRuleset,
+    flagship: { ...atxxiiRuleset.flagship, allowed: false },
+  }
+
+  it('offers it on a hull the format lets hold one', () => {
+    expect(offersFlagship(atxxiiRuleset, row(SHIP.abaddon))).toBe(true)
+  })
+
+  it.each([
+    ['a frigate', SHIP.rifter],
+    ['a battleship the rules bar from it', SHIP.bhaalgorn],
+    ['a hull the ruleset does not price at all', UNPRICED_TYPE_ID],
+  ])('withholds it from %s', (_case, typeId) => {
+    expect(offersFlagship(atxxiiRuleset, row(typeId))).toBe(false)
+  })
+
+  it('withholds it from every hull in a format that forbids flagships', () => {
+    expect(offersFlagship(noFlagships, row(SHIP.abaddon))).toBe(false)
+  })
+
+  it.each([
+    ['a hull the rules bar from it', atxxiiRuleset, SHIP.bhaalgorn],
+    ['a format that forbids them outright', noFlagships, SHIP.abaddon],
+    ['a hull the ruleset does not price', atxxiiRuleset, UNPRICED_TYPE_ID],
+  ])('keeps it on a row that already holds the designation — %s', (_case, ruleset, typeId) => {
+    // The load-bearing half. A swap keeps the designation under a new hull, a comp can be
+    // re-pinned to a version that forbids flagships, and the API can hand one over — three ways
+    // into a state whose only way out is this control. Hiding it there would leave the engine
+    // reporting a violation with nothing on screen to act on.
+    expect(offersFlagship(ruleset, row(typeId, true))).toBe(true)
   })
 })
 

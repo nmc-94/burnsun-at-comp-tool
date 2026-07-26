@@ -87,7 +87,11 @@ function stubFetch() {
   )
 }
 
-function grid(compIds: string[], onReorder?: (compId: string, toIndex: number) => void) {
+function grid(
+  compIds: string[],
+  onReorder?: (compId: string, toIndex: number) => void,
+  onFork?: (compId: string) => void,
+) {
   return render(
     <BoardGrid
       boardId="b1"
@@ -99,6 +103,7 @@ function grid(compIds: string[], onReorder?: (compId: string, toIndex: number) =
       onCreate={vi.fn()}
       onPort={vi.fn()}
       onReorder={onReorder}
+      onFork={onFork}
     />,
   )
 }
@@ -276,9 +281,11 @@ describe('carrying a tile', () => {
     fireEvent.drop(tile('Alpha'))
     fireEvent.dragEnd(tile('Alpha'))
 
-    // Asked for, and asked for where it already is: `moveTile` answers with the very same list
-    // and the layout comparison upstream declines to write.
-    expect(onReorder).toHaveBeenCalledWith('a', 0)
+    // Not "asked for, at the index it already has". Upstream declines to write that anyway —
+    // `moveTile` answers with the very same list, and the layout comparison catches what gets
+    // past it — but a board that reports a move nothing made is describing the gesture wrongly,
+    // and the correction would be arriving several files away from the thing that knows.
+    expect(onReorder).not.toHaveBeenCalled()
   })
 
   it('marks the tile being carried, and unmarks it afterwards', async () => {
@@ -298,7 +305,12 @@ describe('carrying a tile', () => {
     expect(tile('Alpha').dataset.lifted).toBe('false')
   })
 
-  it('leaves a tile with nowhere to go alone', async () => {
+  it('reports nothing for a tile put back where it was', async () => {
+    // A board of one, where the tile can still be picked up — it has somewhere to go, which is
+    // the new-comp tile — but nowhere on the *board* to go. Reporting a move to the index it
+    // already occupies is not harmless: the layout that comes back is equal to the old one and
+    // not the same object, so the write it arms finds nothing to send and the board is left
+    // saying "pending" for good.
     stubFetch()
     const onReorder = vi.fn()
     grid(['a'], onReorder)
@@ -350,6 +362,124 @@ describe('the boundary with the hull drag', () => {
     await waitFor(() =>
       expect(within(tile('Beta')).getAllByTestId('comp-row-name').length).toBe(2),
     )
+  })
+})
+
+describe('carrying a tile onto the new-comp tile', () => {
+  const ghost = () => screen.getByTestId('board-new-comp')
+
+  it('forks the comp instead of moving it, and puts the tile back', async () => {
+    stubFetch()
+    const onReorder = vi.fn()
+    const onFork = vi.fn()
+    grid(['a', 'b', 'c'], onReorder, onFork)
+    await settled(['Alpha', 'Beta', 'Gamma'])
+
+    // Gamma rather than Alpha, because every box jsdom measures is at the origin and the board
+    // therefore always answers "the first slot" — see the header. Carrying the last tile there
+    // is the one move that visibly changes the order.
+    fireEvent.mouseDown(tile('Gamma'), { button: 0 })
+    fireEvent.dragStart(tile('Gamma'))
+    // Carried across the board first, so there is a preview standing to be undone.
+    dragOverAt(tile('Alpha'))
+    expect(drawn()).toEqual(['c', 'a', 'b'])
+
+    fireEvent.dragOver(ghost())
+    // Claimed from the board underneath, which would otherwise go on rearranging the others
+    // for a landing this drop is not going to perform.
+    expect(drawn()).toEqual(['a', 'b', 'c'])
+
+    fireEvent.drop(ghost())
+
+    await waitFor(() => expect(onFork).toHaveBeenCalledWith('c'))
+    expect(onReorder).not.toHaveBeenCalled()
+    expect(drawn()).toEqual(['a', 'b', 'c'])
+    expect(board().dataset.reordering).toBe('false')
+  })
+
+  it('waits for the source comp to be saved before asking for the fork', async () => {
+    // The same race a partial port runs: a fork reads the comp's rows on the *server*, so one
+    // taken inside the 600 ms debounce would derive from the comp as it was a keystroke ago.
+    stubFetch()
+    const onFork = vi.fn()
+    grid(['a', 'b'], vi.fn(), onFork)
+    await settled(['Alpha', 'Beta'])
+
+    fireEvent.click(within(tile('Alpha')).getAllByTestId('comp-row-remove')[1]!)
+    expect(within(tile('Alpha')).getByTestId('comp-save-state').dataset.saveState).toBe('pending')
+
+    fireEvent.mouseDown(tile('Alpha'), { button: 0 })
+    fireEvent.dragStart(tile('Alpha'))
+    fireEvent.drop(ghost())
+
+    expect(onFork).not.toHaveBeenCalled()
+    await waitFor(
+      () => {
+        expect(within(tile('Alpha')).getByTestId('comp-save-state').dataset.saveState).toBe('idle')
+        expect(onFork).toHaveBeenCalledWith('a')
+      },
+      { timeout: 2000 },
+    )
+  })
+
+  it('lets the only tile on a board be carried there', async () => {
+    // A board of one has nothing to rearrange, which is why the tile used not to arm at all.
+    // It still has somewhere to go.
+    stubFetch()
+    const onFork = vi.fn()
+    grid(['a'], vi.fn(), onFork)
+    await settled(['Alpha'])
+
+    fireEvent.mouseDown(tile('Alpha'), { button: 0 })
+    fireEvent.dragStart(tile('Alpha'))
+    fireEvent.drop(ghost())
+
+    await waitFor(() => expect(onFork).toHaveBeenCalledWith('a'))
+  })
+
+  it('leaves the tile alone on a board that cannot fork', async () => {
+    stubFetch()
+    const onReorder = vi.fn()
+    grid(['a', 'b'], onReorder)
+    await settled(['Alpha', 'Beta'])
+
+    fireEvent.mouseDown(tile('Alpha'), { button: 0 })
+    fireEvent.dragStart(tile('Alpha'))
+    fireEvent.drop(ghost())
+
+    // Bubbles to the board instead, which is where a tile let go of anywhere else lands. It
+    // has not moved, so nothing is reported.
+    expect(onReorder).not.toHaveBeenCalled()
+    expect(drawn()).toEqual(['a', 'b'])
+  })
+
+  it('still takes hulls dropped on it while nothing is being carried', async () => {
+    // The other half of the same boundary: the tile now answers two kinds of drag, and adding
+    // the second must not have taken the first away.
+    stubFetch()
+    const onPort = vi.fn()
+    const onFork = vi.fn()
+    render(
+      <BoardGrid
+        boardId="b1"
+        boardName="Angel doctrines"
+        compIds={['a', 'b']}
+        creating={false}
+        newCompId={null}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onPort={onPort}
+        onReorder={vi.fn()}
+        onFork={onFork}
+      />,
+    )
+    await settled(['Alpha', 'Beta'])
+
+    fireEvent.dragStart(within(tile('Alpha')).getAllByTestId('comp-row')[0]!)
+    fireEvent.drop(ghost())
+
+    await waitFor(() => expect(onPort).toHaveBeenCalledWith('a', [0]))
+    expect(onFork).not.toHaveBeenCalled()
   })
 })
 

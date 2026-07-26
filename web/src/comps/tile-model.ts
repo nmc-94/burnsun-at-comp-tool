@@ -177,6 +177,26 @@ export function withFlagship(slots: readonly CompSlot[], index: number | null): 
 }
 
 /**
+ * Whether the row offers the flagship star at all.
+ *
+ * §4.2 says a slot may be designated "only if flagship-eligible", and in this format that is
+ * battleships minus a short list — so on a comp of ten the star used to sit on ten rows and
+ * mean something on two. The engine's answer to the other eight was a violation raised the
+ * moment one was clicked, which is a rule being reported after the fact rather than a control
+ * that was never offered.
+ *
+ * The exception is a row that already *holds* the designation, and it is the load-bearing half.
+ * A swap keeps it (see `withRow`, and §4.2), a comp can be re-pinned to a version that forbids
+ * flagships outright, and the API can hand one over — three ways into a state whose only way
+ * out is this button. Hiding it there would leave `flagship-not-eligible` reported with nothing
+ * to act on, which is the one thing "rules are reported, never enforced" does not allow.
+ */
+export function offersFlagship(ruleset: Ruleset, slot: SlotEvaluation): boolean {
+  if (slot.isFlagship) return true
+  return ruleset.flagship.allowed && ruleset.ships[slot.typeId]?.flagshipEligible === true
+}
+
+/**
  * Which rows of one tile are picked out, for porting or copying elsewhere.
  *
  * Rows, not comps. The URL's `?sel=` names *comps*; this is a text-selection gesture inside

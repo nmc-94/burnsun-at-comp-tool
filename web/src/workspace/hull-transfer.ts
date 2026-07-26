@@ -20,6 +20,10 @@
 // The question can only be answered by the target, because comps on one board can be pinned
 // to different ruleset versions and a hull's price is the receiving ruleset's to say.
 //
+// A landing also has a *where*: `Transfer.atIndex` names a row the hulls replace, and without
+// one they go on the end. That is the only thing the two phases carry beyond the offer itself,
+// and it is why they carry a transfer rather than an offer — see `Transfer`.
+//
 // Those two phases are the *copy*. Rows that land on the new-comp tile instead are a port,
 // which never touches this pair — there is no comp there yet to ask, and nothing to preview
 // against. It reads the rows and forks. See `CarriedRows`, which is how rows leave a tile
@@ -34,6 +38,14 @@ export interface HullOffer {
 
 export interface Transfer {
   readonly offer: HullOffer
+  /**
+   * The row these hulls replace, or null to append them to the end of the comp.
+   *
+   * On the transfer rather than on the offer, because it is a fact about the *landing* and not
+   * about what is crossing: the same hull let go of over two different rows is one offer twice,
+   * arriving in two places.
+   */
+  readonly atIndex: number | null
   readonly phase: 'proposed' | 'offered'
 }
 
@@ -95,13 +107,20 @@ function sameOffer(a: HullOffer, b: HullOffer): boolean {
 }
 
 /**
- * Ask what `offer` would cost in `toCompId`; null withdraws the question.
+ * Ask what `offer` would cost in `toCompId`, landing on row `atIndex` or at the end; null
+ * withdraws the question.
  *
  * Repeating the same proposal is silent. `dragenter` fires again every time the cursor
  * crosses into a child element, and each announcement would otherwise be a re-render of the
- * target and a fresh judgement of its comp.
+ * target and a fresh judgement of its comp. The row is part of "the same", though — a drag
+ * moving down a column of rows is one offer proposed against each of them in turn, and a
+ * dedupe blind to the row would answer the first and go quiet.
  */
-export function propose(toCompId: string, offer: HullOffer | null): void {
+export function propose(
+  toCompId: string,
+  offer: HullOffer | null,
+  atIndex: number | null = null,
+): void {
   const previous = transfers.get(toCompId)
 
   if (offer === null) {
@@ -113,14 +132,30 @@ export function propose(toCompId: string, offer: HullOffer | null): void {
     return
   }
 
-  if (previous?.phase === 'proposed' && sameOffer(previous.offer, offer)) return
-  transfers.set(toCompId, { offer, phase: 'proposed' })
+  if (
+    previous?.phase === 'proposed' &&
+    previous.atIndex === atIndex &&
+    sameOffer(previous.offer, offer)
+  ) {
+    return
+  }
+  transfers.set(toCompId, { offer, atIndex, phase: 'proposed' })
   announce(toCompId)
 }
 
-/** Copy these hulls into `toCompId`. The target appends them and saves; the source is untouched. */
-export function offerHulls(toCompId: string, offer: HullOffer): void {
-  transfers.set(toCompId, { offer, phase: 'offered' })
+/**
+ * Copy these hulls into `toCompId`. The source is untouched either way.
+ *
+ * `atIndex` names a row to replace; without one the target appends. A slot holds one hull, so
+ * only a single-hull offer ever names a row — which is the caller's rule to keep, since this
+ * store is only carrying the answer between two halves of a gesture.
+ */
+export function offerHulls(
+  toCompId: string,
+  offer: HullOffer,
+  atIndex: number | null = null,
+): void {
+  transfers.set(toCompId, { offer, atIndex, phase: 'offered' })
   announce(toCompId)
 }
 
@@ -140,13 +175,16 @@ export function peekTransfer(compId: string): Transfer | undefined {
  * Read-and-clear rather than read-then-clear-later: this is called from an effect, and
  * StrictMode invokes an effect twice on purpose. The second call gets nothing, which is what
  * keeps a copy from landing twice.
+ *
+ * The whole transfer rather than its offer, because where the hulls land is half of what was
+ * committed. Its `phase` is spent by the time it is returned.
  */
-export function takeOffer(compId: string): HullOffer | undefined {
+export function takeOffer(compId: string): Transfer | undefined {
   const waiting = transfers.get(compId)
   if (!waiting || waiting.phase !== 'offered') return undefined
   transfers.delete(compId)
   announce(compId)
-  return waiting.offer
+  return waiting
 }
 
 export function subscribeTransfer(compId: string, listener: () => void): () => void {

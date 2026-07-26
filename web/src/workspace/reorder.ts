@@ -55,6 +55,16 @@ export interface Reorder {
   carried: string
   /** Say where the cursor is, in the grid's content. True when the arrangement changed. */
   over: (x: number, y: number) => boolean
+  /**
+   * Put the tiles back where they started, without letting go. True when anything moved.
+   *
+   * For a cursor that has left the board's own business — over the new-comp tile, where letting
+   * go forks rather than moves. A preview left frozen part-way there would keep promising a
+   * rearrangement that is no longer what a drop would do.
+   */
+  home: () => boolean
+  /** Whether the tiles are anywhere but where they started. */
+  moved: () => boolean
   /** The order the tiles are drawn in now, which is where a drop would put them. */
   order: () => readonly string[]
   /** Leave the tiles where they are being shown, for the commit to catch up with. */
@@ -124,7 +134,10 @@ function stopMoving(tile: HTMLElement): void {
 /**
  * Take hold of a comp's tile.
  *
- * Null when there is nothing to rearrange — one tile, or a comp this grid is not showing.
+ * Null only for a comp this grid is not showing. Deliberately not for a board of one: there is
+ * nothing to rearrange there and `landing` says so on its own — the only slot is the carried
+ * tile's — but the tile still has somewhere to be carried *to*, which is the new-comp tile at
+ * the end, where letting go forks it.
  */
 export function beginReorder(grid: HTMLElement, compId: string): Reorder | null {
   const tiles = new Map<string, HTMLElement>()
@@ -132,7 +145,7 @@ export function beginReorder(grid: HTMLElement, compId: string): Reorder | null 
     const id = found.dataset.compId
     if (id) tiles.set(id, found)
   }
-  if (tiles.size < 2 || !tiles.has(compId)) return null
+  if (!tiles.has(compId)) return null
 
   // Everything in the grid that is not a tile — the new-comp tile, in practice. It has no
   // `order` of its own, so once the tiles have one it would sort in among them rather than
@@ -242,6 +255,9 @@ export function beginReorder(grid: HTMLElement, compId: string): Reorder | null 
   return {
     carried: compId,
     order: () => order,
+    // Exact rather than a comparison of the two lists, because only the carried tile ever
+    // moves: everything else keeps the order it started in, whatever has happened in between.
+    moved: () => started.indexOf(compId) !== order.indexOf(compId),
 
     over(clientX, clientY) {
       if (done) return false
@@ -259,6 +275,18 @@ export function beginReorder(grid: HTMLElement, compId: string): Reorder | null 
       )
       if (to === null) return false
       const next = moveTile(order, compId, to)
+      if (next === order) return false
+      rearrange(next)
+      return true
+    },
+
+    home() {
+      if (done) return false
+      // Sound because every rearrangement moves the carried tile and nothing else, so the other
+      // tiles' order is `started`'s throughout — putting this one back at the index it began
+      // at reproduces `started` exactly. `moveTile` answers with the same array when it is
+      // already there, which is what makes calling this on every `dragover` free.
+      const next = moveTile(order, compId, started.indexOf(compId))
       if (next === order) return false
       rearrange(next)
       return true
