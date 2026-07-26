@@ -565,15 +565,6 @@
   line-height: 1.35;
 }
 
-/* A key press that found an empty stack — the one undo outcome that changes nothing on screen,
-   and so the only one with anything to say. Quieter than the preview above it: that one is an
-   answer about hulls under the cursor, this one is a remark about a key. */
-.board-tile-undo {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--text-3);
-}
-
 .ghost-tile {
   border: 1px dashed var(--line-1);
   border-radius: 11px;

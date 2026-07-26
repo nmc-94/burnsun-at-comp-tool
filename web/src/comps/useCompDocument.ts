@@ -38,10 +38,6 @@ const SAVE_DEBOUNCE_MS = 600
  *  ten-hull comp, shallow enough that twenty tiles holding one each is nothing. */
 const UNDO_DEPTH = 50
 
-/** What the last undo or redo key press did — but only the two outcomes with no other signal.
- *  A step that moved is visible in the comp itself, which is better than a sentence about it. */
-export type UndoOutcome = 'nothing-to-undo' | 'nothing-to-redo'
-
 export interface CompDocument {
   readonly comp: CompDetail | null
   readonly ruleset: RulesetVersionDetail | null
@@ -55,8 +51,6 @@ export interface CompDocument {
   /** Step back one slot-list edit, or forward again. True when something actually moved. */
   readonly undo: () => boolean
   readonly redo: () => boolean
-  /** What the last key press did, for the cell to say. Null while it had something to do. */
-  readonly undoOutcome: UndoOutcome | null
   readonly rename: (name: string) => void
   /** Store what the comp says it is. Wholesale, because that is the shape of the route. */
   readonly saveTags: (next: CompTagsWrite) => void
@@ -107,8 +101,6 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   // about to make the server disagree with it.
   const inFlight = useRef(0)
 
-  const [undoOutcome, setUndoOutcome] = useState<UndoOutcome | null>(null)
-
   useEffect(() => {
     let cancelled = false
     setComp(null)
@@ -121,7 +113,6 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     past.current = []
     future.current = []
     onScreen.current = []
-    setUndoOutcome(null)
 
     // Waited on before the read, not after: closing a tile flushes its last edit from a
     // cleanup nobody can await, so a tile opening on the same comp — the same comp on two
@@ -236,8 +227,6 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
       // A fresh edit throws the way forward away. Redo means "put back the thing I just took
       // back", and once something else has happened there is no such thing.
       future.current = []
-      // An identity update, so a tile with nothing to clear does not re-render to clear it.
-      setUndoOutcome((current) => (current === null ? current : null))
       noteEdited(compId)
       apply(next)
     },
@@ -252,26 +241,18 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
    */
   const undo = useCallback((): boolean => {
     const previous = past.current.at(-1)
-    if (previous === undefined) {
-      setUndoOutcome('nothing-to-undo')
-      return false
-    }
+    if (previous === undefined) return false
     past.current = past.current.slice(0, -1)
     future.current = [...future.current, onScreen.current]
-    setUndoOutcome(null)
     apply(previous)
     return true
   }, [apply])
 
   const redo = useCallback((): boolean => {
     const next = future.current.at(-1)
-    if (next === undefined) {
-      setUndoOutcome('nothing-to-redo')
-      return false
-    }
+    if (next === undefined) return false
     future.current = future.current.slice(0, -1)
     past.current = [...past.current, onScreen.current]
-    setUndoOutcome(null)
     apply(next)
     return true
   }, [apply])
@@ -349,7 +330,6 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     change,
     undo,
     redo,
-    undoOutcome,
     rename,
     saveTags,
     patchShare,

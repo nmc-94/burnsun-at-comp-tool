@@ -219,22 +219,18 @@ describe('taking back a removed hull', () => {
     expect(hulls('Alpha')).toEqual([])
   })
 
-  it('says so when there is nothing left to take back', async () => {
+  it('stops at the oldest edit rather than emptying the comp', async () => {
+    // Held keys repeat, so walking past the end of the stack is the ordinary way to arrive
+    // here rather than an edge case. It has to be a no-op, silently.
     stubFetch()
     grid(['a'])
     await settled(['Alpha'])
 
     removeRow('Alpha')
     pressUndo()
-    expect(within(tile('Alpha')).queryByTestId('board-tile-undo')).toBeNull()
-
+    pressUndo()
     pressUndo()
 
-    // The one outcome with no other signal: the comp did not move, and there is no control to
-    // have been greyed out beforehand.
-    const said = within(tile('Alpha')).getByTestId('board-tile-undo')
-    expect(said.dataset.undoOutcome).toBe('nothing-to-undo')
-    expect(said.getAttribute('role')).toBe('status')
     expect(hulls('Alpha')).toEqual(['Abaddon'])
   })
 
@@ -249,7 +245,6 @@ describe('taking back a removed hull', () => {
     // inert one.
     expect(hulls('Rho')).toEqual(['Rifter'])
     expect(writes(calls)).toHaveLength(0)
-    expect(within(tile('Rho')).queryByTestId('board-tile-undo')).toBeNull()
   })
 })
 

@@ -426,24 +426,17 @@ describe('undoing', () => {
     expect(view.result.current.error).toBeNull()
   })
 
-  it('says so when there is nothing left to take back, and nothing otherwise', async () => {
+  it('says no when there is nothing to take back or put again', async () => {
+    // The answer the keyboard needs: with nothing to do, the key is the browser's to keep
+    // rather than this tool's to swallow.
     stubFetch()
     const view = await loaded()
 
-    expect(view.result.current.undoOutcome).toBeNull()
     act(() => {
-      view.result.current.undo()
+      expect(view.result.current.undo()).toBe(false)
+      expect(view.result.current.redo()).toBe(false)
     })
-    expect(view.result.current.undoOutcome).toBe('nothing-to-undo')
-
-    act(() => {
-      view.result.current.redo()
-    })
-    expect(view.result.current.undoOutcome).toBe('nothing-to-redo')
-
-    // An edit is the answer to the remark, so it clears it.
-    act(() => view.result.current.change([VINDICATOR]))
-    expect(view.result.current.undoOutcome).toBeNull()
+    expect(view.result.current.slots).toEqual([ABADDON])
   })
 })
 
