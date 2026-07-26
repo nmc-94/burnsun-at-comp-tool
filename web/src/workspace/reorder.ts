@@ -29,26 +29,15 @@
 // cancelled first, and every question about the cursor is asked of those instead. Transforms
 // then cannot reach the answer at all.
 
+import { measure, play as flip } from './flip'
+import type { Box } from './flip'
 import { moveTile } from './layout'
 
-/**
- * Long enough to follow rather than merely notice.
- *
- * §6.4's `0.1–0.15s` is a rule about *hover*; this is a tile crossing a board, and it is the
- * thing being read. See the note beside that rule for why direct manipulation is the one
- * exception to the band and to nothing else about it.
- */
-const DURATION_MS = 200
-const EASING = 'ease-out'
-
-/** A tile's place, in the grid's own content rather than in the viewport — so a scroll between
- *  two readings does not read as every tile moving at once. */
-export interface Box {
-  readonly left: number
-  readonly top: number
-  readonly width: number
-  readonly height: number
-}
+// Motion lives in `flip.ts` — the same code the mode change and "tidy up" animate with, so a
+// board rearranging itself feels like a board being rearranged by hand rather than merely
+// resembling one. `Box` is re-exported because `landing` takes them and `reorder.test.ts`
+// builds them.
+export type { Box }
 
 export interface Reorder {
   /** The comp whose tile is being carried. */
@@ -118,19 +107,6 @@ export function landing(
   return past ? beside + 1 : beside
 }
 
-/** Whether motion is wanted at all. Read when it is needed rather than subscribed to: the
- *  answer only matters inside one animation, and a listener would be board state the board does
- *  not otherwise have. `window.matchMedia` is absent under jsdom, hence both `?.`. */
-function stillness(): boolean {
-  return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true
-}
-
-function stopMoving(tile: HTMLElement): void {
-  // Absent under jsdom, along with the rest of the Web Animations API.
-  if (typeof tile.getAnimations !== 'function') return
-  for (const running of tile.getAnimations()) running.cancel()
-}
-
 /**
  * Take hold of a comp's tile.
  *
@@ -171,22 +147,7 @@ export function beginReorder(grid: HTMLElement, compId: string): Reorder | null 
   }
 
   function read(still: boolean): Map<string, Box> {
-    // Cancelled in a pass of its own, before anything is measured. A running animation is a
-    // transform and `getBoundingClientRect` reports the transformed box, so interleaving the
-    // two would measure some tiles mid-flight and others at rest — and it would force a layout
-    // per tile instead of one for all of them.
-    if (still) for (const tile of tiles.values()) stopMoving(tile)
-    const boxes = new Map<string, Box>()
-    for (const [id, tile] of tiles) {
-      const box = tile.getBoundingClientRect()
-      boxes.set(id, {
-        left: box.left + grid.scrollLeft,
-        top: box.top + grid.scrollTop,
-        width: box.width,
-        height: box.height,
-      })
-    }
-    return boxes
+    return measure(tiles, { left: grid.scrollLeft, top: grid.scrollTop }, still)
   }
 
   function draw(): void {
@@ -200,19 +161,7 @@ export function beginReorder(grid: HTMLElement, compId: string): Reorder | null 
 
   /** Send each tile from wherever it was drawn back to nothing. */
   function play(from: ReadonlyMap<string, Box>): void {
-    if (stillness()) return
-    for (const [id, tile] of tiles) {
-      const was = from.get(id)
-      const now = slots.get(id)
-      if (!was || !now || typeof tile.animate !== 'function') continue
-      const dx = was.left - now.left
-      const dy = was.top - now.top
-      if (dx === 0 && dy === 0) continue
-      tile.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
-        duration: DURATION_MS,
-        easing: EASING,
-      })
-    }
+    flip(tiles, from, slots)
   }
 
   function rearrange(next: readonly string[]): void {
