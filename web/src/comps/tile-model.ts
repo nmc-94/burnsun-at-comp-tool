@@ -321,33 +321,6 @@ export function introducedBy(
   return after.filter((violation) => !had.has(violation.code))
 }
 
-function score(name: string, query: string): number {
-  const at = name.toLowerCase().indexOf(query)
-  if (at < 0) return -1
-  // A prefix match is what someone typing a hull name is almost always after, so it wins
-  // over the same string buried mid-name.
-  return at === 0 ? 2 : 1
-}
-
-/**
- * Hulls matching `query`, best first.
- *
- * The roster is the ruleset's own list and nothing else, so a hull that resolves to no
- * point value can never be picked from here. Everything the ruleset does list is offered,
- * including hulls that would break a rule — the search annotates, it does not gate.
- */
-export function searchHulls(ruleset: Ruleset, query: string, limit = 20): RulesetShip[] {
-  const needle = query.trim().toLowerCase()
-  if (!needle) return []
-  const matches: { ship: RulesetShip; rank: number }[] = []
-  for (const ship of Object.values(ruleset.ships)) {
-    const rank = score(ship.name, needle)
-    if (rank > 0) matches.push({ ship, rank })
-  }
-  matches.sort((a, b) => b.rank - a.rank || a.ship.name.localeCompare(b.ship.name))
-  return matches.slice(0, limit).map((match) => match.ship)
-}
-
 /**
  * Annotate each hull with what putting it in row `index` would cost and break.
  *

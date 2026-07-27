@@ -10,7 +10,7 @@
 
 import { useMemo, useState } from 'react'
 
-import { searchHulls } from '../comps/tile-model'
+import { searchHulls } from '../comps/hull-search'
 import { banCandidacy } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
 import type { BanPhaseState, Ruleset } from '../engine'

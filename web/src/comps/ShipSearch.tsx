@@ -19,7 +19,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CompSlot, LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
-import { annotate, searchHulls } from './tile-model'
+import { searchHulls } from './hull-search'
+import { annotate } from './tile-model'
 
 interface Props {
   slots: readonly CompSlot[]

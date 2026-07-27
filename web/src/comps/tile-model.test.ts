@@ -21,7 +21,6 @@ import {
   previewRow,
   rowsBlamedBy,
   scaffold,
-  searchHulls,
   selectRow,
   slotsAt,
   withFlagship,
@@ -472,40 +471,6 @@ describe('introducedBy', () => {
     expect(introducedBy(judge(two).violations, after.violations).map((v) => v.code)).toEqual([
       'hull-size-cap',
     ])
-  })
-})
-
-describe('searchHulls', () => {
-  it('finds nothing for an empty query rather than offering the whole roster', () => {
-    expect(searchHulls(atxxiiRuleset, '   ')).toEqual([])
-  })
-
-  it('matches case-insensitively on part of a name', () => {
-    const found = searchHulls(atxxiiRuleset, 'vind')
-
-    expect(found.map((ship) => ship.name)).toContain('Vindicator')
-  })
-
-  it('ranks every name that starts with the query above every one that merely contains it', () => {
-    const names = searchHulls(atxxiiRuleset, 'ar', 500).map((ship) => ship.name)
-    const starts = (name: string) => name.toLowerCase().startsWith('ar')
-    const lastPrefix = names.findLastIndex(starts)
-    const firstContained = names.findIndex((name) => !starts(name))
-
-    // Both kinds are present — Armageddon leads, Garmur and Scimitar merely contain it.
-    expect(names.filter(starts).length).toBeGreaterThan(0)
-    expect(names.filter((name) => !starts(name)).length).toBeGreaterThan(0)
-    expect(lastPrefix).toBeLessThan(firstContained)
-  })
-
-  it('honours the limit, so a broad query cannot cost a full re-judgement per hull', () => {
-    expect(searchHulls(atxxiiRuleset, 'a', 3)).toHaveLength(3)
-  })
-
-  it('offers only hulls the ruleset lists, so an unpriced pick is unreachable', () => {
-    const everything = searchHulls(atxxiiRuleset, 'a', 500)
-
-    expect(everything.every((ship) => atxxiiRuleset.ships[ship.typeId])).toBe(true)
   })
 })
 
