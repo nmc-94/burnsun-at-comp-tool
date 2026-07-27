@@ -16,6 +16,7 @@ import { GearIcon, PickBanIcon, SignOutIcon, TeamsIcon } from './HeaderIcons'
 import { buildCcpPortraitUrl } from './lib/icons'
 import { useLinkProps } from './router/useRoute'
 import { readSettings, writeSetting } from './settings'
+import type { Settings } from './settings'
 import type { Session } from './session'
 import { signIn, signOut, signOutEverywhere } from './session'
 
@@ -127,7 +128,12 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
 
           <div className="header-menu-sep" />
 
-          <ConfirmDeletesItem />
+          <ToggleItem setting="sortRowsByWeight" testId="menu-sort-rows">
+            Sort rows by points
+          </ToggleItem>
+          <ToggleItem setting="confirmCompDelete" testId="menu-confirm-deletes">
+            Confirm comp deletes
+          </ToggleItem>
 
           <div className="header-menu-sep" />
 
@@ -197,34 +203,49 @@ function initialsOf(name: string): string {
 }
 
 /**
- * The one user preference that is not the theme, and the shape any later one should take.
+ * One user preference that is not the theme, and the shape every later one takes.
  *
  * A toggle button carrying `aria-pressed`, not a checkbox — the theme control in the header bar
  * already sets that precedent, and a checkbox in a list of links would be the only form control
  * in the menu. Its own state, seeded from storage on mount: the menu is unmounted while shut, so
- * opening it always reads whatever is stored rather than whatever this last remembered.
+ * opening it always reads whatever is stored rather than whatever this last remembered. What
+ * reads a preference *while the menu is open* subscribes instead — see `useSetting`.
  *
- * The name says what is on rather than what clicking does, which is what `aria-pressed` needs to
- * be true about.
+ * The children say what is on rather than what clicking does, which is what `aria-pressed` needs
+ * to be true about.
+ *
+ * No `title` on any of these. A title wins the accessible name over the element's own text, so a
+ * caveat put here — that an empty comp is deleted without asking whatever the confirm toggle
+ * says — would become what a screen reader announces the control *as*. Caveats are said where
+ * they are load-bearing instead: in the dialog that setting turns off.
  */
-function ConfirmDeletesItem() {
-  const [on, setOn] = useState(() => readSettings().confirmCompDelete)
+function ToggleItem({
+  setting,
+  testId,
+  children,
+}: {
+  readonly setting: BooleanSetting
+  readonly testId: string
+  readonly children: React.ReactNode
+}) {
+  const [on, setOn] = useState(() => readSettings()[setting])
   return (
     <button
       className="header-menu-item"
-      data-testid="menu-confirm-deletes"
+      data-testid={testId}
       type="button"
       aria-pressed={on}
-      // No `title`. A title wins the accessible name over the element's own text, so the
-      // caveat that belongs here — that an empty comp goes without asking whatever this says —
-      // would become what a screen reader announces this control *as*. It is said where it is
-      // load-bearing instead: in the dialog this setting turns off.
-      onClick={() => setOn(writeSetting('confirmCompDelete', !on).confirmCompDelete)}
+      onClick={() => setOn(writeSetting(setting, !on)[setting])}
     >
-      <CheckIcon on={on} /> Confirm comp deletes
+      <CheckIcon on={on} /> {children}
     </button>
   )
 }
+
+/** Every preference is one so far, and the toggle above only knows how to draw one. */
+type BooleanSetting = {
+  [K in keyof Settings]: Settings[K] extends boolean ? K : never
+}[keyof Settings]
 
 /** A box that is ticked or not. Sized and coloured by `.header-menu-item svg` like the rest. */
 function CheckIcon({ on }: { readonly on: boolean }) {

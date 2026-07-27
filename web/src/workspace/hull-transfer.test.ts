@@ -63,7 +63,7 @@ describe('offering hulls', () => {
     const taken = takeOffer('c2')
 
     expect(taken?.offer.typeIds).toEqual([587])
-    expect(taken?.atIndex).toBe(4)
+    expect(taken?.atRow).toBe(4)
   })
 
   it('announces the taking as well as the offering, so the affordance goes away', () => {
@@ -124,7 +124,7 @@ describe('proposing hulls', () => {
     propose('c2', offer(), 4)
 
     expect(listener).toHaveBeenCalledTimes(1)
-    expect(peekTransfer('c2')?.atIndex).toBe(4)
+    expect(peekTransfer('c2')?.atRow).toBe(4)
   })
 
   it('stays quiet when the same hulls are proposed against the same row', () => {
@@ -137,10 +137,10 @@ describe('proposing hulls', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
-  it('names no row when it is not given one, which is the end of the comp', () => {
+  it('names no row when it is not given one, which is wherever there is room', () => {
     propose('c2', offer())
 
-    expect(peekTransfer('c2')?.atIndex).toBeNull()
+    expect(peekTransfer('c2')?.atRow).toBeNull()
   })
 
   it('withdraws the question when the cursor leaves', () => {

@@ -13,7 +13,6 @@
 import { evaluate, HULL_SIZE_ORDER } from '../engine'
 import type {
   Comp,
-  CompSlot,
   HullSize,
   LegalityResult,
   LegalitySummary,
@@ -23,10 +22,59 @@ import type {
   Violation,
 } from '../engine'
 
-/** A hull the builder has placed, or an empty slot in the scaffold waiting for one. */
+/**
+ * A hull in a comp, and the row of the scaffold it sits on.
+ *
+ * **`position` is the comp's row number, not this array's index.** The two coincide in a comp
+ * nobody has arranged, which is every comp until somebody turns the tile's sort off and leaves
+ * a row empty between two hulls. The moment they stop coinciding, every number in this file has
+ * to say which of the two it is — so there is one rule and everything rests on it:
+ *
+ * **This array is dense, sorted by position, and its index is the engine's.** `toEngineComp`
+ * maps it in order, so array index *is* the index a `Violation` blames and the index a
+ * `SlotEvaluation` comes back at. `position` is the other thing entirely: what a person points
+ * at, what `data-row` says, and the row number a fork names to the server.
+ *
+ * A hull's row is not the hull's business — a comp holds the same ships whatever order they are
+ * drawn in — but it is the *comp's*, which is why it is stored rather than being a view. The
+ * engine is deliberately left out of it: a gap has no cost, breaks no rule, and blames nobody.
+ */
+export interface PlacedSlot {
+  readonly position: number
+  readonly typeId: number
+  readonly isFlagship: boolean
+}
+
+/**
+ * A hull the builder has placed, or an empty row of the scaffold waiting for one.
+ *
+ * A ship row carries both numbers because it needs both: `at` is what the engine, the row
+ * selection and every edit to this comp are counted in, and `row` is where it sits.
+ */
 export type Row =
-  | { readonly kind: 'ship'; readonly index: number; readonly slot: SlotEvaluation }
-  | { readonly kind: 'empty'; readonly index: number }
+  | {
+      readonly kind: 'ship'
+      /** Index into the comp's slot array, and so into `LegalityResult.slots`. */
+      readonly at: number
+      /** The comp's row number for this hull. */
+      readonly row: number
+      readonly slot: SlotEvaluation
+    }
+  | {
+      readonly kind: 'empty'
+      readonly row: number
+      /**
+       * The row a hull put here would take.
+       *
+       * Its own, when the tile is drawing rows where they are stored — that is the whole point
+       * of turning the sort off, and an empty row you can see the place of is one you can put a
+       * hull in on purpose. But when the rows are sorted by weight the empty ones are just the
+       * blank lines under the comp: they are not drawn anywhere near the rows they are numbered
+       * for, so all of them mean "the next free row" and clicking the fourth of them cannot
+       * silently open a gap at the first.
+       */
+      readonly lands: number
+    }
 
 /** The delta pill's three states. Under budget is legal, but not free. */
 export type DeltaTone = 'exact' | 'under' | 'over'
@@ -81,33 +129,77 @@ function byWeight(a: SlotEvaluation, b: SlotEvaluation): number {
   return a.name.localeCompare(b.name)
 }
 
-/**
- * The fixed row scaffold: filled rows first in weight order, then empty ones to the field size.
- *
- * Normally exactly `fieldSize` rows, which is what makes the tile a fixed height. It grows
- * only for a comp that already holds more hulls than the format allows — nothing here
- * refuses that comp, so nothing here may hide it either. There is no empty row to click in
- * that state, which is the scaffold having run out rather than a rule being enforced.
- *
- * **The sort is this array's order and nothing else.** Every row keeps the `index` it has in
- * the stored slot list, and that is the number every gesture downstream carries — a hull
- * replaced in place, a flagship designated, the rows a partial fork names for the server to
- * take out of its own copy. Sorting the *stored* list instead would have been simpler here and
- * wrong there: a comp already saved would have gone on drawing in its old order until somebody
- * edited it, and re-saving every comp on open to fix that would move `updated_at` — and stale
- * every share link — for the act of looking at one.
- */
-export function scaffold(result: LegalityResult, fieldSize: number): Row[] {
-  // Paired with their stored indexes *before* sorting, so the sort moves the pairs and the
-  // indexes travel with the hulls they belong to.
-  const placed = result.slots.map((slot, index) => ({ index, slot }))
-  placed.sort((a, b) => byWeight(a.slot, b.slot))
+export interface ScaffoldOptions {
+  /**
+   * Each hull's stored row, aligned with `result.slots` — the comp's own numbering.
+   *
+   * Omitted is "dense from zero", which is what a caller with no comp document to hand means
+   * and what most of this file's tests mean. A comp that has never been arranged is exactly
+   * that anyway.
+   */
+  readonly rows?: readonly number[]
+  /** Draw by weight rather than where the hulls are stored. On unless a person turned it off. */
+  readonly sorted?: boolean
+}
 
-  const rows: Row[] = placed.map(({ index, slot }) => ({ kind: 'ship', index, slot }))
-  for (let index = rows.length; index < fieldSize; index += 1) {
-    rows.push({ kind: 'empty', index })
+/**
+ * The fixed row scaffold: every row of the comp, filled or not.
+ *
+ * Normally exactly `fieldSize` rows, which is what makes the tile a fixed height. It grows only
+ * for a comp that reaches past the format — more hulls than it allows, or a hull arranged onto
+ * a row beyond the end of it. Nothing here refuses such a comp, so nothing here may hide it
+ * either.
+ *
+ * **The sort is this array's order and nothing else.** Every row keeps its `at` in the stored
+ * slot list, which is what the engine's violations are counted in and what every edit carries,
+ * and its `row`, which is what a person points at. Sorting the *stored* list instead would have
+ * been simpler here and wrong there: a comp already saved would have gone on drawing in its old
+ * order until somebody edited it, and re-saving every comp on open to fix that would move
+ * `updated_at` — and stale every share link — for the act of looking at one.
+ *
+ * That separation is what makes `sorted` a preference rather than a migration. Turned off, the
+ * rows draw where the comp says they are, gaps and all; turned back on, the same comp reads by
+ * weight again. Neither writes anything.
+ *
+ * **The empty rows are the comp's unused rows, in order** — which is how a gap between two
+ * hulls exists at all. Sorted, they are still the unused rows and still numbered, but they are
+ * drawn as a block under the hulls rather than in their places, because a weight order has
+ * nowhere to put them.
+ */
+export function scaffold(
+  result: LegalityResult,
+  fieldSize: number,
+  { rows: stored, sorted = true }: ScaffoldOptions = {},
+): Row[] {
+  // Paired with their stored indexes *before* sorting, so the sort moves the pairs and both
+  // numbers travel with the hull they belong to.
+  const placed = result.slots.map((slot, at) => ({ at, row: stored?.[at] ?? at, slot }))
+  const used = new Set(placed.map((entry) => entry.row))
+
+  // Every row the comp reaches, which is the field size unless a hull is arranged past it.
+  const reach = Math.max(fieldSize, ...placed.map((entry) => entry.row + 1))
+  const free: number[] = []
+  for (let row = 0; row < reach; row += 1) if (!used.has(row)) free.push(row)
+
+  const ships: Row[] = placed.map(({ at, row, slot }) => ({ kind: 'ship', at, row, slot }))
+  // All of them mean the next free row when the rows are sorted; see `Row`'s note on `lands`.
+  const empties: Row[] = free.map((row) => ({
+    kind: 'empty',
+    row,
+    lands: sorted ? free[0]! : row,
+  }))
+
+  if (sorted) {
+    ships.sort((a, b) => byWeight(shipOf(a), shipOf(b)))
+    return [...ships, ...empties]
   }
-  return rows
+  return [...ships, ...empties].sort((a, b) => a.row - b.row)
+}
+
+/** Narrowing helper: `scaffold` only ever sorts the rows it has just built as ships. */
+function shipOf(row: Row): SlotEvaluation {
+  if (row.kind !== 'ship') throw new Error('not a filled row')
+  return row.slot
 }
 
 /** The signed distance from the point cap, as the tile shows it. */
@@ -124,30 +216,65 @@ export function deltaPill(summary: LegalitySummary): DeltaPill {
   return { text: `+${delta}`, tone: 'over', label: `${delta} points over the ${cap} point cap` }
 }
 
-/** The comp as the engine wants it: hull choices in row order. */
-export function toEngineComp(slots: readonly CompSlot[]): Comp {
+/**
+ * The comp as the engine wants it: hull choices in the order they are stored.
+ *
+ * Rows do not cross this line. A gap costs nothing, breaks no rule and blames nobody, so the
+ * engine has no use for one — and the index it hands back in a `SlotEvaluation` or blames in a
+ * `Violation` is this array's, which is the whole reason `PlacedSlot` keeps the two apart.
+ */
+export function toEngineComp(slots: readonly PlacedSlot[]): Comp {
   return { slots: slots.map((slot) => ({ typeId: slot.typeId, isFlagship: slot.isFlagship })) }
 }
 
 /**
- * The comp that would result from putting `typeId` in row `index` — or from emptying that
- * row, when `typeId` is null.
+ * The comp that would result from swapping the hull at `at` for `typeId` — or from taking it
+ * out, when `typeId` is null.
  *
- * An index past the end appends, which is how the scaffold's empty rows add a hull. The
- * flagship designation stays with the row, so swapping a hull under a flagship keeps it
- * flagship — whether the replacement is *eligible* is a rule, and the engine reports it
+ * **By array index, so this only ever edits a hull that is already there.** Adding one is
+ * `withHullOn` below, which names a row instead — the two used to be this function, with "an
+ * index past the end appends" standing in for the second, and that shortcut stopped being
+ * expressible the moment a row could be empty in the middle of a comp.
+ *
+ * The row and the flagship designation both stay put, so swapping a hull under a flagship keeps
+ * it flagship — whether the replacement is *eligible* is a rule, and the engine reports it
  * rather than this quietly dropping the designation.
  */
 export function withRow(
-  slots: readonly CompSlot[],
-  index: number,
+  slots: readonly PlacedSlot[],
+  at: number,
   typeId: number | null,
-): CompSlot[] {
-  if (typeId === null) return slots.filter((_, at) => at !== index)
-  const existing = slots[index]
-  const replacement: CompSlot = { typeId, isFlagship: existing?.isFlagship ?? false }
-  if (!existing) return [...slots, replacement]
-  return slots.map((slot, at) => (at === index ? replacement : slot))
+): PlacedSlot[] {
+  if (typeId === null) return slots.filter((_, index) => index !== at)
+  return slots.map((slot, index) => (index === at ? { ...slot, typeId } : slot))
+}
+
+/**
+ * The comp with `typeId` on row `row` — replacing whatever was there, or filling the row if it
+ * was empty.
+ *
+ * One function for both because a person doing it means one thing by it: that hull, that row.
+ * Which of the two happens is a fact about the comp rather than about the gesture, and every
+ * caller would otherwise have to look it up before deciding what to call.
+ *
+ * A new hull is never a flagship. A replacement keeps whatever the row held, for `withRow`'s
+ * reason.
+ */
+export function withHullOn(
+  slots: readonly PlacedSlot[],
+  row: number,
+  typeId: number,
+): PlacedSlot[] {
+  const at = slots.findIndex((slot) => slot.position === row)
+  if (at !== -1) return withRow(slots, at, typeId)
+  // Spliced in rather than appended and re-sorted: the array is sorted by position and stays
+  // that way, which is the invariant every index in this file rests on.
+  const before = slots.filter((slot) => slot.position < row)
+  return [
+    ...before,
+    { position: row, typeId, isFlagship: false },
+    ...slots.slice(before.length),
+  ]
 }
 
 /**
@@ -155,50 +282,111 @@ export function withRow(
  *
  * A filter rather than a map over the indexes, which makes it row-ordered, duplicate-free
  * and safe against an index past the end without any of the three being a separate check.
+ *
+ * **Array indexes**, like everything a tile picks out: this is fed by the row selection, which
+ * counts in the same numbers the engine does.
  */
-export function slotsAt(slots: readonly CompSlot[], indexes: readonly number[]): CompSlot[] {
+export function slotsAt(slots: readonly PlacedSlot[], indexes: readonly number[]): PlacedSlot[] {
   const wanted = new Set(indexes)
   return slots.filter((_, at) => wanted.has(at))
 }
 
 /**
- * The comp with `typeIds` appended, which is what arriving from another tile looks like.
+ * The comp with `typeIds` added on the first free rows, which is what arriving from another
+ * tile looks like.
+ *
+ * The first free rows rather than the end, and the difference only shows on an arranged comp: a
+ * hull let go of on a card whose rows 2 and 3 are deliberately empty goes into row 2. That is
+ * the same answer the empty row's own search gives, and a copy that skipped past the gaps to
+ * land below them would be the one gesture that treats an arrangement as something to work
+ * around.
  *
  * It takes type ids rather than slots on purpose: a comp holds at most one flagship — the
  * database enforces it and the API answers a second one with a 409 — so a hull copied into
- * a comp that already has one must arrive as a plain hull. Carrying `CompSlot`s here would
+ * a comp that already has one must arrive as a plain hull. Carrying `PlacedSlot`s here would
  * make that a rule to remember; carrying ids makes it impossible to get wrong.
  */
 export function withHullsAdded(
-  slots: readonly CompSlot[],
+  slots: readonly PlacedSlot[],
   typeIds: readonly number[],
-): CompSlot[] {
-  return typeIds.reduce<CompSlot[]>(
-    (built, typeId) => withRow(built, built.length, typeId),
+): PlacedSlot[] {
+  return typeIds.reduce<PlacedSlot[]>(
+    (built, typeId) => withHullOn(built, firstFreeRow(built), typeId),
     [...slots],
   )
 }
 
 /**
- * What the comp would look like with that row changed.
+ * The comp with the hull on row `from` carried to row `to`, swapping with whatever is there.
+ *
+ * A **move**, which is a different act from everything else in this file: `withHullOn` puts a
+ * hull somewhere and leaves the rest of the comp alone, and this rearranges one. It exists
+ * because rows became a person's to choose — before that, moving a hull from row 1 to row 5
+ * changed nothing anybody could see.
+ *
+ * Swapping rather than overwriting. A move onto an occupied row could throw that hull away, and
+ * that would make rearranging a comp the one gesture in the tool that quietly deletes something.
+ * The two hulls exchange rows and the comp still holds exactly what it held.
+ *
+ * **The flagship travels with the hull**, which is the opposite of `withRow` and `withHullOn` —
+ * and the difference is real rather than an inconsistency. Those two answer "what hull is on this
+ * row", so the designation is the row's and stays put. This one answers "where is this hull", so
+ * the designation is the hull's and goes with it.
+ */
+export function withHullMovedTo(
+  slots: readonly PlacedSlot[],
+  from: number,
+  to: number,
+): PlacedSlot[] {
+  const moving = slots.find((slot) => slot.position === from)
+  if (!moving || from === to) return [...slots]
+  const displaced = slots.find((slot) => slot.position === to)
+  return slots
+    .map((slot) => {
+      if (slot === moving) return { ...slot, position: to }
+      if (slot === displaced) return { ...slot, position: from }
+      return slot
+    })
+    .sort((a, b) => a.position - b.position)
+}
+
+/** The lowest row no hull is on. Never fails: a comp cannot occupy every integer. */
+export function firstFreeRow(slots: readonly PlacedSlot[]): number {
+  const used = new Set(slots.map((slot) => slot.position))
+  let row = 0
+  while (used.has(row)) row += 1
+  return row
+}
+
+/**
+ * What the comp would look like with `typeId` on row `row` — filling it, or replacing the hull
+ * already there.
  *
  * The honest implementation of an in-place swap: build the candidate and judge it whole.
  * Removing the row's old hull is not a subtraction — with a retroactive surcharge it
  * re-prices every remaining copy of that hull, and adding the new one re-prices every copy
  * of *that* one. Only a second `evaluate` gets both right.
+ *
+ * By row rather than by array index because this is the search's preview, and a search sits on
+ * a row — including an empty one, which has no array index to be.
  */
 export function previewRow(
-  slots: readonly CompSlot[],
-  index: number,
-  typeId: number | null,
+  slots: readonly PlacedSlot[],
+  row: number,
+  typeId: number,
   ruleset: Ruleset,
 ): LegalityResult {
-  return evaluate(toEngineComp(withRow(slots, index, typeId)), ruleset)
+  return evaluate(toEngineComp(withHullOn(slots, row, typeId)), ruleset)
 }
 
-/** Designate row `index` as the flagship, clearing whatever held it before. */
-export function withFlagship(slots: readonly CompSlot[], index: number | null): CompSlot[] {
-  return slots.map((slot, at) => ({ typeId: slot.typeId, isFlagship: at === index }))
+/**
+ * Designate the hull at array index `at` as the flagship, clearing whatever held it before.
+ *
+ * By array index rather than by row, like every other edit to a hull that is already there —
+ * the star is a control on a filled row and there is always a slot under it.
+ */
+export function withFlagship(slots: readonly PlacedSlot[], at: number | null): PlacedSlot[] {
+  return slots.map((slot, index) => ({ ...slot, isFlagship: index === at }))
 }
 
 /**
@@ -322,20 +510,20 @@ export function introducedBy(
 }
 
 /**
- * Annotate each hull with what putting it in row `index` would cost and break.
+ * Annotate each hull with what putting it on row `row` would cost and break.
  *
  * Deliberately takes the already-filtered list: this runs `evaluate` once per candidate,
  * on every keystroke, and the roster is a few hundred hulls long.
  */
 export function annotate(
   ships: readonly RulesetShip[],
-  slots: readonly CompSlot[],
-  index: number,
+  slots: readonly PlacedSlot[],
+  row: number,
   ruleset: Ruleset,
   current: LegalityResult,
 ): Candidate[] {
   return ships.map((ship) => {
-    const after = previewRow(slots, index, ship.typeId, ruleset)
+    const after = previewRow(slots, row, ship.typeId, ruleset)
     return {
       ship,
       delta: after.summary.pointsUsed - current.summary.pointsUsed,

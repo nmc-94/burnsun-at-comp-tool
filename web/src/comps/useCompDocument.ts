@@ -20,13 +20,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { messageFor } from '../api'
 import { evaluate } from '../engine'
-import type { CompSlot, LegalityResult } from '../engine'
+import type { LegalityResult } from '../engine'
 import { loadRulesetVersion } from '../rulesets/cache'
 import type { RulesetVersionDetail } from '../rulesets/types'
 import { getComp, renameComp, replaceSlots, replaceTags } from './api'
 import type { SaveState } from './CompTile'
 import { trackWrite, whenWritesSettle } from './in-flight'
 import { toEngineComp } from './tile-model'
+import type { PlacedSlot } from './tile-model'
 import type { CompDetail, CompTagsWrite } from './types'
 import { noteEdited } from './undo-keys'
 
@@ -41,13 +42,13 @@ const UNDO_DEPTH = 50
 export interface CompDocument {
   readonly comp: CompDetail | null
   readonly ruleset: RulesetVersionDetail | null
-  readonly slots: readonly CompSlot[]
+  readonly slots: readonly PlacedSlot[]
   /** Null until both the comp and its ruleset are in hand; there is nothing to judge before. */
   readonly result: LegalityResult | null
   readonly saveState: SaveState
   readonly error: string | null
   readonly editable: boolean
-  readonly change: (next: CompSlot[]) => void
+  readonly change: (next: PlacedSlot[]) => void
   /** Step back one slot-list edit, or forward again. True when something actually moved. */
   readonly undo: () => boolean
   readonly redo: () => boolean
@@ -72,13 +73,13 @@ type OnChanged = (comp: CompDetail) => void
 export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocument {
   const [comp, setComp] = useState<CompDetail | null>(null)
   const [ruleset, setRuleset] = useState<RulesetVersionDetail | null>(null)
-  const [slots, setSlots] = useState<CompSlot[]>([])
+  const [slots, setSlots] = useState<PlacedSlot[]>([])
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [error, setError] = useState<string | null>(null)
 
   // What is on the server, so an unchanged comp is never written back.
   const persisted = useRef<string>('')
-  const pending = useRef<CompSlot[] | null>(null)
+  const pending = useRef<PlacedSlot[] | null>(null)
 
   // Held in a ref so a caller's inline arrow does not have to appear in a dependency list and
   // rebuild the callbacks below on every render of the board.
@@ -118,14 +119,14 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   // Refs rather than state, and that stays true only while nothing draws them. The gesture is
   // a key press, so there is no control whose disabled-ness has to keep up — and a board runs
   // twenty of these, so a second render per edit would be twenty second renders.
-  const past = useRef<CompSlot[][]>([])
-  const future = useRef<CompSlot[][]>([])
+  const past = useRef<PlacedSlot[][]>([])
+  const future = useRef<PlacedSlot[][]>([])
 
   // The comp as it stands on screen. Held here as well as in state so `change` can read what
   // it is about to replace without taking `slots` as a dependency — it is handed to the tile
   // as `onChange` and sits in a dependency list in the cell, and a fresh identity on every
   // edit would re-run both.
-  const onScreen = useRef<CompSlot[]>([])
+  const onScreen = useRef<PlacedSlot[]>([])
 
   // How many writes this hook has issued and not yet heard back from. The guard in `save`
   // needs it: `persisted` is what the server has *confirmed*, and a write still on its way is
@@ -157,10 +158,16 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
         // Seeds the comparison rather than announcing anything — see `noteEmptiness`. Without
         // this, the first save after opening a tile would read a crossing that had not happened.
         noteEmptiness(found)
-        const loaded: CompSlot[] = found.slots.map((slot) => ({
-          typeId: slot.typeId,
-          isFlagship: slot.isFlagship,
-        }))
+        const loaded: PlacedSlot[] = found.slots
+          .map((slot) => ({
+            position: slot.position,
+            typeId: slot.typeId,
+            isFlagship: slot.isFlagship,
+          }))
+          // Sorted here rather than trusted from the wire. The route orders by position and
+          // every reader downstream takes that as given — array index is the engine's index,
+          // and a list out of order would misplace every violation the tile draws.
+          .sort((a, b) => a.position - b.position)
         setSlots(loaded)
         onScreen.current = loaded
         persisted.current = JSON.stringify(loaded)
@@ -179,7 +186,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   }, [compId, noteEmptiness])
 
   const save = useCallback(
-    async (next: CompSlot[]) => {
+    async (next: PlacedSlot[]) => {
       // An undo that walks back to exactly what the server already holds is not a write. The
       // comparison is only sound with nothing in the air: `persisted` is the last *confirmed*
       // state, and a write still on its way is about to make the server disagree with it — so
@@ -245,7 +252,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
    * Declared with the other hooks rather than after an early return, which is where these sat
    * when this was a component. The ordering inside here is the part that matters.
    */
-  const apply = useCallback((next: CompSlot[]) => {
+  const apply = useCallback((next: PlacedSlot[]) => {
     onScreen.current = next
     pending.current = next
     setSlots(next)
@@ -256,7 +263,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   }, [])
 
   const change = useCallback(
-    (next: CompSlot[]) => {
+    (next: PlacedSlot[]) => {
       // The comp as it was *before* this edit, which is exactly what an undo restores.
       past.current = [...past.current, onScreen.current].slice(-UNDO_DEPTH)
       // A fresh edit throws the way forward away. Redo means "put back the thing I just took
@@ -367,6 +374,6 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   }
 }
 
-function toWire(slot: CompSlot) {
-  return { typeId: slot.typeId, isFlagship: slot.isFlagship ?? false }
+function toWire(slot: PlacedSlot) {
+  return { position: slot.position, typeId: slot.typeId, isFlagship: slot.isFlagship }
 }

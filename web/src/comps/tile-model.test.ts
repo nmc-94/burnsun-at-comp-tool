@@ -10,34 +10,47 @@
 import { describe, expect, it } from 'vitest'
 
 import { evaluate } from '../engine'
-import type { CompSlot, Violation } from '../engine'
+import type { Violation } from '../engine'
 import { SHIP, UNPRICED_TYPE_ID, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 import {
   annotate,
   deltaPill,
   EMPTY_SELECTION,
+  firstFreeRow,
   introducedBy,
   offersFlagship,
   previewRow,
   rowsBlamedBy,
+  toEngineComp,
   scaffold,
   selectRow,
   slotsAt,
   withFlagship,
+  withHullMovedTo,
+  withHullOn,
   withHullsAdded,
   withRow,
 } from './tile-model'
-import type { RowSelection } from './tile-model'
+import type { PlacedSlot, RowSelection } from './tile-model'
 
-function slots(...typeIds: number[]): CompSlot[] {
-  return typeIds.map((typeId) => ({ typeId, isFlagship: false }))
+/** Hulls on consecutive rows from zero — a comp nobody has arranged, which is nearly all of them. */
+function slots(...typeIds: number[]): PlacedSlot[] {
+  return typeIds.map((typeId, position) => ({ position, typeId, isFlagship: false }))
 }
 
-function judge(list: readonly CompSlot[]) {
-  return evaluate({ slots: list }, atxxiiRuleset)
+/** Hulls on the rows named: `placed([0, abaddon], [4, rifter])` leaves rows 1–3 empty. */
+function placed(...rows: [number, number][]): PlacedSlot[] {
+  return rows.map(([position, typeId]) => ({ position, typeId, isFlagship: false }))
 }
 
-function costs(list: readonly CompSlot[]): number[] {
+/** Each hull's row, in slot order — what `scaffold` needs to draw a comp where it says it is. */
+const rowsOf = (list: readonly PlacedSlot[]) => list.map((slot) => slot.position)
+
+function judge(list: readonly PlacedSlot[]) {
+  return evaluate(toEngineComp(list), atxxiiRuleset)
+}
+
+function costs(list: readonly PlacedSlot[]): number[] {
   return judge(list).slots.map((slot) => slot.points)
 }
 
@@ -53,7 +66,7 @@ describe('scaffold', () => {
     expect(rows).toHaveLength(10)
     expect(rows.filter((row) => row.kind === 'ship')).toHaveLength(2)
     expect(rows.slice(2).every((row) => row.kind === 'empty')).toBe(true)
-    expect(rows.map((row) => row.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(rows.map((row) => row.row)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
   })
 
   it('is exactly the field size for a full comp, with nothing left to click', () => {
@@ -93,10 +106,26 @@ describe('scaffold', () => {
     // gestures act on the wrong hull — silently, since every index involved is a real row.
     const rows = scaffold(judge(slots(SHIP.rifter, SHIP.abaddon, SHIP.orthrus)), 10)
 
-    expect(rows.slice(0, 3).map((row) => row.index)).toEqual([1, 2, 0])
-    // And the empty rows still carry on from the end of the stored list, so clicking one
-    // appends rather than overwriting.
-    expect(rows.slice(3).map((row) => row.index)).toEqual([3, 4, 5, 6, 7, 8, 9])
+    expect(rows.slice(0, 3).map((row) => (row.kind === 'ship' ? row.at : -1))).toEqual([1, 2, 0])
+    // And the empty rows still carry on from the end of the stored list, so filling one adds a
+    // hull rather than overwriting.
+    expect(rows.slice(3).map((row) => row.row)).toEqual([3, 4, 5, 6, 7, 8, 9])
+  })
+
+  it('draws the rows in stored order when the sort is turned off', () => {
+    // The preference behind this is per browser and changes nothing about the comp — the sort
+    // has only ever been how the rows are drawn. Which is exactly what this checks: the same
+    // three hulls, the same three indexes, in the order they are stored.
+    const rows = scaffold(judge(slots(SHIP.rifter, SHIP.abaddon, SHIP.orthrus)), 10, {
+      sorted: false,
+    })
+
+    expect(names(rows)).toEqual(['Rifter', 'Abaddon', 'Orthrus'])
+    expect(rows.slice(0, 3).map((row) => (row.kind === 'ship' ? row.at : -1))).toEqual([0, 1, 2])
+    // And the scaffold is otherwise untouched: still a full field, still numbered on from the
+    // end of the stored list.
+    expect(rows).toHaveLength(10)
+    expect(rows.slice(3).map((row) => row.row)).toEqual([3, 4, 5, 6, 7, 8, 9])
   })
 
   it('grows rather than hiding hulls when a comp is over the field size', () => {
@@ -106,6 +135,69 @@ describe('scaffold', () => {
 
     expect(rows).toHaveLength(11)
     expect(rows.every((row) => row.kind === 'ship')).toBe(true)
+  })
+
+  it('leaves the empty rows between hulls empty when the sort is off', () => {
+    // The whole point of arranging a comp: a group of hulls, a gap, another group. Under a
+    // weight sort there is nowhere to put a gap, so this is the only mode it can show in.
+    const comp = placed([0, SHIP.abaddon], [1, SHIP.rifter], [5, SHIP.orthrus])
+    const rows = scaffold(judge(comp), 10, { rows: rowsOf(comp), sorted: false })
+
+    expect(rows.map((row) => (row.kind === 'ship' ? row.slot.name : '—'))).toEqual([
+      'Abaddon',
+      'Rifter',
+      '—',
+      '—',
+      '—',
+      'Orthrus',
+      '—',
+      '—',
+      '—',
+      '—',
+    ])
+    expect(rows.map((row) => row.row)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+  })
+
+  it('numbers each empty row for itself, so a hull typed into one lands there', () => {
+    const comp = placed([0, SHIP.abaddon], [5, SHIP.orthrus])
+    const rows = scaffold(judge(comp), 10, { rows: rowsOf(comp), sorted: false })
+
+    const gaps = rows.flatMap((row) => (row.kind === 'empty' ? [[row.row, row.lands]] : []))
+    expect(gaps).toEqual([
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 4],
+      [6, 6],
+      [7, 7],
+      [8, 8],
+      [9, 9],
+    ])
+  })
+
+  it('sends every empty row to the first free one when the rows are sorted', () => {
+    // Sorted, the blank lines are drawn under the hulls rather than in their places, so
+    // "this row" would be a lie — clicking the fourth of them would silently open a gap at the
+    // first. All of them mean the next free row instead, which is what a weight sort implies.
+    const comp = placed([0, SHIP.abaddon], [5, SHIP.orthrus])
+    const rows = scaffold(judge(comp), 10, { rows: rowsOf(comp) })
+
+    const empties = rows.flatMap((row) => (row.kind === 'empty' ? [row] : []))
+    expect(empties.every((row) => row.lands === 1)).toBe(true)
+    // Still the comp's own unused rows, so no two rows of the scaffold claim the same number.
+    expect(empties.map((row) => row.row)).toEqual([1, 2, 3, 4, 6, 7, 8, 9])
+    expect(names(rows)).toEqual(['Abaddon', 'Orthrus'])
+  })
+
+  it('keeps drawing an arrangement that reaches past the field size', () => {
+    // The same promise the eleven-hull comp gets, arrived at the other way. A comp can be
+    // re-pinned to a version with a smaller field after it was arranged, and a hull below the
+    // new last row is exactly the thing a builder has to be able to see to fix.
+    const comp = placed([0, SHIP.abaddon], [11, SHIP.rifter])
+    const rows = scaffold(judge(comp), 10, { rows: rowsOf(comp), sorted: false })
+
+    expect(rows).toHaveLength(12)
+    expect(rows.at(-1)).toMatchObject({ kind: 'ship', row: 11 })
   })
 })
 
@@ -158,30 +250,135 @@ describe('deltaPill', () => {
 })
 
 describe('withRow', () => {
-  it('replaces the hull in place, leaving the order alone', () => {
+  it('replaces the hull in place, leaving the order and the row alone', () => {
     expect(withRow(slots(SHIP.abaddon, SHIP.rifter), 0, SHIP.orthrus)).toEqual([
-      { typeId: SHIP.orthrus, isFlagship: false },
-      { typeId: SHIP.rifter, isFlagship: false },
+      { position: 0, typeId: SHIP.orthrus, isFlagship: false },
+      { position: 1, typeId: SHIP.rifter, isFlagship: false },
     ])
   })
 
-  it('appends when the row is past the end, which is how an empty row fills', () => {
-    expect(withRow(slots(SHIP.rifter), 4, SHIP.orthrus)).toHaveLength(2)
+  it('changes nothing when the index names no hull, because adding one is not its job', () => {
+    // It used to append here, which was how an empty row filled — and that shortcut stopped
+    // being expressible once a row could be empty in the middle of a comp. `withHullOn` names
+    // the row instead, and this only ever edits a hull that is already there.
+    expect(withRow(slots(SHIP.rifter), 4, SHIP.orthrus)).toEqual(slots(SHIP.rifter))
   })
 
-  it('removes the row when given no hull, closing the gap behind it', () => {
+  it('takes the hull out when given none, leaving the other rows where they are', () => {
+    // The row it was on becomes empty rather than closing up: rows below it are somewhere
+    // somebody put them, and a removal is not a request to move them.
     expect(withRow(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus), 1, null)).toEqual([
-      { typeId: SHIP.abaddon, isFlagship: false },
-      { typeId: SHIP.orthrus, isFlagship: false },
+      { position: 0, typeId: SHIP.abaddon, isFlagship: false },
+      { position: 2, typeId: SHIP.orthrus, isFlagship: false },
     ])
   })
 
   it('keeps the flagship designation with the row through a swap', () => {
     // Whether the replacement may *be* the flagship is a rule, and the engine says so.
     // Silently dropping the designation here would hide that.
-    const withFlag: CompSlot[] = [{ typeId: SHIP.vindicator, isFlagship: true }]
+    const withFlag: PlacedSlot[] = [{ position: 0, typeId: SHIP.vindicator, isFlagship: true }]
 
-    expect(withRow(withFlag, 0, SHIP.rifter)).toEqual([{ typeId: SHIP.rifter, isFlagship: true }])
+    expect(withRow(withFlag, 0, SHIP.rifter)).toEqual([
+      { position: 0, typeId: SHIP.rifter, isFlagship: true },
+    ])
+  })
+})
+
+describe('withHullOn — a hull put on a named row', () => {
+  it('fills an empty row without disturbing the hulls either side of it', () => {
+    const comp = placed([0, SHIP.abaddon], [5, SHIP.orthrus])
+
+    expect(withHullOn(comp, 3, SHIP.rifter)).toEqual([
+      { position: 0, typeId: SHIP.abaddon, isFlagship: false },
+      { position: 3, typeId: SHIP.rifter, isFlagship: false },
+      { position: 5, typeId: SHIP.orthrus, isFlagship: false },
+    ])
+  })
+
+  it('replaces the hull already on that row, keeping the row and its flagship', () => {
+    const comp: PlacedSlot[] = [{ position: 4, typeId: SHIP.vindicator, isFlagship: true }]
+
+    expect(withHullOn(comp, 4, SHIP.abaddon)).toEqual([
+      { position: 4, typeId: SHIP.abaddon, isFlagship: true },
+    ])
+  })
+
+  it('keeps the list sorted by row, which every index in the file rests on', () => {
+    // Array index is the engine's index. A hull spliced in out of order would misplace every
+    // violation the tile draws, and nothing would say so.
+    const built = withHullOn(withHullOn(slots(), 7, SHIP.rifter), 2, SHIP.abaddon)
+
+    expect(built.map((slot) => slot.position)).toEqual([2, 7])
+    expect(judge(built).slots.map((slot) => slot.name)).toEqual(['Abaddon', 'Rifter'])
+  })
+})
+
+describe('withHullMovedTo — a hull carried to another row', () => {
+  it('carries it to an empty row, leaving the one it came off empty', () => {
+    const comp = placed([0, SHIP.abaddon], [1, SHIP.rifter])
+
+    expect(withHullMovedTo(comp, 1, 6)).toEqual([
+      { position: 0, typeId: SHIP.abaddon, isFlagship: false },
+      { position: 6, typeId: SHIP.rifter, isFlagship: false },
+    ])
+  })
+
+  it('trades places rather than throwing the other hull away', () => {
+    // Overwriting would make rearranging a comp the one gesture in the tool that quietly
+    // deletes something. The comp holds exactly what it held, in a different order.
+    const comp = placed([0, SHIP.abaddon], [4, SHIP.rifter])
+
+    expect(withHullMovedTo(comp, 0, 4)).toEqual([
+      { position: 0, typeId: SHIP.rifter, isFlagship: false },
+      { position: 4, typeId: SHIP.abaddon, isFlagship: false },
+    ])
+  })
+
+  it('keeps the list sorted by row however far the hull travels', () => {
+    const comp = placed([0, SHIP.abaddon], [1, SHIP.rifter], [2, SHIP.orthrus])
+
+    expect(withHullMovedTo(comp, 0, 9).map((slot) => slot.position)).toEqual([1, 2, 9])
+    expect(judge(withHullMovedTo(comp, 0, 9)).slots.map((slot) => slot.name)).toEqual([
+      'Rifter',
+      'Orthrus',
+      'Abaddon',
+    ])
+  })
+
+  it('takes the flagship with the hull, which is the opposite of a swap', () => {
+    // `withRow` and `withHullOn` answer "what hull is on this row", so the designation is the
+    // row's. This answers "where is this hull", so it is the hull's and travels.
+    const comp: PlacedSlot[] = [
+      { position: 0, typeId: SHIP.vindicator, isFlagship: true },
+      { position: 3, typeId: SHIP.abaddon, isFlagship: false },
+    ]
+
+    expect(withHullMovedTo(comp, 0, 3)).toEqual([
+      { position: 0, typeId: SHIP.abaddon, isFlagship: false },
+      { position: 3, typeId: SHIP.vindicator, isFlagship: true },
+    ])
+  })
+
+  it('changes nothing when the hull is put back where it already is', () => {
+    const comp = placed([0, SHIP.abaddon], [4, SHIP.rifter])
+
+    expect(withHullMovedTo(comp, 4, 4)).toEqual(comp)
+  })
+
+  it('changes nothing when no hull is on the row it is asked to carry', () => {
+    // A stale view rather than a bug worth throwing over — the same posture the fork route
+    // takes to a row number the comp no longer has.
+    const comp = placed([0, SHIP.abaddon])
+
+    expect(withHullMovedTo(comp, 7, 2)).toEqual(comp)
+  })
+})
+
+describe('firstFreeRow', () => {
+  it('is the lowest row no hull is on, which is not the same as the end', () => {
+    expect(firstFreeRow(placed([0, SHIP.abaddon], [1, SHIP.rifter]))).toBe(2)
+    expect(firstFreeRow(placed([0, SHIP.abaddon], [3, SHIP.rifter]))).toBe(1)
+    expect(firstFreeRow(slots())).toBe(0)
   })
 })
 
@@ -195,7 +392,9 @@ describe('slotsAt — the rows a person picked out', () => {
   it('takes a row once however many times it is named', () => {
     const two = slots(SHIP.abaddon, SHIP.rifter)
 
-    expect(slotsAt(two, [1, 1, 1])).toEqual([{ typeId: SHIP.rifter, isFlagship: false }])
+    expect(slotsAt(two, [1, 1, 1])).toEqual([
+      { position: 1, typeId: SHIP.rifter, isFlagship: false },
+    ])
   })
 
   it('ignores a row that is not there rather than producing a hole', () => {
@@ -205,15 +404,15 @@ describe('slotsAt — the rows a person picked out', () => {
   })
 
   it('carries the flagship designation, because a subset holds at most one', () => {
-    const three: CompSlot[] = [
-      { typeId: SHIP.abaddon, isFlagship: false },
-      { typeId: SHIP.vindicator, isFlagship: true },
-      { typeId: SHIP.rifter, isFlagship: false },
+    const three: PlacedSlot[] = [
+      { position: 0, typeId: SHIP.abaddon, isFlagship: false },
+      { position: 1, typeId: SHIP.vindicator, isFlagship: true },
+      { position: 2, typeId: SHIP.rifter, isFlagship: false },
     ]
 
     expect(slotsAt(three, [1, 2])).toEqual([
-      { typeId: SHIP.vindicator, isFlagship: true },
-      { typeId: SHIP.rifter, isFlagship: false },
+      { position: 1, typeId: SHIP.vindicator, isFlagship: true },
+      { position: 2, typeId: SHIP.rifter, isFlagship: false },
     ])
   })
 })
@@ -229,14 +428,24 @@ describe('withHullsAdded — hulls arriving from another comp', () => {
     ])
   })
 
+  it('fills the gaps of an arranged comp rather than skipping past them', () => {
+    // The same answer the empty row's own search gives. A copy that landed below the gaps would
+    // be the one gesture in the tool that treats an arrangement as something to work around.
+    const arranged = placed([0, SHIP.abaddon], [4, SHIP.orthrus])
+
+    expect(withHullsAdded(arranged, [SHIP.rifter, SHIP.svipul]).map((slot) => slot.position)).toEqual(
+      [0, 1, 2, 4],
+    )
+  })
+
   it('never brings a flagship with it, so two can never meet', () => {
     // The receiving comp may already have one, and the API answers a second with a 409.
     // Taking type ids rather than slots is what makes this true by construction.
-    const flagged: CompSlot[] = [{ typeId: SHIP.vindicator, isFlagship: true }]
+    const flagged: PlacedSlot[] = [{ position: 0, typeId: SHIP.vindicator, isFlagship: true }]
 
     expect(withHullsAdded(flagged, [SHIP.typhoon])).toEqual([
-      { typeId: SHIP.vindicator, isFlagship: true },
-      { typeId: SHIP.typhoon, isFlagship: false },
+      { position: 0, typeId: SHIP.vindicator, isFlagship: true },
+      { position: 1, typeId: SHIP.typhoon, isFlagship: false },
     ])
   })
 
@@ -378,7 +587,7 @@ describe('withFlagship', () => {
 describe('offersFlagship — where the star is worth drawing', () => {
   /** The row the tile would be rendering, which is what the star is attached to. */
   function row(typeId: number, isFlagship = false) {
-    const judged = judge([{ typeId, isFlagship }])
+    const judged = judge([{ position: 0, typeId, isFlagship }])
     const slot = judged.slots[0]
     if (!slot) throw new Error('a one-hull comp has one slot')
     return slot

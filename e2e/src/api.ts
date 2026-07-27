@@ -65,6 +65,13 @@ export interface Board {
   readonly compIds: readonly string[]
 }
 
+/** A comp's share link, as the mint route answers. */
+export interface ShareDetail {
+  readonly slug: string
+  readonly createdAt: string
+  readonly capturedAt: string
+}
+
 /** What the server stores of an arrangement. Only the part a spec reads back. */
 export interface Workspace {
   readonly boards: ReadonlyArray<{
@@ -186,6 +193,25 @@ export class Api {
       }),
     )
     return { id, name, compIds: placed.map((tile) => tile.compId) }
+  }
+
+  /**
+   * Share this comp, and hand back the link.
+   *
+   * Through the API rather than through the tile's footer control, because there is no footer
+   * control at the moment — see `SHARE_ENABLED` in `web/src/comps/CompTileHost.tsx`. The route,
+   * the slug and the public read are all untouched by that, and they are what the share spec is
+   * actually about.
+   *
+   * Answers 201 the first time and 200 for a comp already shared, which is the route saying a
+   * comp has one link rather than a link per request. Both are taken.
+   */
+  async mintShare(compId: string): Promise<ShareDetail> {
+    const response = await this.http.post(`/api/v1/comps/${compId}/share`)
+    if (response.status() !== 201 && response.status() !== 200) {
+      throw new Error(`POST /comps/${compId}/share answered ${response.status()}`)
+    }
+    return (await response.json()) as ShareDetail
   }
 
   /** The arrangement as it was actually saved, for asserting on the database rather than on

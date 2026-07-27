@@ -19,7 +19,16 @@
 // that store rather than in `dataTransfer` — jsdom has no `DataTransfer`, so a design that
 // put it there would ship this untested.
 
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { Profiler } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -27,6 +36,7 @@ import CompTileHost from '../comps/CompTileHost'
 import { resetInFlightWrites } from '../comps/in-flight'
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
 import { resetRulesetCache } from '../rulesets/cache'
+import { writeSetting } from '../settings'
 import BoardGrid from './BoardGrid'
 import { resetCompCards } from './comp-cards'
 import { offerHulls, propose, resetHullTransfers } from './hull-transfer'
@@ -144,9 +154,66 @@ function rowOf(name: string, index: number) {
   return found
 }
 
+/** One unfilled row of a tile, which is a place a hull can be put down as well as typed into. */
+function emptyRowOf(name: string, index: number) {
+  const found = within(tile(name)).getAllByTestId('comp-row-empty')[index]
+  if (!found) throw new Error(`${name} has no empty row ${index}`)
+  return found
+}
+
+/** What is typed into each of a tile's unfilled rows — all of it empty, unless something put
+ *  text there that nobody typed. */
+const searchValues = (name: string) =>
+  within(tile(name))
+    .queryAllByTestId('ship-search-input')
+    .map((field) => (field as HTMLInputElement).value)
+
+/** The comp rows a tile's filled rows sit on, in the order they are drawn. */
+const rowsOf = (name: string) =>
+  within(tile(name))
+    .queryAllByTestId('comp-row')
+    .map((el) => (el as HTMLElement).dataset.row)
+
 /** Pick a hull up out of one tile, the way a person starts a drag. */
 function lift(from: string, row = 0) {
   fireEvent.dragStart(rowOf(from, row))
+}
+
+interface Modifiers {
+  ctrlKey?: boolean
+  metaKey?: boolean
+}
+
+/**
+ * A drag event with the modifier keys actually on it.
+ *
+ * `fireEvent.drop(target, { ctrlKey: true })` does **not** do this, and fails silently. jsdom has
+ * no `DragEvent`, so testing-library falls back to the plain `Event` constructor — which ignores
+ * every init key it does not know, `ctrlKey` among them. The event arrives, the handler runs, and
+ * the modifier is simply absent, which reads as the app ignoring it.
+ *
+ * A real browser has no such gap: `DragEvent` extends `MouseEvent` and carries the keys. So this
+ * puts them back rather than working around anything in the code under test.
+ */
+function fireDrag(kind: 'dragOver' | 'drop', target: Element, init: Record<string, unknown> = {}) {
+  const { ctrlKey, metaKey, ...rest } = init as Modifiers & Record<string, unknown>
+  const event = createEvent[kind](target, rest)
+  if (ctrlKey) Object.defineProperty(event, 'ctrlKey', { value: true })
+  if (metaKey) Object.defineProperty(event, 'metaKey', { value: true })
+  fireEvent(target, event)
+}
+
+/**
+ * What the cursor would say over this row: `move`, `copy`, or nothing when it takes no drop.
+ *
+ * jsdom has no `DataTransfer` either, so one is faked far enough for the handler to write to —
+ * which is the whole of what is under test here. What a *browser* then draws with it is the
+ * browser's business, and `comp-arrange.spec.ts` is where that is checked.
+ */
+function dropEffectOver(target: Element, modifiers: Modifiers = {}) {
+  const dataTransfer = { dropEffect: '', effectAllowed: 'copyMove' }
+  fireDrag('dragOver', target, { dataTransfer, ...modifiers })
+  return dataTransfer.dropEffect
 }
 
 /** The dashed tile at the end of the board — a button, and the one place a port can land. */
@@ -156,6 +223,9 @@ const ghost = () => screen.getByTestId('board-new-comp')
 // debounce, and `waitFor` waits that out without one.
 afterEach(() => {
   cleanup()
+  // One preference decides whether a hull carried between the rows of its own comp moves or is
+  // copied. Vitest isolates per file, not per test.
+  localStorage.clear()
   vi.unstubAllGlobals()
   resetRulesetCache()
   resetCompCards()
@@ -375,6 +445,198 @@ describe('dragging a hull onto a slot', () => {
 
     expect(rowOf('Rho', 0).dataset.landing).toBe('false')
     expect(hulls('Rho')).toEqual(['Rifter'])
+  })
+})
+
+// An empty slot answered no drag at all until now, and the consequence was not "nothing
+// happens": the row is a search field, so the browser answered instead and inserted the text
+// the drag carries — the hull's *name* — into it. The hull then appeared in the results, one
+// click from being added, which reads as a copy that half worked.
+describe('dragging a hull onto an empty slot', () => {
+  it('copies it into the comp it came from, rather than typing its name into the field', async () => {
+    const calls = stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    fireEvent.drop(emptyRowOf('Gamma', 0))
+
+    // A second Scimitar, and the row it came from still holds the first.
+    await waitFor(() => expect(hulls('Gamma')).toEqual(['Scimitar', 'Scimitar', 'Rifter']))
+    // Nothing was typed anywhere: no field holds the hull's name, and no menu is open over a
+    // row that a copy was supposed to have filled.
+    expect(searchValues('Gamma')).toHaveLength(7)
+    expect(searchValues('Gamma').join('')).toBe('')
+    expect(within(tile('Gamma')).queryByTestId('ship-search-results')).toBeNull()
+
+    await waitFor(() => expect(writes(calls)).toHaveLength(1), { timeout: 2000 })
+  })
+
+  it('marks the empty row it would land on, the way a filled one is marked', async () => {
+    stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    fireEvent.dragEnter(emptyRowOf('Gamma', 0))
+
+    expect(emptyRowOf('Gamma', 0).dataset.landing).toBe('true')
+    expect(emptyRowOf('Gamma', 1).dataset.landing).toBe('false')
+  })
+
+  it('takes a whole selection, because an empty slot is the end of the comp', async () => {
+    // The one place the "a slot holds one hull" rule does not apply: there is no hull here to
+    // replace, so several arriving is an append and means exactly what it says.
+    stubFetch()
+    grid(['g', 'b'])
+    await settled(['Gamma', 'Beta'])
+
+    fireEvent.click(rowOf('Gamma', 0))
+    fireEvent.click(rowOf('Gamma', 1), { ctrlKey: true })
+    lift('Gamma')
+    fireEvent.drop(emptyRowOf('Beta', 0))
+
+    await waitFor(() =>
+      expect(hulls('Beta')).toEqual(['Abaddon', 'Abaddon', 'Scimitar', 'Rifter']),
+    )
+  })
+
+  it('offers nothing to a comp this person can only read, which has no field either', async () => {
+    stubFetch()
+    grid(['a', 'r'])
+    await settled(['Alpha', 'Rho'])
+
+    lift('Alpha')
+    fireEvent.dragEnter(emptyRowOf('Rho', 0))
+    fireEvent.drop(emptyRowOf('Rho', 0))
+
+    expect(emptyRowOf('Rho', 0).dataset.landing).toBe('false')
+    expect(hulls('Rho')).toEqual(['Rifter'])
+  })
+})
+
+// Once a person arranges a comp, where a hull sits is theirs — so carrying one to another row
+// of the same comp is a rearrangement rather than a second hull. That is only true where rows
+// are drawn where they are stored: under a weight sort the same drag would redraw the tile
+// identically, so it keeps meaning what it always did.
+describe('carrying a hull between the rows of its own comp', () => {
+  const unsorted = () => writeSetting('sortRowsByWeight', false)
+
+  it('moves it onto an empty row, leaving the row it came off empty', async () => {
+    unsorted()
+    const calls = stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    // Unsorted, Gamma reads Rifter (row 0) then Scimitar (row 1).
+    lift('Gamma', 0)
+    fireEvent.drop(emptyRowOf('Gamma', 2))
+
+    // Still two hulls — one of them somewhere else. A duplicate would make three.
+    await waitFor(() => expect(hulls('Gamma')).toEqual(['Scimitar', 'Rifter']))
+    expect(rowsOf('Gamma')).toEqual(['1', '4'])
+
+    await waitFor(() => expect(writes(calls)).toHaveLength(1), { timeout: 2000 })
+    expect(JSON.parse(String(writes(calls)[0]?.init.body)).slots).toEqual([
+      { position: 1, typeId: SHIP.scimitar, isFlagship: false },
+      { position: 4, typeId: SHIP.rifter, isFlagship: false },
+    ])
+  })
+
+  it('trades places with the hull already on the row, rather than eating it', async () => {
+    unsorted()
+    stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    fireEvent.drop(rowOf('Gamma', 1))
+
+    await waitFor(() => expect(rowsOf('Gamma')).toEqual(['0', '1']))
+    // The comp holds exactly what it held, the other way round.
+    expect(hulls('Gamma')).toEqual(['Scimitar', 'Rifter'])
+  })
+
+  it('copies instead when the modifier is held, which is the old gesture back', async () => {
+    unsorted()
+    stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    fireDrag('drop', emptyRowOf('Gamma', 2), { ctrlKey: true })
+
+    // Unsorted, so the rows read in stored order: the Rifter stays on row 0 and a second one
+    // lands on row 4, below the Scimitar it was carried past.
+    await waitFor(() => expect(hulls('Gamma')).toHaveLength(3))
+    expect(hulls('Gamma')).toEqual(['Rifter', 'Scimitar', 'Rifter'])
+    expect(rowsOf('Gamma')).toEqual(['0', '1', '4'])
+  })
+
+  it('honours command as well as control, so a Mac needs no separate gesture', async () => {
+    unsorted()
+    stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    fireDrag('drop', emptyRowOf('Gamma', 2), { metaKey: true })
+
+    await waitFor(() => expect(hulls('Gamma')).toHaveLength(3))
+  })
+
+  it('stays a copy while the rows are sorted, where a move would show as nothing at all', async () => {
+    // Sorted, a comp's rows are the engine's business. Carrying a hull from row 0 to row 4 would
+    // redraw the tile identically and read as the hull having vanished and come back.
+    stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    fireEvent.drop(emptyRowOf('Gamma', 0))
+
+    await waitFor(() => expect(hulls('Gamma')).toHaveLength(3))
+    expect(hulls('Gamma')).toEqual(['Scimitar', 'Scimitar', 'Rifter'])
+  })
+
+  it('says which of the two it is through the cursor', async () => {
+    unsorted()
+    stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    lift('Gamma', 0)
+    expect(dropEffectOver(emptyRowOf('Gamma', 2))).toBe('move')
+    expect(dropEffectOver(emptyRowOf('Gamma', 2), { ctrlKey: true })).toBe('copy')
+  })
+
+  it('stays a copy for a hull out of another comp, whatever is held', async () => {
+    // There is nothing to move: the hull cannot leave the comp it is in.
+    unsorted()
+    stubFetch()
+    grid(['a', 'b'])
+    await settled(['Alpha', 'Beta'])
+
+    lift('Alpha')
+    fireEvent.drop(rowOf('Beta', 1))
+
+    await waitFor(() => expect(hulls('Beta')).toEqual(['Abaddon', 'Abaddon']))
+    expect(hulls('Alpha')).toEqual(['Abaddon'])
+  })
+
+  it('stays a copy when several rows are carried at once', async () => {
+    // A row holds one hull, so pointing at one cannot say where the others were meant to go.
+    unsorted()
+    stubFetch()
+    grid(['g'])
+    await settled(['Gamma'])
+
+    fireEvent.click(rowOf('Gamma', 0))
+    fireEvent.click(rowOf('Gamma', 1), { ctrlKey: true })
+    lift('Gamma')
+    fireEvent.drop(emptyRowOf('Gamma', 2))
+
+    await waitFor(() => expect(hulls('Gamma')).toHaveLength(4))
   })
 })
 

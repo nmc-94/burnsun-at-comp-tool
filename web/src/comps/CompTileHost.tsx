@@ -14,13 +14,13 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { MouseEvent as PointerPress } from 'react'
 
-import type { CompSlot } from '../engine'
 import CommentThread from './CommentThread'
 import SharePanel from './SharePanel'
 import CompTile from './CompTile'
-import type { RowDrop } from './CompTile'
+import type { Landing, RowDrop } from './CompTile'
 import { EMPTY_VOCABULARY } from './tag-model'
 import type { TagVocabulary } from './tag-model'
+import { useSetting } from '../settings'
 import { publishCard } from '../workspace/comp-cards'
 import {
   forgetCopiedFrom,
@@ -35,7 +35,8 @@ import {
 } from '../workspace/hull-transfer'
 import type { CarriedRows } from '../workspace/hull-transfer'
 import type { Place } from '../workspace/types'
-import { slotsAt, withHullsAdded, withRow } from './tile-model'
+import { slotsAt, withHullMovedTo, withHullOn, withHullsAdded } from './tile-model'
+import type { PlacedSlot } from './tile-model'
 import type { CompDetail } from './types'
 import { registerUndoTarget } from './undo-keys'
 import { useCompDocument } from './useCompDocument'
@@ -78,6 +79,20 @@ const ANSWERS_A_PRESS = 'a[href], button, input, textarea, select, [contentedita
  * of twenty tiles least needs, and comments are the part of it nobody has asked for yet.
  */
 const COMMENTS_ENABLED = false
+
+/**
+ * Whether a tile offers a way to mint or copy a share link.
+ *
+ * Off for now, and off the same way and for the same reason as the thread above: `SharePanel`,
+ * the `/api/v1/comps/{id}/share` routes, the slug lexicon, `share.spec.ts` and the `shareSlug`
+ * and `shareStale` fields on the payload are all untouched, so this line is the whole of what
+ * turning it back on takes. The footer is the scarcest strip on a board of twenty tiles, and
+ * sharing is the one thing in it nobody is reaching for yet.
+ *
+ * Note this is the *control*, not the sharing. A link already minted goes on working — the
+ * `/s/{slug}` route and its read-only view are a different screen and know nothing about this.
+ */
+const SHARE_ENABLED = false
 
 interface Props {
   readonly compId: string
@@ -154,6 +169,11 @@ export default function CompTileHost({
   // that opened the panel rather than only the panel.
   const [threadCount, setThreadCount] = useState<number | null>(null)
 
+  // Read here as well as in the tile, and about a different thing: the tile asks it how to draw
+  // its rows, and this asks it whether a hull carried between them means anything. Threading one
+  // answer through would tie the two together, and they are only the same question by accident.
+  const sorted = useSetting('sortRowsByWeight')
+
   // Subscribed for this comp and no other, the way the rail's leaf is. A store every tile
   // listened to would be board state under another name, and one copy would re-render twenty
   // tiles instead of one.
@@ -186,13 +206,28 @@ export default function CompTileHost({
     // affordance. A viewer's tile is no more a destination than it is a drop target, and
     // neither route can reach one — this is the belt to that pair of braces.
     if (!editable) return
-    const landing = taken.atIndex
+    const landing = taken.atRow
     const arriving = taken.offer.typeIds
-    // A row named, or the end of the comp. `withRow` reads a null type id as "empty this row",
-    // so an offer that somehow carried no hulls must not reach it — an empty landing is
-    // nothing happening, never a slot being cleared.
-    if (landing === null) change(withHullsAdded(slots, arriving))
-    else if (arriving[0] !== undefined) change(withRow(slots, landing, arriving[0]))
+    // A move first, because it is the one case that is not an arrival at all: the comp already
+    // holds this hull and what changed is where it sits. Nothing is added and nothing is
+    // dropped, so the two branches below — which both build a comp with one more hull in it than
+    // it had — would both be wrong.
+    if (taken.moveFrom !== null && landing !== null) {
+      change(withHullMovedTo(slots, taken.moveFrom, landing))
+      return
+    }
+    // One hull on a named row, or however many arrived onto whatever rows are free. `withHullOn`
+    // answers "that hull, that row" for a filled row and an empty one alike, which is what lets
+    // a landing be one number rather than a discriminated pair.
+    //
+    // Several at once never name a row, whatever they were let go of over: a row holds one hull,
+    // so pointing at one cannot say where the other three go. They fill the comp's free rows from
+    // the top, which is the same answer the tile-wide drop gives.
+    //
+    // An offer carrying no hulls does nothing rather than emptying the row it named: a copy that
+    // somehow lost its cargo is not a request to clear a slot.
+    if (landing === null || arriving.length > 1) change(withHullsAdded(slots, arriving))
+    else if (arriving[0] !== undefined) change(withHullOn(slots, landing, arriving[0]))
   }, [compId, comp, editable, transfer, slots, change])
 
   /**
@@ -209,26 +244,31 @@ export default function CompTileHost({
    * Nothing is judged here at all now — a `dragenter` no longer runs the engine over a comp it
    * is only passing over.
    */
-  const receiving = transfer?.phase === 'proposed' && transfer.atIndex === null
+  const receiving = transfer?.phase === 'proposed' && transfer.atRow === null
 
   const name = comp?.name ?? 'Loading comp'
 
   /**
    * What leaves this tile — under a cursor, or on the clipboard.
    *
-   * Row numbers arrive from the tile and the two things a landing might want are built here,
-   * because this is where the comp's slots live. `settle` is this cell's own flush, handed
-   * over rather than called: a copy does not need it, a port does, and only the landing knows
-   * which of the two is happening.
+   * The tile hands over **slot indexes**, which is what its row selection is counted in and what
+   * the engine blames. The two things a landing might want are built here, because this is where
+   * the comp's slots live — and one of them is a translation: a port is a fork, the server takes
+   * the rows out of its own copy by *row number*, and on an arranged comp the two numbers are no
+   * longer the same. Getting that wrong would fork the wrong hulls and say nothing about it.
+   *
+   * `settle` is this cell's own flush, handed over rather than called: a copy does not need it,
+   * a port does, and only the landing knows which of the two is happening.
    */
-  function lift(positions: number[]): CarriedRows {
+  function lift(indexes: number[]): CarriedRows {
+    const taken = slotsAt(slots, indexes)
     return {
       offer: {
         fromCompId: compId,
         fromName: name,
-        typeIds: slotsAt(slots, positions).map((row) => row.typeId),
+        typeIds: taken.map((slot) => slot.typeId),
       },
-      positions,
+      positions: taken.map((slot) => slot.position),
       settle: flush,
     }
   }
@@ -241,7 +281,7 @@ export default function CompTileHost({
    * nothing about it. The tile drops its own row selection on the same event and for the same
    * reason; this is that rule following the rows out of the tile.
    */
-  function edit(next: CompSlot[]) {
+  function edit(next: PlacedSlot[]) {
     forgetCopiedFrom(compId)
     change(next)
   }
@@ -280,7 +320,7 @@ export default function CompTileHost({
   }
 
   /**
-   * Whether a drag now over row `index` is one that row can take.
+   * Whether a drag now over row `row` is one that row can take.
    *
    * Note what this deliberately does *not* refuse: a drag out of this same comp. The tile-wide
    * drop above refuses one, because appending your own hulls to yourself by letting go anywhere
@@ -288,17 +328,55 @@ export default function CompTileHost({
    * it derives rather than moves — the row it came from keeps its hull, the same bargain every
    * other landing in this file makes.
    *
-   * One hull only. A slot holds one, and a multi-hull drag is the tile's append, which lands on
-   * the end wherever it was let go of.
+   * An **empty** row is a different bargain and takes the other half of the note above. There is
+   * no hull on it to replace, so any number of hulls can land there, out of this comp or another,
+   * and they fill it and whatever else is free. That is the case this used to leave to nobody: no
+   * row answered the drag, no tile-wide handler answered a drag out of the same comp, and so the
+   * browser answered it instead, dropping the hull's *name* as text into the search field sitting
+   * in that row.
+   *
+   * A filled row takes one hull only, because it holds one. A multi-hull drag onto one is the
+   * tile's own landing, which fills free rows wherever it was let go of.
    */
-  function landableOn(index: number): CarriedRows | null {
+  function landableOn(row: number): CarriedRows | null {
     if (!editable) return null
     const dragging = getDragged()
-    if (!dragging || dragging.offer.typeIds.length !== 1) return null
+    if (!dragging || dragging.offer.typeIds.length === 0) return null
+    if (!slots.some((slot) => slot.position === row)) return dragging
+    if (dragging.offer.typeIds.length !== 1) return null
     // Back where it started is not an edit, and `change` is not free: it arms the save
     // debounce, drops the tile's row selection and stales anything copied out of this comp.
-    if (dragging.offer.fromCompId === compId && dragging.positions.includes(index)) return null
+    // `positions` are the source comp's rows, which is the same numbering this is.
+    if (dragging.offer.fromCompId === compId && dragging.positions.includes(row)) return null
     return dragging
+  }
+
+  /**
+   * Whether a hull let go of on row `row` is being carried there or copied there.
+   *
+   * **A hull dragged between the rows of its own comp is a move**, and only there. Everything
+   * else on a board is a copy by nature: a hull from another comp cannot leave the comp it is
+   * in, and a port derives rather than takes.
+   *
+   * Two things narrow it further, and both are the same point from different sides — a move is
+   * only meaningful when *where a hull sits* is something a person chose.
+   *
+   * **Only while the rows are drawn unsorted.** Under a weight sort a comp's rows are the
+   * engine's business, not anybody's: carrying a hull from row 1 to row 5 would redraw the tile
+   * identically and read as the hull having vanished and come back. So a drag there keeps what
+   * it always meant — put this hull on that row, instead of the one there.
+   *
+   * **Unless the copy modifier is held**, which is how a person says they meant the old thing.
+   * Duplicating a hull is otherwise a double-click now; this is the same act aimed at a row.
+   *
+   * A move is one hull by definition. Several rows dragged at once are a copy whatever is held:
+   * a row holds one hull, so pointing at one cannot say where the others were meant to go.
+   */
+  function landingFor(copying: boolean): Landing {
+    const dragging = getDragged()
+    const ownHull = dragging?.offer.fromCompId === compId
+    const single = dragging?.offer.typeIds.length === 1
+    return ownHull && single && !sorted && !copying ? 'move' : 'copy'
   }
 
   /**
@@ -309,18 +387,25 @@ export default function CompTileHost({
    * this cell anyway — a memo here would be bookkeeping for nothing.
    */
   const rowDrop: RowDrop = {
-    landing: transfer?.phase === 'proposed' ? transfer.atIndex : null,
-    over(index) {
-      const dragging = landableOn(index)
-      if (!dragging) return false
-      propose(compId, dragging.offer, index)
-      return true
+    landing: transfer?.phase === 'proposed' ? transfer.atRow : null,
+    over(row, copying) {
+      const dragging = landableOn(row)
+      if (!dragging) return null
+      const landing = landingFor(copying)
+      propose(compId, dragging.offer, row, movedFrom(dragging, landing))
+      return landing
     },
-    drop(index) {
-      const dragging = landableOn(index)
+    drop(row, copying) {
+      const dragging = landableOn(row)
       if (!dragging) return
-      offerHulls(compId, dragging.offer, index)
+      const landing = landingFor(copying)
+      offerHulls(compId, dragging.offer, row, movedFrom(dragging, landing))
     },
+  }
+
+  /** The row a move is vacating — the drag's single row. Null for a copy, which vacates none. */
+  function movedFrom(dragging: CarriedRows, landing: Landing): number | null {
+    return landing === 'move' ? (dragging.positions[0] ?? null) : null
   }
 
   /**
@@ -533,7 +618,7 @@ export default function CompTileHost({
             // no more than they already hold; an editor always sees it, because they are the
             // one who decides whether there is a link at all.
             onToggleShare={
-              editable || comp.shareSlug !== null
+              SHARE_ENABLED && (editable || comp.shareSlug !== null)
                 ? // Flushed for the same reason a port is: minting captures the comp on the
                   // *server*, so a share taken inside the debounce would freeze the comp as it
                   // was before the last keystroke.

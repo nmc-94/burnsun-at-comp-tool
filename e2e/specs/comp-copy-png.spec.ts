@@ -164,7 +164,10 @@ test('the tile’s own controls are not in the picture it takes', async ({ page,
     // Out of the picture: everything that is an offer to change the comp.
     copy: true,
     fork: true,
-    share: true,
+    // Not in the footer at all for now — `SHARE_ENABLED` in CompTileHost. Asserted as absent
+    // rather than deleted from this list, so turning it back on without the capture flag fails
+    // here instead of quietly putting a control in every picture of a comp.
+    share: 'absent',
     remove: true,
     tagsPlaceholder: true,
     rowSearch: true,

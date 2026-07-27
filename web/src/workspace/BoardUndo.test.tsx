@@ -184,8 +184,10 @@ describe('taking back a removed hull', () => {
     pressUndo()
 
     await waitFor(() => expect(writes(calls)).toHaveLength(2), { timeout: 2000 })
+    // On the row it was taken off, which is the point of an undo: the comp comes back as it
+    // was, not as a comp with the same hulls in it.
     expect(JSON.parse(String(writes(calls)[1]?.init.body)).slots).toEqual([
-      { typeId: SHIP.abaddon, isFlagship: false },
+      { position: 0, typeId: SHIP.abaddon, isFlagship: false },
     ])
   })
 

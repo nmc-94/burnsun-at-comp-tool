@@ -83,21 +83,26 @@ test('ctrl-z reaches the comp with the cursor still in the hull search', async (
   const tile = tileFor(page, comp.id)
   await expect(tile).toBeVisible()
 
-  // A row further down the scaffold, addressed by its own row number rather than by position
-  // among the empty ones — which shifts as the comp fills. Picking from here is what leaves the
-  // field mounted and focused: `withRow` appends, so the hull lands in the *first* free slot and
-  // this row is still empty afterwards.
-  const search = tile
+  // Typed into a row further down the scaffold, addressed by its own row number rather than by
+  // position among the empty ones — which shifts as the comp fills. Where the hull lands is not
+  // that row: `withRow` appends, so it goes in the *first* free slot.
+  const typedIn = tile
     .locator('[data-testid="comp-row-empty"][data-row="3"]')
     .getByTestId('ship-search-input')
-  await search.fill('Abaddon')
-  await tile.getByTestId('ship-search-results').getByRole('button', { name: /^Abaddon/ }).click()
+  await typedIn.fill('Abaddon')
+  await tile.getByTestId('ship-search-results').getByRole('option', { name: /^Abaddon/ }).click()
   await expect(tile.getByTestId('comp-row')).toHaveCount(1)
 
-  // The premise, stated rather than assumed: the pick deliberately keeps the cursor here, and
-  // empties the query on its way out.
+  // The premise, stated rather than assumed: a pick leaves the cursor in a hull search that has
+  // just been emptied — which is what makes Ctrl+Z ambiguous and this test worth having. Which
+  // search is the hand-off's business, not this test's: the cursor goes to the first empty row
+  // of the comp that resulted, so that the next hull can simply be typed.
+  const search = tile
+    .locator('[data-testid="comp-row-empty"][data-row="1"]')
+    .getByTestId('ship-search-input')
   await expect(search).toBeFocused()
   await expect(search).toHaveValue('')
+  await expect(typedIn).toHaveValue('')
 
   await page.keyboard.press('ControlOrMeta+KeyZ')
 

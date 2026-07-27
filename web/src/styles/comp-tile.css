@@ -548,6 +548,12 @@
   color: inherit;
   text-align: left;
   font: inherit;
+  /* A row is a control, not a paragraph. Double-clicking one duplicates its hull, and without
+     this every duplicate would leave the hull's name highlighted behind the new row — a browser
+     selecting a word because that is what a double-click does to text. Nothing on a row is
+     ordinary selectable text, so this takes nothing away; the comp's name is an input and the
+     band above is outside the list. */
+  user-select: none;
 }
 .trow:hover {
   background: var(--bg-soft);
@@ -815,10 +821,17 @@
   text-align: left;
   cursor: pointer;
 }
+/* One highlight, three ways of arriving at it. The arrows set `data-active`, the pointer sets
+   it too on the way past (see `onMouseEnter`), so :hover is only ever the same row — and the
+   accent edge is what says "Enter takes this one" rather than "the cursor is here". */
 .rowsearch-option:hover,
-.rowsearch-option:focus-visible {
+.rowsearch-option:focus-visible,
+.rowsearch-option[data-active="true"] {
   background: var(--bg-soft);
   outline: none;
+}
+.rowsearch-option[data-active="true"] {
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .rowsearch-option-ic {
   display: inline-flex;

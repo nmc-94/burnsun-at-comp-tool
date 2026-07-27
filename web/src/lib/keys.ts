@@ -35,6 +35,24 @@ export function isRedo(event: KeyboardEvent): boolean {
 }
 
 /**
+ * Whether a drag is asking to copy rather than to move.
+ *
+ * Held here beside the chords for the same reason they are: it is the same "control or command,
+ * always both" convention, and a second spelling of it somewhere else is the one that would
+ * eventually be corrected alone.
+ *
+ * Only one gesture reads it — a hull carried between the rows of its own comp, which moves by
+ * default once a person's arrangement is a thing worth preserving. Everywhere else a drag is
+ * already a copy and there is nothing for a modifier to change.
+ *
+ * Takes the event's own flags rather than a `KeyboardEvent`, because a drag has no keystroke:
+ * what matters is what was held down at the moment the hull was let go of.
+ */
+export function isCopyDrag(event: { ctrlKey: boolean; metaKey: boolean }): boolean {
+  return event.ctrlKey || event.metaKey
+}
+
+/**
  * Whether a keystroke belongs to something being typed in rather than to the board.
  *
  * Somebody with a caret in a field means the text in it, whatever is picked out behind them —

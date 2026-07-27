@@ -91,11 +91,20 @@ test('the row it would land on says so while the cursor is over it', async ({
   // and it carries the name of the one it would replace.
   await expect(onto).not.toHaveClass(/board-tile-receiving/)
 
-  // Stepping off the row onto the tile's own space hands the affordance back to the comp —
-  // which is what an empty slot does too, since a hull let go of on one lands on the end.
+  // An empty slot is a row like any other now, and marks itself the same way. It means
+  // something different — a hull let go of there is appended rather than swapped in, because
+  // there is nothing in it to replace — but where the hull is going is still one row's claim
+  // and not the whole card's.
   await onto.getByTestId('comp-row-empty').first().dispatchEvent('dragenter', { bubbles: true })
-  await expect(onto).toHaveClass(/board-tile-receiving/)
+  await expect(onto.getByTestId('comp-row-empty').first()).toHaveAttribute('data-landing', 'true')
   await expect(onto.getByTestId('comp-row').nth(1)).toHaveAttribute('data-landing', 'false')
+  await expect(onto).not.toHaveClass(/board-tile-receiving/)
+
+  // Stepping off the rows onto the tile's own space is what hands the affordance back to the
+  // comp: the hull goes on the end, which is the comp's business rather than any one row's.
+  await onto.getByTestId('comp-header').dispatchEvent('dragenter', { bubbles: true })
+  await expect(onto).toHaveClass(/board-tile-receiving/)
+  await expect(onto.getByTestId('comp-row-empty').first()).toHaveAttribute('data-landing', 'false')
 })
 
 test('a hull moved between slots of one comp lands, which a drop on the tile would not', async ({
@@ -121,6 +130,42 @@ test('a hull moved between slots of one comp lands, which a drop on the tile wou
   // Two Abaddons now, which cost the same as each other and more than the Scimitar — so the
   // pair sorts to the top however the slots are stored underneath.
   await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Abaddon', 'Scimitar'])
+
+  await expectCompSaved(tile)
+  expect((await api.getComp(comp.id)).slots.map((slot) => slot.typeId)).toEqual([
+    ABADDON,
+    SCIMITAR,
+    ABADDON,
+  ])
+})
+
+test('a hull dragged onto an empty slot of its own comp is copied, not typed', async ({
+  page,
+  api,
+  team,
+}) => {
+  // The bug this closes was invisible to every component test, because what answered the drag
+  // was the *browser*: no row handler claimed an empty slot and the tile-wide one refuses a
+  // drag out of the same comp, so the default action ran — and the default action of dropping
+  // on a text field is to insert the text the drag carries, which here is the hull's name. The
+  // row then showed that name typed into its search, with the hull sitting in the results one
+  // click from being added. It looked like a copy that had half worked.
+  const slug = await api.publishedRulesetSlug()
+  const comp = await api.createComp(team.id, 'Armor Brawl', slug)
+  await api.setSlots(comp.id, [ABADDON, SCIMITAR])
+  const board = await api.openBoard(team.id, [comp.id])
+
+  await page.goto(`/teams/${team.id}/boards/${board.id}`)
+  const tile = tileFor(page, comp.id)
+  await expect(tile.getByTestId('comp-row')).toHaveCount(2)
+
+  await tile.getByTestId('comp-row').nth(0).dragTo(tile.getByTestId('comp-row-empty').first())
+
+  // A third hull, and the row it came from still holds the first.
+  await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Abaddon', 'Scimitar'])
+  // Nothing was typed into anything, and no menu is open over a row a copy was meant to fill.
+  await expect(tile.getByTestId('ship-search-input').first()).toHaveValue('')
+  await expect(tile.getByTestId('ship-search-results')).toHaveCount(0)
 
   await expectCompSaved(tile)
   expect((await api.getComp(comp.id)).slots.map((slot) => slot.typeId)).toEqual([

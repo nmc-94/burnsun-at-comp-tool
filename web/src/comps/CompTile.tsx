@@ -7,9 +7,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { CompSlot, LegalityResult, Ruleset } from '../engine'
+import type { LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
-import { inTextField, isCopy } from '../lib/keys'
+import { inTextField, isCopy, isCopyDrag } from '../lib/keys'
+import { useSetting } from '../settings'
 import CopyImageButton from './CopyImageButton'
 import ShipSearch, { SearchGlyph } from './ShipSearch'
 import TagBar from './TagBar'
@@ -18,14 +19,17 @@ import type { TagVocabulary } from './tag-model'
 import {
   deltaPill,
   EMPTY_SELECTION,
+  firstFreeRow,
   offersFlagship,
   rowsBlamedBy,
   scaffold,
   selectRow,
   withFlagship,
+  withHullOn,
+  withHullsAdded,
   withRow,
 } from './tile-model'
-import type { RowSelection } from './tile-model'
+import type { PlacedSlot, RowSelection } from './tile-model'
 import ViolationsPopover from './ViolationsPopover'
 
 /**
@@ -36,24 +40,40 @@ import ViolationsPopover from './ViolationsPopover'
 export type SaveState = 'idle' | 'pending' | 'saving' | 'error'
 
 /**
- * A hull let go of over one of these rows, which replaces the one in it.
+ * What letting go here would do: carry the hull to this row, or put a copy of it here.
+ *
+ * The tile draws the difference and nothing more — the cursor, through `dropEffect`. Which of
+ * the two a given drag is remains the cell's to decide.
+ */
+export type Landing = 'move' | 'copy'
+
+/**
+ * A hull let go of over one of these rows, which fills it, replaces the one in it, or trades
+ * places with it.
  *
  * The tile knows nothing about where a hull comes from — whether there is one under the cursor
  * at all, and whether this row would take it, are the cell's to answer, the same way `onDragRows`
  * leaves where the rows *go* to the cell. All this component contributes is which row the
- * pointer is over.
+ * pointer is over and whether the copy modifier was held over it.
+ *
+ * **Comp rows, not array indexes.** A drop names somewhere on the scaffold, and half the places
+ * it can name are empty rows, which have no hull and so no index in the slot list to be. A row
+ * number covers both, and the cell resolves it — see `withHullOn`.
  */
 export interface RowDrop {
   /** The row a drag would land on, so it can be drawn as the one. Null when none would. */
   readonly landing: number | null
-  /** A drag is over row `index`. True when the row will take it. */
-  readonly over: (index: number) => boolean
-  readonly drop: (index: number) => void
+  /**
+   * A drag is over row `row`, with or without the copy modifier held. Answers what letting go
+   * would do, or null when this row will not take it.
+   */
+  readonly over: (row: number, copying: boolean) => Landing | null
+  readonly drop: (row: number, copying: boolean) => void
 }
 
 interface Props {
   name: string
-  slots: readonly CompSlot[]
+  slots: readonly PlacedSlot[]
   ruleset: Ruleset
   result: LegalityResult
   createdByName: string | null
@@ -66,7 +86,7 @@ interface Props {
   /** False for a viewer, who sees the same tile without any way to change it. */
   editable: boolean
   saveState: SaveState
-  onChange: (slots: CompSlot[]) => void
+  onChange: (slots: PlacedSlot[]) => void
   onRename: (name: string) => void
   /** Put the cursor in the name. Set only for a comp that was just created, so naming it is
    *  the next thing rather than a second click. */
@@ -148,6 +168,8 @@ export default function CompTile({
   shareStale,
 }: Props) {
   const [openRow, setOpenRow] = useState<number | null>(null)
+  // The empty row whose search should take the cursor, set by the pick before it. See `pick`.
+  const [focusEmpty, setFocusEmpty] = useState<number | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [highlighted, setHighlighted] = useState<readonly number[]>([])
   // Rows, not comps: this is a gesture inside one tile and it belongs nowhere near the URL.
@@ -218,12 +240,20 @@ export default function CompTile({
     }
   }, [picking, openRow, selectedRows, onCopyRows])
 
-  const rows = useMemo(() => scaffold(result, ruleset.fieldSize), [result, ruleset.fieldSize])
+  // Read here rather than passed in, the way the theme is: how a tile orders its own rows is a
+  // fact about how it draws itself, and threading it down from the board would put a prop about
+  // one person's browser through every component between the two.
+  const sorted = useSetting('sortRowsByWeight')
+  const stored = useMemo(() => slots.map((slot) => slot.position), [slots])
+  const rows = useMemo(
+    () => scaffold(result, ruleset.fieldSize, { rows: stored, sorted }),
+    [result, ruleset.fieldSize, stored, sorted],
+  )
 
-  /** The filled rows' stored indexes, in the order they are drawn — what a shift-click range
+  /** The filled rows' slot indexes, in the order they are drawn — what a shift-click range
    *  counts along, now that drawn order and stored order are two different things. */
   const drawnOrder = useMemo(
-    () => rows.filter((row) => row.kind === 'ship').map((row) => row.index),
+    () => rows.flatMap((row) => (row.kind === 'ship' ? [row.at] : [])),
     [rows],
   )
   const blamed = useMemo(() => rowsBlamedBy(result.violations), [result.violations])
@@ -231,14 +261,90 @@ export default function CompTile({
   const highlightedRows = new Set(highlighted)
   const picked = new Set(selectedRows.rows)
 
-  function pick(index: number, typeId: number) {
-    onChange(withRow(slots, index, typeId))
+  /**
+   * A hull chosen from a row's search, landing on row `row`.
+   *
+   * `fromEmpty` is what turns a pick into the next pick. Building a comp is nine of these in a
+   * row, and the field that was typed in is about to stop being an empty row — so unless the
+   * cursor is handed on, every hull after the first costs a click to get back to a field. Where
+   * it goes is the first row of the comp that is *still* empty afterwards, which on an arranged
+   * comp is the next gap and not the next line down.
+   *
+   * Null when nothing is left to hand it to — a comp filled to the field size — and null for a
+   * swap, which is one deliberate edit to a row that already has a hull in it rather than a step
+   * in a sequence.
+   */
+  function pick(row: number, typeId: number, fromEmpty: boolean) {
+    const next = withHullOn(slots, row, typeId)
+    onChange(next)
     setOpenRow(null)
+    const free = firstFreeRow(next)
+    setFocusEmpty(fromEmpty && free < ruleset.fieldSize ? free : null)
   }
 
   /** A drag of a row inside the selection takes the whole selection with it. */
-  function dragging(index: number): number[] {
-    return picked.has(index) ? [...selectedRows.rows] : [index]
+  function dragging(at: number): number[] {
+    return picked.has(at) ? [...selectedRows.rows] : [at]
+  }
+
+  /**
+   * The three handlers that make a row somewhere a hull can be put down.
+   *
+   * One set, used by both kinds of row. A filled row takes a hull *instead of* the one in it and
+   * an empty row takes it as the comp's next hull, but which of the two is happening is the
+   * cell's to work out from the index — all this contributes is that the pointer is over this
+   * row, which is the same contribution either way.
+   *
+   * All three stop the event as well as cancelling it: the tile around this list answers a drag
+   * too, and its `dragenter` would overwrite the offer this row has just made with one that names
+   * no row at all.
+   *
+   * `over` is asked again on every event rather than remembered, because it is the store's own
+   * dedupe that keeps a `dragover` firing several times a second from being several re-renders.
+   */
+  function landingHandlers(row: number) {
+    const claim = (event: React.DragEvent) => {
+      const landing = rowDrop?.over(row, isCopyDrag(event))
+      if (!landing) return false
+      event.preventDefault()
+      event.stopPropagation()
+      // The cursor says which of the two this is, which is the only way to read it before
+      // letting go. It has to be one of the effects the drag was started with, or the browser
+      // resets it to `none` and cancels the drop outright — hence `copyMove` on the row's
+      // `dragstart` below rather than the plain `copy` it used to carry.
+      if (event.dataTransfer) event.dataTransfer.dropEffect = landing
+      return true
+    }
+    return {
+      onDragEnter: claim,
+      // preventDefault is the whole of what makes this a drop target, and dragover fires
+      // continuously — so nothing else may happen in here. The modifier *is* read on every one
+      // of them, deliberately: it can be pressed or released part-way through a drag, and the
+      // cursor has to follow it.
+      onDragOver: claim,
+      onDrop: (event: React.DragEvent) => {
+        if (claim(event)) rowDrop?.drop(row, isCopyDrag(event))
+      },
+    }
+  }
+
+  /**
+   * A second hull of the same kind, on the next free row.
+   *
+   * The gesture that took over from dragging a hull onto a spare row of its own comp, which
+   * means *move* now that where a hull sits is something a person chooses. Duplicating was worth
+   * keeping — three of the same cruiser is an ordinary comp — so it moved to the one gesture on
+   * a row that meant nothing before.
+   *
+   * The next free row, never the row under the cursor: a double-click says "another of these",
+   * not "another of these *here*", and there is nowhere on the row it could mean.
+   *
+   * `withHullsAdded` takes type ids rather than the slot, which is what makes the copy arrive as
+   * a plain hull — a comp holds at most one flagship, and the database says so.
+   */
+  function duplicateRow(event: React.MouseEvent, typeId: number) {
+    if (answersItsOwnPress(event)) return
+    onChange(withHullsAdded(slots, [typeId]))
   }
 
   /**
@@ -249,14 +355,9 @@ export default function CompTile({
    * back to drawing hulls. Both modifiers are honoured everywhere rather than one being chosen
    * from the user agent: neither key means anything else on a row, so taking both costs
    * nothing and guessing the platform wrong would cost the gesture.
-   *
-   * A click that landed on a control inside the row is that control's, not the row's — the
-   * name swaps the hull, the star designates a flagship, the × empties the slot, and the row's
-   * own select box is how a keyboard reaches this. Each says what it does, and none says this.
    */
   function pickRow(event: React.MouseEvent, index: number) {
-    const target = event.target
-    if (target instanceof Element && target.closest('button, a, input, select, textarea')) return
+    if (answersItsOwnPress(event)) return
     setSelectedRows((current) =>
       selectRow(current, index, {
         range: event.shiftKey,
@@ -324,25 +425,39 @@ export default function CompTile({
             three branches below render different controls but each is one <li>, so a row
             is addressable however it is currently behaving. */}
         <ul className="rows" data-testid="comp-rows" aria-label="Comp slots">
-          {rows.map((row, at) => {
-            const open = openRow === row.index
+          {rows.map((row, drawn) => {
             // Where the row is *drawn*, which is what "slot 3" means to somebody looking at the
-            // tile — and, since rows are sorted by weight, no longer the same number as the
-            // index it is stored at. Every gesture still carries `row.index`; this is only ever
-            // a label. On the empty rows below the two coincide, filled rows being drawn first.
-            const position = at + 1
+            // tile — and, under a weight sort, not the same number as the row it is stored on.
+            // Every gesture carries a real number; this is only ever a label.
+            const position = drawn + 1
 
             if (row.kind === 'empty') {
               // An empty slot *is* its search, at rest — BurnSun's shape, and it saves the
               // click that used to stand between wanting a hull and typing its name. A viewer
               // gets the bar without the field: the slot still reads as one of ten, and there
               // is nothing there for them to do.
+              // Marked only on the row that will actually take the hull. Under a weight sort
+              // every blank line reports the same `lands` — there is nowhere to choose between
+              // them — so comparing on `lands` alone would light all nine of them up at once.
+              const marked = rowDrop?.landing === row.lands && row.lands === row.row
+              const empty = ['trow', 'trow-empty']
+              if (marked) empty.push('landing')
               return (
+                // A hull can be let go of here as readily as on a filled row, which is what the
+                // three drag handlers are for and what the rule objects to. It is the same
+                // affordance the filled rows below carry and it owes the same thing on its own
+                // account — that its state can be read rather than inferred, which is
+                // `data-landing`. The keyboard twin is the field inside it, which does the very
+                // same edit by name.
+                //
+                // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
                 <li
-                  className="trow trow-empty"
-                  key={row.index}
+                  className={empty.join(' ')}
+                  key={`empty-${row.row}`}
                   data-testid="comp-row-empty"
-                  data-row={row.index}
+                  data-row={row.row}
+                  data-landing={marked ? 'true' : 'false'}
+                  {...landingHandlers(row.lands)}
                 >
                   {/* Spans the icon track as well as the name: an empty slot has no hull to
                       picture, so the field starts flush with the left edge of the hull icons
@@ -351,12 +466,21 @@ export default function CompTile({
                     {editable ? (
                       <ShipSearch
                         slots={slots}
-                        index={row.index}
+                        row={row.lands}
                         ruleset={ruleset}
                         current={result}
                         label={`Add a hull in slot ${position}`}
-                        onPick={(typeId) => pick(row.index, typeId)}
-                        onDismiss={() => setOpenRow(null)}
+                        // Handed on by the pick before this one, and only ever to a row that
+                        // was already on screen — the row just filled is the one that goes
+                        // away, so nothing here is focusing something it created.
+                        takeFocus={focusEmpty === row.row}
+                        onPick={(typeId) => pick(row.lands, typeId, true)}
+                        onDismiss={() => {
+                          setOpenRow(null)
+                          // Let go of the hand-off when the cursor leaves of its own accord, so
+                          // a row that is merely still on screen cannot claim it back later.
+                          setFocusEmpty((held) => (held === row.row ? null : held))
+                        }}
                       />
                     ) : (
                       // Excluded from a capture like the editor's search above it, so the
@@ -374,20 +498,23 @@ export default function CompTile({
             }
 
             const slot = row.slot
+            const open = openRow === row.at
             const icon = buildCcpTypeIconUrl(slot.typeId, 32)
             const classes = ['trow']
-            if (blamed.has(row.index)) classes.push('blamed')
-            if (highlightedRows.has(row.index)) classes.push('highlighted')
+            // Blamed and highlighted are counted in slot indexes, because that is what a
+            // `Violation` names — the engine is never told which row a hull sits on.
+            if (blamed.has(row.at)) classes.push('blamed')
+            if (highlightedRows.has(row.at)) classes.push('highlighted')
             // `SlotEvaluation.name` is empty for a hull the ruleset does not price, and an
             // unpriced hull is exactly the state a builder needs to act on — so every label
             // below goes through this rather than interpolating an empty string.
             const hullName = slot.resolved ? slot.name : `Unknown hull ${slot.typeId}`
 
-            if (picked.has(row.index)) classes.push('picked')
+            if (picked.has(row.at)) classes.push('picked')
             // Where a hull under the cursor would land. Marked on the row rather than on the
             // tile: the tile's own outline means "this comp will take these hulls", and this
             // is the same claim about one slot, so drawing both says it twice.
-            if (rowDrop?.landing === row.index) classes.push('landing')
+            if (rowDrop?.landing === row.row) classes.push('landing')
 
             return (
               // A row is a list item that can be dragged, clicked and dropped on, which is what
@@ -412,55 +539,39 @@ export default function CompTile({
               // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
               <li
                 className={classes.join(' ')}
-                key={row.index}
+                key={row.at}
                 data-testid="comp-row"
-                data-row={row.index}
+                // The comp's own row, which is what a person points at and what the empty rows
+                // beside it are numbered in. Not the slot index: the two part company on an
+                // arranged comp, and only one of them means anything outside this component.
+                data-row={row.row}
                 // Whether a hull let go of now would replace this row's — the same bargain the
                 // new-comp tile's `data-receiving` makes, and written at rest as well so a
                 // driver can find it before the gesture starts.
-                data-landing={rowDrop?.landing === row.index ? 'true' : 'false'}
-                onClick={editable ? (event) => pickRow(event, row.index) : undefined}
+                data-landing={rowDrop?.landing === row.row ? 'true' : 'false'}
+                onClick={editable ? (event) => pickRow(event, row.at) : undefined}
+                onDoubleClick={editable ? (event) => duplicateRow(event, slot.typeId) : undefined}
                 draggable={editable && onDragRows !== undefined}
                 onDragStart={(event) => {
-                  onDragRows?.(dragging(row.index))
+                  onDragRows?.(dragging(row.at))
                   // The payload is not here — it is in the store whatever this lands on
                   // reads, which is what lets this be tested at all. `dataTransfer` is only
                   // what the browser draws under the cursor, and jsdom does not have one.
                   //
-                  // `copy` for both landings: a port derives rather than moves, so the rows
-                  // stay here either way and `move` would promise otherwise.
+                  // Both, because a row now has two things it can do. Landing on another comp
+                  // is a copy — a port derives rather than moves, and the rows stay here — but
+                  // landing on another row of *this* comp carries the hull there. Only the
+                  // landing knows which, so both are allowed here and each target names the one
+                  // it means through `dropEffect`. Not `move` alone and not `copy` alone: an
+                  // effect outside this set is reset to `none` and the drop is cancelled.
                   if (event.dataTransfer) {
-                    event.dataTransfer.effectAllowed = 'copy'
+                    event.dataTransfer.effectAllowed = 'copyMove'
                     event.dataTransfer.setData('text/plain', hullName)
                   }
                 }}
                 onDragEnd={() => onDragRowsEnd?.()}
-                // A hull let go of here replaces this row's. All three stop the event as well
-                // as cancelling it: the tile around this list answers a drag too, and its
-                // `dragenter` would overwrite the offer this row has just made with one that
-                // names no row at all — landing the hull on the end of the comp instead.
-                //
-                // `over` is asked again on every event rather than remembered, because it is
-                // the store's own dedupe that keeps a `dragover` firing several times a second
-                // from being several re-renders.
-                onDragEnter={(event) => {
-                  if (!rowDrop?.over(row.index)) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                }}
-                onDragOver={(event) => {
-                  // preventDefault is the whole of what makes this a drop target, and dragover
-                  // fires continuously — so nothing else may happen in here.
-                  if (!rowDrop?.over(row.index)) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                }}
-                onDrop={(event) => {
-                  if (!rowDrop?.over(row.index)) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  rowDrop.drop(row.index)
-                }}
+                // A hull let go of here replaces this row's. See `landingHandlers`.
+                {...landingHandlers(row.row)}
               >
                 <span className="ic">
                   {/* Named so a driver can find it, which the copy-to-image spec needs: the
@@ -481,7 +592,7 @@ export default function CompTile({
                       className="rowpick"
                       data-testid="comp-row-select"
                       type="checkbox"
-                      checked={picked.has(row.index)}
+                      checked={picked.has(row.at)}
                       // Named for the slot as well as the hull: a comp legitimately holds
                       // three of the same hull, and picking the wrong one of three controls
                       // called "Select Abaddon" is a mistake nothing on screen would show.
@@ -496,7 +607,7 @@ export default function CompTile({
                           // A toggle whatever the pointer does, because this is a checkbox:
                           // a plain *click on the row* replaces the selection, but a box that
                           // cleared its neighbours when ticked would not be one.
-                          selectRow(current, row.index, {
+                          selectRow(current, row.at, {
                             range: shiftHeld(event.nativeEvent),
                             toggle: true,
                             order: drawnOrder,
@@ -513,12 +624,12 @@ export default function CompTile({
                   {open && editable ? (
                     <ShipSearch
                       slots={slots}
-                      index={row.index}
+                      row={row.row}
                       ruleset={ruleset}
                       current={result}
                       label={`Swap ${hullName} in slot ${position}`}
                       takeFocus
-                      onPick={(typeId) => pick(row.index, typeId)}
+                      onPick={(typeId) => pick(row.row, typeId, false)}
                       onCancel={() => setOpenRow(null)}
                       // Looking away is cancelling. A swap covers the hull's name while it is
                       // open, so one left behind is a row that will not say what is in it.
@@ -552,7 +663,7 @@ export default function CompTile({
                       // A radio, not a checkbox: designating one clears the other, so the
                       // database's one-flagship rule is never something a person runs into.
                       onClick={() =>
-                        onChange(withFlagship(slots, slot.isFlagship ? null : row.index))
+                        onChange(withFlagship(slots, slot.isFlagship ? null : row.at))
                       }
                     >
                       ★
@@ -577,7 +688,7 @@ export default function CompTile({
                         type="button"
                         aria-label={`Swap ${hullName}`}
                         aria-expanded={open}
-                        onClick={() => setOpenRow(open ? null : row.index)}
+                        onClick={() => setOpenRow(open ? null : row.at)}
                       >
                         <SearchGlyph />
                       </button>
@@ -587,7 +698,7 @@ export default function CompTile({
                         data-capture-exclude="true"
                         type="button"
                         aria-label={`Remove ${hullName}`}
-                        onClick={() => onChange(withRow(slots, row.index, null))}
+                        onClick={() => onChange(withRow(slots, row.at, null))}
                       >
                         <ClearGlyph />
                       </button>
@@ -772,6 +883,19 @@ function ShareGlyph() {
 
 function shiftHeld(event: Event): boolean {
   return event instanceof MouseEvent && event.shiftKey
+}
+
+/**
+ * Whether a press landed on something inside the row that already means something.
+ *
+ * A press on a control inside a row is that control's, not the row's — the magnifier swaps the
+ * hull, the star designates a flagship, the × empties the slot, and the row's own select box is
+ * how a keyboard reaches the selection. Each says what it does, and none of them says "pick this
+ * row out" or "make another of these".
+ */
+function answersItsOwnPress(event: React.MouseEvent): boolean {
+  const target = event.target
+  return target instanceof Element && target.closest('button, a, input, select, textarea') !== null
 }
 
 function saveLabel(state: SaveState): string {

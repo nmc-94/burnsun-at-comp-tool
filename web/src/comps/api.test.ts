@@ -66,23 +66,24 @@ describe('comps api', () => {
     expect(callAt(fetchMock, 2).init.method).toBe('DELETE')
   })
 
-  it('sends slots as an ordered list carrying no positions', async () => {
+  it('sends each slot on the row it is stored on, gaps and all', async () => {
     const fetchMock = respond({ id: 'a-comp-id' })
     vi.stubGlobal('fetch', fetchMock)
 
     await replaceSlots('a-comp-id', [
-      { typeId: 24692, isFlagship: false },
-      { typeId: 17740, isFlagship: true },
+      { position: 0, typeId: 24692, isFlagship: false },
+      { position: 4, typeId: 17740, isFlagship: true },
     ])
 
     const { url, init } = callAt(fetchMock, 0)
     expect(url).toBe('/api/v1/comps/a-comp-id/slots')
     expect(init.method).toBe('PUT')
-    // Position is the server's to assign, from the order it receives.
+    // Rows 1 to 3 are empty and stay empty. Only the client draws the scaffold they are in, so
+    // deriving them from list order — which is what this route used to do — would close them.
     expect(bodyOf(init)).toEqual({
       slots: [
-        { typeId: 24692, isFlagship: false },
-        { typeId: 17740, isFlagship: true },
+        { position: 0, typeId: 24692, isFlagship: false },
+        { position: 4, typeId: 17740, isFlagship: true },
       ],
     })
   })

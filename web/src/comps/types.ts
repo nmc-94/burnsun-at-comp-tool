@@ -2,7 +2,12 @@
 
 import type { AccessLevel } from '../teams/types'
 
-/** One stored hull choice. `position` is the row it occupies, numbered from zero. */
+/**
+ * One stored hull choice.
+ *
+ * `position` is the row it occupies, numbered from zero — the comp's own row and not this
+ * list's index, because rows may be left empty between hulls. The list is ordered by it.
+ */
 export interface CompSlotDetail {
   position: number
   typeId: number
@@ -64,10 +69,17 @@ export interface CompDetail {
 /** Whether a fork took the whole comp or a chosen subset of its rows (§4.1c). */
 export type ForkKind = 'full' | 'partial'
 
-/** A slot on its way to the server. Positions are the server's to assign, so it sends none. */
+/**
+ * A slot on its way to the server.
+ *
+ * The row is sent, because it is the client's: only the tile draws the scaffold a gap is in, so
+ * only the tile can say where the gaps are. The server numbers by list order when a request
+ * names no rows at all, and refuses one that names some and not others.
+ */
 export interface CompSlotWrite {
   typeId: number
   isFlagship: boolean
+  position: number
 }
 
 /**

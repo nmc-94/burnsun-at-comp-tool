@@ -199,10 +199,9 @@ export default function WorkspaceScreen({
           const detail = payloads.get(`${comp.rulesetSlug} ${comp.rulesetVersionLabel}`)
           // No payload means no judgement, and the leaf says "unknown" rather than guessing.
           if (!detail) return []
-          const slots = comp.slots.map((slot) => ({
-            typeId: slot.typeId,
-            isFlagship: slot.isFlagship,
-          }))
+          // The wire shape already is what `toEngineComp` wants, rows and all — the rail only
+          // needs the total and the lead hull, and neither depends on where anything sits.
+          const slots = comp.slots
           const result = evaluate(toEngineComp(slots), detail.payload)
           return [
             {

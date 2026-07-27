@@ -100,11 +100,12 @@ function stubHangingWrites() {
   return { calls, land: () => landings.splice(0).forEach((landing) => landing()) }
 }
 
-const ABADDON = { typeId: SHIP.abaddon, isFlagship: false }
-const VINDICATOR = { typeId: SHIP.vindicator, isFlagship: false }
+const ABADDON = { position: 0, typeId: SHIP.abaddon, isFlagship: false }
+const VINDICATOR = { position: 0, typeId: SHIP.vindicator, isFlagship: false }
 
 /** A comp of `count` abaddons, so a state is identifiable by nothing but its length. */
-const comp = (count: number) => Array.from({ length: count }, () => ({ ...ABADDON }))
+const comp = (count: number) =>
+  Array.from({ length: count }, (_, position) => ({ ...ABADDON, position }))
 
 const writes = (calls: Recorded[]) => calls.filter((call) => call.init.method === 'PUT')
 
@@ -173,7 +174,7 @@ describe('saving', () => {
     stubFetch()
     const view = await loaded()
 
-    act(() => view.result.current.change([{ typeId: SHIP.vindicator, isFlagship: false }]))
+    act(() => view.result.current.change([{ position: 0, typeId: SHIP.vindicator, isFlagship: false }]))
 
     // Synchronous, and load-bearing: between the edit and the write the comp on screen and
     // the comp on the server genuinely differ, and the tile must not claim otherwise.
@@ -184,23 +185,23 @@ describe('saving', () => {
     const calls = stubFetch()
     const view = await loaded()
 
-    act(() => view.result.current.change([{ typeId: SHIP.vindicator, isFlagship: false }]))
-    act(() => view.result.current.change([{ typeId: SHIP.rifter, isFlagship: false }]))
-    act(() => view.result.current.change([{ typeId: SHIP.maulus, isFlagship: false }]))
+    act(() => view.result.current.change([{ position: 0, typeId: SHIP.vindicator, isFlagship: false }]))
+    act(() => view.result.current.change([{ position: 0, typeId: SHIP.rifter, isFlagship: false }]))
+    act(() => view.result.current.change([{ position: 0, typeId: SHIP.maulus, isFlagship: false }]))
     await act(async () => {
       vi.advanceTimersByTime(600)
     })
 
     await waitFor(() => expect(writes(calls).length).toBe(1))
     const sent = JSON.parse(String(writes(calls)[0]?.init.body))
-    expect(sent.slots).toEqual([{ typeId: SHIP.maulus, isFlagship: false }])
+    expect(sent.slots).toEqual([{ position: 0, typeId: SHIP.maulus, isFlagship: false }])
   })
 
   it('does not write before the debounce has run out', async () => {
     const calls = stubFetch()
     const view = await loaded()
 
-    act(() => view.result.current.change([{ typeId: SHIP.vindicator, isFlagship: false }]))
+    act(() => view.result.current.change([{ position: 0, typeId: SHIP.vindicator, isFlagship: false }]))
     await act(async () => {
       vi.advanceTimersByTime(400)
     })
@@ -212,7 +213,7 @@ describe('saving', () => {
     const calls = stubFetch()
     const view = await loaded()
 
-    act(() => view.result.current.change([{ typeId: SHIP.vindicator, isFlagship: false }]))
+    act(() => view.result.current.change([{ position: 0, typeId: SHIP.vindicator, isFlagship: false }]))
     view.unmount()
 
     await waitFor(() => expect(writes(calls).length).toBe(1))
@@ -231,13 +232,15 @@ describe('saving', () => {
     stubFetch({ failWrites: true })
     const view = await loaded()
 
-    act(() => view.result.current.change([{ typeId: SHIP.vindicator, isFlagship: false }]))
+    act(() => view.result.current.change([{ position: 0, typeId: SHIP.vindicator, isFlagship: false }]))
     await act(async () => {
       vi.advanceTimersByTime(600)
     })
 
     await waitFor(() => expect(view.result.current.saveState).toBe('error'))
-    expect(view.result.current.slots).toEqual([{ typeId: SHIP.vindicator, isFlagship: false }])
+    expect(view.result.current.slots).toEqual([
+      { position: 0, typeId: SHIP.vindicator, isFlagship: false },
+    ])
     expect(view.result.current.error).toBeTruthy()
   })
 })
@@ -395,13 +398,17 @@ describe('undoing', () => {
 
     act(() => view.result.current.change([VINDICATOR]))
     view.rerender({ id: 'c2' })
-    await waitFor(() => expect(view.result.current.slots).toEqual([{ typeId: SHIP.rifter, isFlagship: false }]))
+    await waitFor(() => expect(view.result.current.slots).toEqual([
+      { position: 0, typeId: SHIP.rifter, isFlagship: false },
+    ]))
 
     // An undo that reached back past a load would put one comp's hulls into another.
     act(() => {
       expect(view.result.current.undo()).toBe(false)
     })
-    expect(view.result.current.slots).toEqual([{ typeId: SHIP.rifter, isFlagship: false }])
+    expect(view.result.current.slots).toEqual([
+      { position: 0, typeId: SHIP.rifter, isFlagship: false },
+    ])
   })
 
   it('settles a comp the server refused, without writing what it already holds', async () => {
@@ -449,8 +456,8 @@ describe('judging', () => {
 
     act(() =>
       view.result.current.change([
-        { typeId: SHIP.abaddon, isFlagship: false },
-        { typeId: SHIP.abaddon, isFlagship: false },
+        { position: 0, typeId: SHIP.abaddon, isFlagship: false },
+        { position: 1, typeId: SHIP.abaddon, isFlagship: false },
       ]),
     )
 

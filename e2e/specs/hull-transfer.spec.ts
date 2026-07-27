@@ -110,7 +110,7 @@ test('a hull added a moment ago ports too, debounce and all', async ({ page, api
   await expect(tile.getByTestId('comp-row')).toHaveCount(1)
 
   await tile.getByTestId('comp-row-empty').first().getByTestId('ship-search-input').fill('Scimitar')
-  await tile.getByTestId('ship-search-results').getByRole('button', { name: /^Scimitar/ }).click()
+  await tile.getByTestId('ship-search-results').getByRole('option', { name: /^Scimitar/ }).click()
 
   // Not saved, and said so: the tile has two rows and the server has one. No waiting here —
   // waiting is the bug this test exists to catch.

@@ -59,6 +59,21 @@ def slots(*type_ids: int, flagship: int | None = None) -> dict:
     }
 
 
+def placed(*rows: tuple[int, int]) -> dict:
+    """Hulls on named rows: ``placed((0, ABADDON), (4, RIFTER))``.
+
+    The shape a client sends once somebody has arranged a comp — turned the tile's sort off
+    and left rows empty between groups of hulls. `slots` above is the other half of the same
+    route: a comp nobody has arranged says nothing about rows and is numbered by list order.
+    """
+    return {
+        "slots": [
+            {"typeId": type_id, "isFlagship": False, "position": position}
+            for position, type_id in rows
+        ]
+    }
+
+
 def test_creates_a_comp_bound_to_the_current_ruleset_version(client, sign_in, publish):
     publish()
     sign_in(OWNER)
@@ -117,8 +132,10 @@ def test_replacing_slots_moves_the_comps_updated_at(client, sign_in, publish):
     assert after["updatedAt"] > comp["updatedAt"]
 
 
-def test_replacing_slots_renumbers_from_zero(client, sign_in, publish):
-    """Positions are the server's to assign, so a shorter list cannot leave a hole."""
+def test_replacing_slots_renumbers_from_zero_when_the_client_names_no_rows(
+    client, sign_in, publish
+):
+    """A caller with nothing to say about rows gets list order, and cannot leave a hole."""
     publish()
     sign_in(OWNER)
     comp = make_comp(client, make_team(client))
@@ -128,6 +145,99 @@ def test_replacing_slots_renumbers_from_zero(client, sign_in, publish):
 
     assert response.status_code == 200
     assert response.json()["slots"] == [{"position": 0, "typeId": RIFTER, "isFlagship": False}]
+
+
+def test_a_comp_may_leave_rows_empty_between_its_hulls(client, sign_in, publish):
+    """The arrangement is the client's, because only the client draws the scaffold it is in.
+
+    A builder who turns the tile's sort off groups hulls — a wing, then its logistics, then the
+    tackle — and the gaps between the groups are part of what they arranged. Deriving positions
+    from list order, which is what this route used to do, could not express one.
+    """
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+
+    response = client.put(
+        f"/api/v1/comps/{comp['id']}/slots", json=placed((0, ABADDON), (4, RIFTER), (5, VINDICATOR))
+    )
+
+    assert response.status_code == 200
+    assert [slot["position"] for slot in response.json()["slots"]] == [0, 4, 5]
+    assert [slot["typeId"] for slot in response.json()["slots"]] == [ABADDON, RIFTER, VINDICATOR]
+    # And it is the comp's shape now, not one client's view of it: a reload reads it back.
+    reread = client.get(f"/api/v1/comps/{comp['id']}").json()
+    assert [slot["position"] for slot in reread["slots"]] == [0, 4, 5]
+    # Rows are not hulls. A comp of three that happens to reach row five is still three ships.
+    assert reread["shipCount"] == 3
+
+
+def test_slots_come_back_in_row_order_however_they_were_sent(client, sign_in, publish):
+    """Every reader takes the list as ordered — the rail, the tile, a fork, a share snapshot."""
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+
+    response = client.put(
+        f"/api/v1/comps/{comp['id']}/slots", json=placed((7, ABADDON), (2, RIFTER))
+    )
+
+    assert [slot["position"] for slot in response.json()["slots"]] == [2, 7]
+    assert [slot["typeId"] for slot in response.json()["slots"]] == [RIFTER, ABADDON]
+
+
+def test_a_request_may_not_number_only_some_of_its_slots(client, sign_in, publish):
+    """Half-numbered is a half-migrated client, not a comp with gaps.
+
+    The one number that cannot be guessed is the one that matters, so filling the rest in from
+    list order would put hulls somewhere nobody asked for.
+    """
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+
+    response = client.put(
+        f"/api/v1/comps/{comp['id']}/slots",
+        json={
+            "slots": [
+                {"typeId": ABADDON, "isFlagship": False, "position": 3},
+                {"typeId": RIFTER, "isFlagship": False},
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+    assert client.get(f"/api/v1/comps/{comp['id']}").json()["slots"] == []
+
+
+def test_two_slots_may_not_share_a_row(client, sign_in, publish):
+    """Refused here so it is answered as the request's fault, not as the database's 500."""
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+
+    response = client.put(
+        f"/api/v1/comps/{comp['id']}/slots", json=placed((2, ABADDON), (2, RIFTER))
+    )
+
+    assert response.status_code == 422
+    assert client.get(f"/api/v1/comps/{comp['id']}").json()["slots"] == []
+
+
+def test_a_row_number_past_the_ceiling_is_refused(client, sign_in, publish):
+    """The same bound the list length has. A row is a place in a scaffold, not an integer."""
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+
+    assert (
+        client.put(f"/api/v1/comps/{comp['id']}/slots", json=placed((100, ABADDON))).status_code
+        == 422
+    )
+    assert (
+        client.put(f"/api/v1/comps/{comp['id']}/slots", json=placed((-1, ABADDON))).status_code
+        == 422
+    )
 
 
 def test_the_server_stores_an_illegal_comp_without_complaint(client, sign_in, publish):
@@ -569,6 +679,38 @@ def test_a_partial_fork_takes_the_rows_in_the_parents_order(client, sign_in, pub
     forked = fork(client, parent, positions=[2, 0])
 
     assert [slot["typeId"] for slot in forked["slots"]] == [ABADDON, RIFTER]
+
+
+def test_a_full_fork_keeps_the_rows_its_parent_arranged(client, sign_in, publish):
+    """A fork is taken to be compared against its parent, so it has to look like it."""
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{parent['id']}/slots", json=placed((0, ABADDON), (4, RIFTER)))
+
+    forked = fork(client, parent)
+
+    assert [slot["position"] for slot in forked["slots"]] == [0, 4]
+
+
+def test_a_partial_fork_starts_at_row_zero(client, sign_in, publish):
+    """These hulls in a comp of their own — not a copy of the comp they were lifted out of.
+
+    The empty rows a partial fork would inherit are the shape of the rows somebody did *not*
+    take, which is a fact about the parent and nothing about the new comp.
+    """
+    publish()
+    sign_in(OWNER)
+    parent = make_comp(client, make_team(client))
+    client.put(
+        f"/api/v1/comps/{parent['id']}/slots",
+        json=placed((0, ABADDON), (4, RIFTER), (9, VINDICATOR)),
+    )
+
+    forked = fork(client, parent, positions=[4, 9])
+
+    assert [slot["typeId"] for slot in forked["slots"]] == [RIFTER, VINDICATOR]
+    assert [slot["position"] for slot in forked["slots"]] == [0, 1]
 
 
 def test_a_fork_quietly_drops_a_row_number_the_comp_does_not_have(client, sign_in, publish):

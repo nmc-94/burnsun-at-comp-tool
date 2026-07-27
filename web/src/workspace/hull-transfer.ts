@@ -20,9 +20,9 @@
 // The question can only be answered by the target, because comps on one board can be pinned
 // to different ruleset versions and a hull's price is the receiving ruleset's to say.
 //
-// A landing also has a *where*: `Transfer.atIndex` names a row the hulls replace, and without
-// one they go on the end. That is the only thing the two phases carry beyond the offer itself,
-// and it is why they carry a transfer rather than an offer — see `Transfer`.
+// A landing also has a *where*: `Transfer.atRow` names a row of the receiving comp, and without
+// one the hulls go on its first free rows. That is the only thing the two phases carry beyond
+// the offer itself, and it is why they carry a transfer rather than an offer — see `Transfer`.
 //
 // Those two phases are the *copy*. Rows that land on the new-comp tile instead are a port,
 // which never touches this pair — there is no comp there yet to ask, and nothing to preview
@@ -39,13 +39,27 @@ export interface HullOffer {
 export interface Transfer {
   readonly offer: HullOffer
   /**
-   * The row these hulls replace, or null to append them to the end of the comp.
+   * The row of the receiving comp these hulls land on, or null for "wherever there is room".
+   *
+   * A **comp row**, not an index into anybody's slot list. Half the rows a drag can be let go of
+   * are empty ones, which have no hull and so no index to be named by, and a comp whose rows have
+   * been arranged has gaps in the middle — so the two numbers are different things and only one
+   * of them can name every landing.
    *
    * On the transfer rather than on the offer, because it is a fact about the *landing* and not
    * about what is crossing: the same hull let go of over two different rows is one offer twice,
    * arriving in two places.
    */
-  readonly atIndex: number | null
+  readonly atRow: number | null
+  /**
+   * The row this is being carried *off*, for a move — null for a copy, which is everything else.
+   *
+   * A move only ever happens inside one comp and only ever to one hull, so one number says the
+   * whole of it. It is here rather than on the offer because it is a fact about the landing: the
+   * same hull is the same offer whether it is being copied or carried, and which of the two is
+   * happening is decided at the row it is let go of, from the modifier held at that moment.
+   */
+  readonly moveFrom: number | null
   readonly phase: 'proposed' | 'offered'
 }
 
@@ -107,8 +121,8 @@ function sameOffer(a: HullOffer, b: HullOffer): boolean {
 }
 
 /**
- * Ask what `offer` would cost in `toCompId`, landing on row `atIndex` or at the end; null
- * withdraws the question.
+ * Ask what `offer` would cost in `toCompId`, landing on row `atRow` or wherever there is room;
+ * a null *offer* withdraws the question.
  *
  * Repeating the same proposal is silent. `dragenter` fires again every time the cursor
  * crosses into a child element, and each announcement would otherwise be a re-render of the
@@ -119,7 +133,8 @@ function sameOffer(a: HullOffer, b: HullOffer): boolean {
 export function propose(
   toCompId: string,
   offer: HullOffer | null,
-  atIndex: number | null = null,
+  atRow: number | null = null,
+  moveFrom: number | null = null,
 ): void {
   const previous = transfers.get(toCompId)
 
@@ -134,28 +149,31 @@ export function propose(
 
   if (
     previous?.phase === 'proposed' &&
-    previous.atIndex === atIndex &&
+    previous.atRow === atRow &&
+    previous.moveFrom === moveFrom &&
     sameOffer(previous.offer, offer)
   ) {
     return
   }
-  transfers.set(toCompId, { offer, atIndex, phase: 'proposed' })
+  transfers.set(toCompId, { offer, atRow, moveFrom, phase: 'proposed' })
   announce(toCompId)
 }
 
 /**
  * Copy these hulls into `toCompId`. The source is untouched either way.
  *
- * `atIndex` names a row to replace; without one the target appends. A slot holds one hull, so
- * only a single-hull offer ever names a row — which is the caller's rule to keep, since this
- * store is only carrying the answer between two halves of a gesture.
+ * `atRow` names a row of the receiving comp; without one the hulls go wherever there is room. A
+ * row that already holds a hull takes one hull, so only a single-hull offer ever names a filled
+ * one — which is the caller's rule to keep, since this store is only carrying the answer between
+ * two halves of a gesture.
  */
 export function offerHulls(
   toCompId: string,
   offer: HullOffer,
-  atIndex: number | null = null,
+  atRow: number | null = null,
+  moveFrom: number | null = null,
 ): void {
-  transfers.set(toCompId, { offer, atIndex, phase: 'offered' })
+  transfers.set(toCompId, { offer, atRow, moveFrom, phase: 'offered' })
   announce(toCompId)
 }
 

@@ -13,15 +13,21 @@
 // is what keeps the contract honest between here and Playwright.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 
 import { evaluate } from '../engine'
-import type { CompSlot } from '../engine'
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
+import { writeSetting } from '../settings'
 import CompTile from './CompTile'
 import { toEngineComp } from './tile-model'
+import type { PlacedSlot } from './tile-model'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  // The tile reads one preference out of here while it renders. Vitest isolates per file, not
+  // per test, so a test that turns the sort off would otherwise turn it off for the rest.
+  localStorage.clear()
+})
 
 /** Whatever the tile says about itself, over and above its hulls. */
 interface Says {
@@ -33,7 +39,7 @@ interface Says {
 }
 
 /** Render the tile over `slots`, re-judging on every change the way CompScreen does. */
-function mount(slots: CompSlot[], editable = true, says: Says = {}) {
+function mount(slots: PlacedSlot[], editable = true, says: Says = {}) {
   const onChange = vi.fn()
   const onDragRows = vi.fn()
   const onCopyRows = vi.fn()
@@ -42,7 +48,7 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
   const onFork = vi.fn()
   const onDelete = vi.fn()
   const onToggleShare = vi.fn()
-  const tile = (next: CompSlot[]) => (
+  const tile = (next: PlacedSlot[]) => (
     <CompTile
       name="Angel Shield Kite"
       slots={next}
@@ -76,15 +82,22 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
     onFork,
     onDelete,
     onToggleShare,
-    rerenderWith: (next: CompSlot[]) => view.rerender(tile(next)),
+    rerenderWith: (next: PlacedSlot[]) => view.rerender(tile(next)),
   }
 }
 
-function slots(...typeIds: number[]): CompSlot[] {
-  return typeIds.map((typeId) => ({ typeId, isFlagship: false }))
+/** Hulls on consecutive rows from zero, which is every comp nobody has arranged. */
+function slots(...typeIds: number[]): PlacedSlot[] {
+  return typeIds.map((typeId, position) => ({ position, typeId, isFlagship: false }))
+}
+
+/** Hulls on the rows named, leaving the rest of the scaffold empty. */
+function placed(...rows: [number, number][]): PlacedSlot[] {
+  return rows.map(([position, typeId]) => ({ position, typeId, isFlagship: false }))
 }
 
 const rowCosts = () => screen.getAllByTestId('comp-row-cost').map((cell) => cell.textContent)
+const hullNames = () => screen.getAllByTestId('comp-row-name').map((cell) => cell.textContent)
 const surcharges = () =>
   screen.getAllByTestId('comp-row-surcharge').map((cell) => cell.textContent).filter(Boolean)
 
@@ -106,10 +119,31 @@ function openSwap(index: number) {
   return within(row(index)).getByTestId('ship-search-input')
 }
 
-/** A hull as the search offers it — scoped, because the tile also names hulls in its rows. */
+/**
+ * A hull as the search offers it — scoped, because the tile also names hulls in its rows.
+ *
+ * An option rather than a button. The panel is a listbox now: the field owns the keyboard, the
+ * arrows move a highlight through these, and `aria-activedescendant` on the field points at the
+ * one they are on — none of which is true of a run of buttons, and all of which a reader needs
+ * told. They are still `<button>` elements underneath, so a click on one is unchanged.
+ */
 function option(name: RegExp) {
-  return within(screen.getByTestId('ship-search-results')).getByRole('button', { name })
+  return within(screen.getByTestId('ship-search-results')).getByRole('option', { name })
 }
+
+/** The hull the arrows are on, which is the one Enter or Tab would take. */
+function highlighted(): string | null {
+  const marked = screen
+    .getByTestId('ship-search-results')
+    .querySelector('[data-active="true"] .rowsearch-option-nm')
+  return marked?.textContent ?? null
+}
+
+/** The hulls a run of search options names, in the order they are offered. */
+const names = (options: HTMLElement[]) =>
+  options.map((offered) => offered.querySelector('.rowsearch-option-nm')?.textContent)
+
+const isFocused = (element: HTMLElement) => document.activeElement === element
 
 /**
  * One row's select box, by the name a person hears — slot number and all.
@@ -164,6 +198,71 @@ describe('the scaffold', () => {
     mount(slots(SHIP.orthrus, SHIP.orthrus))
 
     expect(screen.getAllByTestId('comp-row').map((row) => row.dataset.row)).toEqual(['0', '1'])
+  })
+
+  it('draws the expensive hulls first, which is what the sort is for', () => {
+    mount(slots(SHIP.rifter, SHIP.abaddon))
+
+    expect(hullNames()).toEqual(['Abaddon', 'Rifter'])
+  })
+
+  it('draws them in the order they were added when the sort is turned off', () => {
+    // A comp built as a fleet is a shape, and re-sorting it by points scatters that shape every
+    // time a hull is added. The preference is per browser and changes nothing about the comp —
+    // it is read here, in the tile, because ordering rows is a fact about how a tile draws
+    // itself rather than anything the board needs to know.
+    writeSetting('sortRowsByWeight', false)
+
+    mount(slots(SHIP.rifter, SHIP.abaddon))
+
+    expect(hullNames()).toEqual(['Rifter', 'Abaddon'])
+    // And every row still points at the slot it is stored at, which is what every gesture on it
+    // carries — the sort was never anything but the order they are drawn in.
+    expect(screen.getAllByTestId('comp-row').map((row) => row.dataset.row)).toEqual(['0', '1'])
+  })
+
+  it('draws the rows a comp has left empty between its hulls, sort off', () => {
+    // What the preference is *for*. A comp built as a fleet is groups with gaps between them,
+    // and the gaps are stored on the comp — turning the sort off is what makes them visible.
+    writeSetting('sortRowsByWeight', false)
+
+    mount(placed([0, SHIP.abaddon], [1, SHIP.rifter], [5, SHIP.orthrus]))
+
+    // Three hulls and a scaffold of ten, with the Orthrus down on row five where it was put.
+    expect(hullNames()).toEqual(['Abaddon', 'Rifter', 'Orthrus'])
+    expect(screen.getAllByTestId('comp-row').map((row) => row.dataset.row)).toEqual(['0', '1', '5'])
+    expect(screen.getAllByTestId('comp-row-empty').map((row) => row.dataset.row)).toEqual([
+      '2',
+      '3',
+      '4',
+      '6',
+      '7',
+      '8',
+      '9',
+    ])
+  })
+
+  it('packs the same comp to the top with the sort on, without moving a hull', () => {
+    // The arrangement is not lost, it is not being drawn — which is what makes the toggle a
+    // preference rather than something that edits comps.
+    const arranged = placed([0, SHIP.rifter], [5, SHIP.abaddon])
+    const { onChange } = mount(arranged)
+
+    expect(hullNames()).toEqual(['Abaddon', 'Rifter'])
+    expect(screen.getAllByTestId('comp-row').map((row) => row.dataset.row)).toEqual(['5', '0'])
+    expect(screen.getAllByTestId('comp-row-empty')).toHaveLength(8)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('follows the preference being changed while a tile is on screen', () => {
+    mount(slots(SHIP.rifter, SHIP.abaddon))
+    expect(hullNames()).toEqual(['Abaddon', 'Rifter'])
+
+    // What the account menu does. Twenty tiles are subscribed to this and none of them is
+    // re-mounted, so a tile that only read the value once would go on drawing the old order.
+    act(() => void writeSetting('sortRowsByWeight', false))
+
+    expect(hullNames()).toEqual(['Rifter', 'Abaddon'])
   })
 
   it('shows the same surcharge on every copy of a duplicated hull', () => {
@@ -322,7 +421,8 @@ describe('the hull search', () => {
     const firstEmpty = screen.getAllByTestId('comp-row-empty')[0]!
     expect(within(firstEmpty).getByTestId('ship-search-input')).toBeTruthy()
     // Named per slot: nine fields called "Search hulls" is one control nobody can address.
-    expect(screen.getByRole('textbox', { name: 'Add a hull in slot 2' })).toBeTruthy()
+    // A combobox rather than a textbox, because the field drives a list it can be told about.
+    expect(screen.getByRole('combobox', { name: 'Add a hull in slot 2' })).toBeTruthy()
   })
 
   it('says nothing until it is typed in, so nine empty rows are nine bare fields', () => {
@@ -370,7 +470,7 @@ describe('the hull search', () => {
     fireEvent.change(openSwap(0), { target: { value: 'rifter' } })
     fireEvent.click(option(/Rifter/))
 
-    expect(onChange).toHaveBeenCalledWith([{ typeId: SHIP.rifter, isFlagship: false }])
+    expect(onChange).toHaveBeenCalledWith(slots(SHIP.rifter))
   })
 
   it('names the magnifier for the hull it would swap', () => {
@@ -413,7 +513,7 @@ describe('the hull search', () => {
 
     fireEvent.click(option(/Vindicator/))
 
-    expect(onChange).toHaveBeenCalledWith([{ typeId: SHIP.vindicator, isFlagship: false }])
+    expect(onChange).toHaveBeenCalledWith(slots(SHIP.vindicator))
   })
 
   it('closes a swap on Escape, leaving the hull alone', () => {
@@ -455,11 +555,181 @@ describe('the hull search', () => {
     fireEvent.change(openSearch(), { target: { value: 'abaddon' } })
     fireEvent.click(option(/Abaddon/))
 
-    expect(onChange).toHaveBeenCalledWith([
-      { typeId: SHIP.abaddon, isFlagship: false },
-      { typeId: SHIP.abaddon, isFlagship: false },
-      { typeId: SHIP.abaddon, isFlagship: false },
+    expect(onChange).toHaveBeenCalledWith(slots(SHIP.abaddon, SHIP.abaddon, SHIP.abaddon))
+  })
+})
+
+// Building a comp is nine hulls in a row, and the cost that matters is per hull: a gesture that
+// needs the mouse once is a gesture that needs it nine times. So the field owns the keyboard
+// from the first letter to the last hull — type, arrow if the top match is not the one, Tab, and
+// the cursor is in the next slot ready for the next name.
+//
+// "co" is three hulls in a known order: Condor and Confessor both start with it, the Deacon
+// merely contains it, and the name settles the rest.
+describe('the hull search from the keyboard', () => {
+  it('starts on the best match, so Enter can be aimed without looking at the list', () => {
+    mount(slots())
+
+    fireEvent.change(openSearch(), { target: { value: 'co' } })
+
+    expect(names(screen.getAllByTestId('ship-search-option'))).toEqual([
+      'Condor',
+      'Confessor',
+      'Deacon',
     ])
+    expect(highlighted()).toBe('Condor')
+  })
+
+  it('moves the highlight with the arrows, and wraps rather than stopping dead', () => {
+    mount(slots())
+    const field = openSearch()
+    fireEvent.change(field, { target: { value: 'co' } })
+
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+    expect(highlighted()).toBe('Confessor')
+
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+    expect(highlighted()).toBe('Condor')
+
+    fireEvent.keyDown(field, { key: 'ArrowUp' })
+    expect(highlighted()).toBe('Deacon')
+  })
+
+  it('tells a screen reader which one the arrows are on, since focus never leaves the field', () => {
+    mount(slots())
+    const field = openSearch()
+    field.focus()
+    fireEvent.change(field, { target: { value: 'co' } })
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+
+    const marked = option(/^Confessor/)
+    expect(field.getAttribute('aria-activedescendant')).toBe(marked.id)
+    expect(marked.getAttribute('aria-selected')).toBe('true')
+    // The arrows move a highlight, never the cursor — which is what makes the pointer above
+    // the only thing a reader has to be told about, and what leaves Tab free to mean "take it".
+    expect(document.activeElement).toBe(field)
+    expect(marked.tabIndex).toBe(-1)
+  })
+
+  it('goes back to the top when the query changes, because the list under it has', () => {
+    mount(slots())
+    const field = openSearch()
+    fireEvent.change(field, { target: { value: 'co' } })
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+
+    fireEvent.change(field, { target: { value: 'con' } })
+
+    expect(highlighted()).toBe('Condor')
+  })
+
+  it('takes the highlighted hull on Enter', () => {
+    const { onChange } = mount(slots())
+    const field = openSearch()
+    fireEvent.change(field, { target: { value: 'co' } })
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+
+    fireEvent.keyDown(field, { key: 'Enter' })
+
+    expect(onChange).toHaveBeenCalledWith(slots(SHIP.confessor))
+    expect((field as HTMLInputElement).value).toBe('')
+  })
+
+  it('takes it on Tab too, which is the key a comp is actually built with', () => {
+    const { onChange } = mount(slots())
+    const field = openSearch()
+    fireEvent.change(field, { target: { value: 'co' } })
+
+    // False means the default was prevented: the browser's own Tab would land the cursor a
+    // slot further on than the hand-off below puts it.
+    expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(false)
+    expect(onChange).toHaveBeenCalledWith(slots(SHIP.condor))
+  })
+
+  it('leaves Tab alone with nothing to take, so a comp is not nine keystrokes to cross', () => {
+    const { onChange } = mount(slots())
+    const field = openSearch()
+
+    expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(true)
+
+    fireEvent.change(field, { target: { value: 'zzzz' } })
+    expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(true)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('hands the cursor to the next empty slot, so the next hull is just typed', () => {
+    // The whole reason Tab is one of the two commit keys. The row that was typed in is about to
+    // stop being an empty row, so without this every hull after the first costs a click to get
+    // back to a field.
+    const { rerenderWith } = mount(slots(SHIP.abaddon))
+    const field = openSearch()
+    fireEvent.change(field, { target: { value: 'co' } })
+
+    fireEvent.keyDown(field, { key: 'Tab' })
+    rerenderWith(slots(SHIP.abaddon, SHIP.condor))
+
+    const cursor = document.activeElement as HTMLElement
+    expect(cursor.dataset.testid).toBe('ship-search-input')
+    expect(cursor.closest('[data-testid="comp-row-empty"]')?.getAttribute('data-row')).toBe('2')
+  })
+
+  it('stops handing it on when the comp is full and there is no field to hand it to', () => {
+    const nine = slots(...Array<number>(9).fill(SHIP.rifter))
+    const { rerenderWith } = mount(nine)
+    const field = openSearch()
+    fireEvent.change(field, { target: { value: 'co' } })
+
+    fireEvent.keyDown(field, { key: 'Enter' })
+    rerenderWith([...nine, { position: 9, typeId: SHIP.condor, isFlagship: false }])
+
+    expect(screen.queryAllByTestId('comp-row-empty')).toHaveLength(0)
+  })
+
+  it('puts a hull on the row its search sits on, when the rows are drawn where they are', () => {
+    // The gesture the arrangement exists for: type into the gap you meant, and the hull goes
+    // there rather than being packed up against the ones above it.
+    writeSetting('sortRowsByWeight', false)
+    const { onChange } = mount(placed([0, SHIP.abaddon], [5, SHIP.orthrus]))
+
+    const gap = screen.getByTestId('comp-rows').querySelector('[data-row="3"]')
+    const field = within(gap as HTMLElement).getByTestId('ship-search-input')
+    fireEvent.change(field, { target: { value: 'condor' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+
+    expect(onChange).toHaveBeenCalledWith([
+      { position: 0, typeId: SHIP.abaddon, isFlagship: false },
+      { position: 3, typeId: SHIP.condor, isFlagship: false },
+      { position: 5, typeId: SHIP.orthrus, isFlagship: false },
+    ])
+  })
+
+  it('hands the cursor to the next gap, not the next line down', () => {
+    writeSetting('sortRowsByWeight', false)
+    const { rerenderWith } = mount(placed([0, SHIP.abaddon], [5, SHIP.orthrus]))
+
+    // Row 1 is the first gap; filling it should leave the cursor on row 2, the next one.
+    const gap = screen.getByTestId('comp-rows').querySelector('[data-row="1"]')
+    const field = within(gap as HTMLElement).getByTestId('ship-search-input')
+    fireEvent.change(field, { target: { value: 'condor' } })
+    fireEvent.keyDown(field, { key: 'Tab' })
+    rerenderWith(placed([0, SHIP.abaddon], [1, SHIP.condor], [5, SHIP.orthrus]))
+
+    const cursor = document.activeElement as HTMLElement
+    expect(cursor.closest('[data-testid="comp-row-empty"]')?.getAttribute('data-row')).toBe('2')
+  })
+
+  it('leaves the cursor alone after a swap, which is one edit rather than a sequence', () => {
+    const { onChange } = mount(slots(SHIP.abaddon))
+    const field = openSwap(0)
+    fireEvent.change(field, { target: { value: 'co' } })
+
+    fireEvent.keyDown(field, { key: 'Enter' })
+
+    expect(onChange).toHaveBeenCalledWith(slots(SHIP.condor))
+    // The swap closes and nothing else claims the cursor — a swap is a deliberate change to a
+    // row that already has a hull in it, not a step on the way to the next one.
+    expect(within(row(0)).queryByTestId('ship-search-input')).toBeNull()
+    expect(screen.queryAllByTestId('ship-search-input').some(isFocused)).toBe(false)
   })
 })
 
@@ -559,9 +829,9 @@ describe('violations', () => {
 
 describe('the flagship', () => {
   it('behaves like a radio, so a second designation clears the first', () => {
-    const designated: CompSlot[] = [
-      { typeId: SHIP.vindicator, isFlagship: true },
-      { typeId: SHIP.abaddon, isFlagship: false },
+    const designated: PlacedSlot[] = [
+      { position: 0, typeId: SHIP.vindicator, isFlagship: true },
+      { position: 1, typeId: SHIP.abaddon, isFlagship: false },
     ]
     const { onChange } = mount(designated)
 
@@ -570,8 +840,8 @@ describe('the flagship', () => {
     // Never two at once, so the database's one-flagship rule is not something a person
     // can run into from here.
     expect(onChange).toHaveBeenCalledWith([
-      { typeId: SHIP.vindicator, isFlagship: false },
-      { typeId: SHIP.abaddon, isFlagship: true },
+      { position: 0, typeId: SHIP.vindicator, isFlagship: false },
+      { position: 1, typeId: SHIP.abaddon, isFlagship: true },
     ])
   })
 
@@ -595,23 +865,23 @@ describe('the flagship', () => {
     // Without the control there is no way back out, and `flagship-not-eligible` becomes a
     // violation the tile reports and offers nothing to act on.
     const { onChange } = mount([
-      { typeId: SHIP.bhaalgorn, isFlagship: true },
-      { typeId: SHIP.abaddon, isFlagship: false },
+      { position: 0, typeId: SHIP.bhaalgorn, isFlagship: true },
+      { position: 1, typeId: SHIP.abaddon, isFlagship: false },
     ])
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear flagship from Bhaalgorn' }))
 
     expect(onChange).toHaveBeenCalledWith([
-      { typeId: SHIP.bhaalgorn, isFlagship: false },
-      { typeId: SHIP.abaddon, isFlagship: false },
+      { position: 0, typeId: SHIP.bhaalgorn, isFlagship: false },
+      { position: 1, typeId: SHIP.abaddon, isFlagship: false },
     ])
   })
 
   it('raises the battleship cap once a flagship is designated', () => {
-    const three: CompSlot[] = [
-      { typeId: SHIP.vindicator, isFlagship: true },
-      { typeId: SHIP.abaddon, isFlagship: false },
-      { typeId: SHIP.apocalypse, isFlagship: false },
+    const three: PlacedSlot[] = [
+      { position: 0, typeId: SHIP.vindicator, isFlagship: true },
+      { position: 1, typeId: SHIP.abaddon, isFlagship: false },
+      { position: 2, typeId: SHIP.apocalypse, isFlagship: false },
     ]
     mount(three)
 
@@ -750,6 +1020,59 @@ describe('picking rows out by clicking them', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
 
     expect(pickedRows()).toEqual([0])
+  })
+})
+
+describe('double-clicking a hull', () => {
+  it('adds a second of the same on the next free row', () => {
+    // The gesture that took over from dragging a hull onto a spare row of its own comp, which
+    // means *move* now that where a hull sits is a person's to choose.
+    const { onChange } = mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.doubleClick(row(0))
+
+    expect(onChange).toHaveBeenCalledWith(slots(SHIP.abaddon, SHIP.rifter, SHIP.abaddon))
+  })
+
+  it('fills the first gap of an arranged comp rather than going below it', () => {
+    writeSetting('sortRowsByWeight', false)
+    const { onChange } = mount(placed([0, SHIP.abaddon], [4, SHIP.rifter]))
+
+    fireEvent.doubleClick(row(1))
+
+    expect(onChange).toHaveBeenCalledWith([
+      { position: 0, typeId: SHIP.abaddon, isFlagship: false },
+      { position: 1, typeId: SHIP.rifter, isFlagship: false },
+      { position: 4, typeId: SHIP.rifter, isFlagship: false },
+    ])
+  })
+
+  it('never brings the flagship with it, because a comp holds one', () => {
+    const { onChange } = mount([{ position: 0, typeId: SHIP.vindicator, isFlagship: true }])
+
+    fireEvent.doubleClick(row(0))
+
+    expect(onChange).toHaveBeenCalledWith([
+      { position: 0, typeId: SHIP.vindicator, isFlagship: true },
+      { position: 1, typeId: SHIP.vindicator, isFlagship: false },
+    ])
+  })
+
+  it('leaves the row’s own controls alone — they mean what they say, not this', () => {
+    const { onChange } = mount(slots(SHIP.abaddon))
+
+    fireEvent.doubleClick(within(row(0)).getByTestId('comp-row-search'))
+    fireEvent.doubleClick(within(row(0)).getByTestId('comp-row-select'))
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('does nothing on a comp the viewer cannot edit', () => {
+    const { onChange } = mount(slots(SHIP.abaddon), false)
+
+    fireEvent.doubleClick(row(0))
+
+    expect(onChange).not.toHaveBeenCalled()
   })
 })
 

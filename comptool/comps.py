@@ -110,6 +110,17 @@ class SlotWrite(_Request):
     #: rules are the client's; all the server insists on is that it could be an id.
     type_id: Annotated[int, Field(gt=0)]
     is_flagship: bool = False
+    #: The row this hull sits on, or null to let the server number it by list order.
+    #:
+    #: Rows may be left empty between hulls, so a comp is no longer a dense list — a builder
+    #: who has turned the tile's sort off arranges hulls into groups, and the gaps between the
+    #: groups are part of what they arranged. Only the client can know that, because only the
+    #: client draws the scaffold the gaps are in.
+    #:
+    #: Optional, and null is the honest default rather than a legacy allowance: "here are the
+    #: hulls, in order" is a complete statement about a comp nobody has arranged, and every
+    #: caller that has nothing to say about rows should go on saying nothing.
+    position: Annotated[int, Field(ge=0, lt=MAX_SLOTS)] | None = None
 
 
 class CompDetail(_Response):
@@ -340,13 +351,48 @@ def _latest_version(session: Session, slug: str) -> RulesetVersion:
     return record.versions[-1]
 
 
-def _apply_slots(session: Session, comp: Comp, slots: list[SlotWrite]) -> None:
-    """Replace a comp's slots with ``slots``, numbering them from zero.
+def _positions(slots: list[SlotWrite]) -> list[int]:
+    """The row each hull sits on: the caller's numbering, or list order when it gave none.
 
-    Positions are assigned here rather than accepted from the caller. A comp is a dense
-    ordered list — the builder draws filled rows first and empty scaffold after — so the
-    order in the request is the whole of the information, and deriving the numbering means
-    a gap or a duplicate cannot be expressed in the first place.
+    All or nothing. A request that numbers some of its hulls and not others is not a comp with
+    gaps in it — it is a client that has half-migrated, and guessing the rest from list order
+    would place hulls somewhere nobody asked for. The one number that cannot be guessed is the
+    one that matters here, so it is refused rather than invented.
+
+    Duplicates are refused for the same reason the database refuses them: two hulls on one row
+    is not a comp anybody can draw, and ``uq comp_id/position`` would answer it as a 500 several
+    layers away from the request that caused it.
+    """
+    numbered = [slot.position for slot in slots if slot.position is not None]
+    if not numbered:
+        # A comp nobody has arranged, which is every comp until somebody turns the tile's sort
+        # off and leaves a gap. Order in the request is the whole of the information.
+        return list(range(len(slots)))
+    if len(numbered) != len(slots):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Either every slot carries a position or none does; "
+                f"{len(numbered)} of {len(slots)} did"
+            ),
+        )
+    if len(set(numbered)) != len(numbered):
+        raise HTTPException(status_code=422, detail="Two slots cannot share a position")
+    return numbered
+
+
+def _apply_slots(session: Session, comp: Comp, slots: list[SlotWrite]) -> None:
+    """Replace a comp's slots with ``slots``, on the rows they name or numbered from zero.
+
+    Positions used to be assigned here and never accepted, on the grounds that a comp is a
+    dense ordered list. It is not one any more: a builder can leave a row empty between two
+    hulls, and where the gaps are is something only the client knows. So the numbering is
+    taken when it is offered and derived when it is not — see ``_positions``, which is where
+    the "a gap or a duplicate cannot be expressed" guarantee moved to. Gaps are now expressible
+    and duplicates still are not.
+
+    The stored list stays *ordered* by position either way, which is what
+    ``Comp.slots``' ``order_by`` promises every reader.
     """
     flagships = [index for index, slot in enumerate(slots) if slot.is_flagship]
     if len(flagships) > 1:
@@ -357,11 +403,13 @@ def _apply_slots(session: Session, comp: Comp, slots: list[SlotWrite]) -> None:
             detail=f"A comp has at most one flagship; {len(flagships)} were designated",
         )
 
+    positions = _positions(slots)
+
     comp.slots.clear()
     # Flushed before the new rows are appended: the deletes and the inserts would
     # otherwise reach the database together and collide on (comp_id, position).
     session.flush()
-    for position, slot in enumerate(slots):
+    for position, slot in sorted(zip(positions, slots, strict=True), key=lambda pair: pair[0]):
         comp.slots.append(
             CompSlot(position=position, type_id=slot.type_id, is_flagship=slot.is_flagship)
         )
@@ -628,10 +676,25 @@ def fork_comp(
     # The flagship carries. A comp holds at most one, so a whole comp brings at most one and
     # any subset of it brings at most one — the designation is always still valid here, unlike
     # a copy *into* an existing comp, which is what §9.3's "flagship drops" was written about.
+    #
+    # The **arrangement** carries only for a whole fork, and the asymmetry is the point. A comp
+    # can have rows left empty between its hulls; a full fork that came back packed to the top
+    # would not look like its parent, which is the one thing a fork exists to be compared
+    # against. A partial fork is not a copy of that comp — it is these hulls in a comp of their
+    # own — and the empty rows in it would be the shape of the rows somebody *did not* take,
+    # which is a fact about the parent and nothing about the new comp. So it starts at row zero.
+    keep_rows = kind == FORK_FULL
     _apply_slots(
         session,
         fork,
-        [SlotWrite(type_id=slot.type_id, is_flagship=slot.is_flagship) for slot in taken],
+        [
+            SlotWrite(
+                type_id=slot.type_id,
+                is_flagship=slot.is_flagship,
+                position=slot.position if keep_rows else None,
+            )
+            for slot in taken
+        ],
     )
     session.commit()
     # Reloaded through the gate so the response is built from the same shape every other comp
