@@ -202,23 +202,6 @@ function shipOf(row: Row): SlotEvaluation {
   return row.slot
 }
 
-/**
- * The rows a cursor can be put on, in the order they are drawn.
- *
- * Every filled row, and the empty rows that are somewhere to *be*. Those are not the same set,
- * and the difference is the whole of this function: **under a weight sort the blank lines below
- * the comp are one offer, not nine.** They all report the same `lands`, because there is nowhere
- * to choose between them, so nine tab stops that all fill the same row would be eight presses
- * spent going nowhere. With the sort off every gap is its own row and its own stop, which is the
- * mode where where a hull sits is a thing somebody decided.
- *
- * Same predicate the tile marks a drop target with — one answer to "is this blank line a place",
- * so the row the keyboard can reach and the row a hull would land on cannot come apart.
- */
-export function navigableRows(rows: readonly Row[], sorted: boolean): Row[] {
-  return rows.filter((row) => row.kind === 'ship' || !sorted || row.lands === row.row)
-}
-
 /** The signed distance from the point cap, as the tile shows it. */
 export function deltaPill(summary: LegalitySummary): DeltaPill {
   const delta = summary.pointsUsed - summary.pointCap

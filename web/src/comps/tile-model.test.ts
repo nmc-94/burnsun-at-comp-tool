@@ -18,7 +18,6 @@ import {
   EMPTY_SELECTION,
   firstFreeRow,
   introducedBy,
-  navigableRows,
   offersFlagship,
   previewRow,
   rowsBlamedBy,
@@ -847,40 +846,6 @@ describe('selectEvery', () => {
   })
 })
 
-describe('navigableRows', () => {
-  it('is every row of an arranged comp, gaps and all', () => {
-    // Sort off is the mode where where a hull sits is something somebody decided, so every gap
-    // is a place and every place is a stop.
-    const rows = scaffold(judge(placed([0, SHIP.abaddon], [5, SHIP.rifter])), 8, {
-      rows: [0, 5],
-      sorted: false,
-    })
-
-    expect(navigableRows(rows, false).map((row) => row.row)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
-  })
-
-  it('collapses the blank lines under a sorted comp to the one that is somewhere to be', () => {
-    // They all report the same `lands` — there is nowhere to choose between them — so eight of
-    // the nine stops would be presses spent going nowhere.
-    const rows = scaffold(judge(slots(SHIP.abaddon, SHIP.rifter)), 8)
-
-    expect(navigableRows(rows, true).map((row) => row.row)).toEqual([0, 1, 2])
-    expect(navigableRows(rows, true).filter((row) => row.kind === 'empty')).toHaveLength(1)
-  })
-
-  it('keeps every filled row whichever way the comp is drawn', () => {
-    const rows = scaffold(judge(slots(SHIP.rifter, SHIP.abaddon)), 4)
-
-    // Weight order puts the Abaddon first, and both are still stops.
-    expect(navigableRows(rows, true).filter((row) => row.kind === 'ship')).toHaveLength(2)
-  })
-
-  it('is every row of a comp with no room left, there being no blank line to fold away', () => {
-    const rows = scaffold(judge(slots(SHIP.abaddon, SHIP.rifter)), 2)
-
-    expect(navigableRows(rows, true)).toHaveLength(2)
-  })
-})
 
 function selectRowAt(selection: RowSelection, index: number): RowSelection {
   return selectRow(selection, index, { toggle: true })

@@ -63,6 +63,40 @@ test('a hull is placed, gone back to and replaced, without the mouse', async ({
   expect((await api.getComp(comp.id)).shipCount).toBe(1)
 })
 
+test('a Tab from a blank row reaches the next blank row, not the tile’s footer', async ({
+  page,
+  api,
+  team,
+}) => {
+  // Reported exactly like this: one hull in the first slot, the cursor on the second row, and Tab
+  // landed on the copy-image control at the bottom of the tile. The blank lines under a sorted
+  // comp were being folded into a single stop, because they all fill the same row — which is a
+  // fact about typing in them and nothing to do with what the key means.
+  const slug = await api.publishedRulesetSlug()
+  const comp = await api.createComp(team.id, 'Angel Shield Kite', slug)
+  await api.setSlots(comp.id, [ABADDON])
+  const board = await api.openBoard(team.id, [comp.id])
+
+  await page.goto(`/teams/${team.id}/boards/${board.id}`)
+  const tile = tileFor(page, comp.id)
+  await expect(tile.getByTestId('comp-row')).toHaveCount(1)
+
+  await tile.locator('[data-row="1"]').getByTestId('ship-search-input').click()
+  expect(await cursorRow(page)).toBe('1')
+
+  await page.keyboard.press('Tab')
+  expect(await cursorRow(page)).toBe('2')
+  await page.keyboard.press('Tab')
+  expect(await cursorRow(page)).toBe('3')
+
+  // The end of the scaffold is the one row a Tab does leave from, and it leaves to the footer —
+  // which is the browser carrying it, because nothing there claimed the key.
+  await tile.locator('[data-row="9"]').getByTestId('ship-search-input').click()
+  await page.keyboard.press('Tab')
+  expect(await cursorRow(page)).toBe(null)
+  await expect(tile.getByTestId('comp-copy-image')).toBeFocused()
+})
+
 test('tabbing through a tile stops on its rows and on none of their controls', async ({
   page,
   api,

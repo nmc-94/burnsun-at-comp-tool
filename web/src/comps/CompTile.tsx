@@ -31,7 +31,6 @@ import {
   deltaPill,
   EMPTY_SELECTION,
   firstFreeRow,
-  navigableRows,
   offersFlagship,
   rowsBlamedBy,
   scaffold,
@@ -293,14 +292,19 @@ export default function CompTile({
     () => rows.flatMap((row) => (row.kind === 'ship' ? [row.at] : [])),
     [rows],
   )
-  /** The rows the cursor walks: every filled one, and the blank lines that are somewhere to be. */
-  const navigable = useMemo(() => navigableRows(rows, sorted), [rows, sorted])
   /**
-   * The row that is the tile's tab stop — the cursor's, or the first row when it has never been
-   * anywhere. Falls back rather than sticking, because the row it was on can stop being
-   * navigable: the sort goes back on and eight blank lines become one.
+   * The row that is the tile's tab stop — the cursor's, or the first drawn row when it has never
+   * been anywhere. Falls back rather than sticking, because a comp can lose the row it was on:
+   * a shorter format redraws the scaffold, and the cursor has to land somewhere real.
+   *
+   * **The cursor walks `rows`, all of them.** Filled or blank, and whichever order they are
+   * drawn in. An earlier version folded the blank lines under a sorted comp into one stop, on
+   * the grounds that they all fill the same row and so eight of the nine presses went nowhere —
+   * which was true about what typing there *does* and false about what the key means. Tab moves
+   * down the tile. Where a hull typed into a blank line ends up is the sort's business, and
+   * always has been.
    */
-  const tabStop = navigable.some((row) => row.row === cursor) ? cursor : (navigable[0]?.row ?? null)
+  const tabStop = rows.some((row) => row.row === cursor) ? cursor : (rows[0]?.row ?? null)
 
   // The cursor lands where the last gesture aimed it, after the render that made room for it.
   // Deliberately not keyed on `cursor`: this fires once per gesture, and firing on a row's
@@ -351,8 +355,8 @@ export default function CompTile({
 
   /** The next row the cursor would walk to, or null at the end of the list. */
   function rowAfter(row: number): number | null {
-    const at = navigable.findIndex((each) => each.row === row)
-    return at === -1 ? null : (navigable[at + 1]?.row ?? null)
+    const at = rows.findIndex((each) => each.row === row)
+    return at === -1 ? null : (rows[at + 1]?.row ?? null)
   }
 
   /**
@@ -381,8 +385,8 @@ export default function CompTile({
    * where it is means a span that crosses a gap resumes on the far side of it.
    */
   function stepCursor(from: Row, by: number, extend: boolean): boolean {
-    const at = navigable.findIndex((row) => row.row === from.row)
-    const next = at === -1 ? undefined : navigable[at + by]
+    const at = rows.findIndex((row) => row.row === from.row)
+    const next = at === -1 ? undefined : rows[at + by]
     if (!next) return false
     setCursor(next.row)
     setClaim({ row: next.row, select: false })

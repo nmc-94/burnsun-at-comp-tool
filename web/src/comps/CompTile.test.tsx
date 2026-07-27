@@ -680,14 +680,20 @@ describe('the hull search from the keyboard', () => {
     expect(onChange).toHaveBeenCalledWith(slots(SHIP.condor))
   })
 
-  it('leaves Tab alone with nothing to take, so a comp is not nine keystrokes to cross', () => {
+  it('hands Tab to the row when there is nothing to take, rather than committing', () => {
+    // The search claims Tab only when it has a match to commit. With none the key goes
+    // unprevented and the row underneath reads it as "next row" — which is how one key both
+    // takes a hull and walks the tile, and why the row checks `defaultPrevented` first.
     const { onChange } = mount(slots())
-    const field = openSearch()
 
-    expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(true)
+    expect(fireEvent.keyDown(openSearch(), { key: 'Tab' })).toBe(false)
+    expect(cursorRow()).toBe('1')
 
+    // A query nothing matches is the same case: no hull to take, so still a move.
+    const field = within(line(1)).getByTestId('ship-search-input')
     fireEvent.change(field, { target: { value: 'zzzz' } })
-    expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(true)
+    expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(false)
+    expect(cursorRow()).toBe('2')
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -816,12 +822,12 @@ describe('moving between the rows from the keyboard', () => {
 
   it('leaves Tab to the browser at either end, which is how the cursor gets out of the tile', () => {
     // The only way jsdom can express "and then the browser takes it from here": the key comes
-    // back unclaimed. Where it actually goes is comp-edit.spec.ts's.
+    // back unclaimed. Where it actually goes is comp-keyboard.spec.ts's.
     mount(slots(SHIP.abaddon))
 
     expect(fireEvent.keyDown(line(0), { key: 'Tab', shiftKey: true })).toBe(true)
-    // Row 1 is the last stop under a sort — the nine blank lines below it are one offer.
-    expect(fireEvent.keyDown(line(1), { key: 'Tab' })).toBe(true)
+    // Row 9 is the end of the scaffold, and the only row a Tab is not claimed on.
+    expect(fireEvent.keyDown(line(9), { key: 'Tab' })).toBe(true)
   })
 
   it('claims the arrows at either end even though they move nothing', () => {
@@ -942,15 +948,20 @@ describe('moving between the rows from the keyboard', () => {
     expect(cursorRow()).toBe('3')
   })
 
-  it('folds a sorted comp’s blank lines into one stop', () => {
-    // They all fill the same row — there is nowhere to choose between them — so eight of the
-    // nine would be presses spent going nowhere.
+  it('walks the blank lines under a sorted comp one at a time, to the end of the scaffold', () => {
+    // These all fill the same row, which is a fact about typing in them and not about what the
+    // key means: Tab moves down the tile. Folding them into one stop is what used to send a Tab
+    // from the second row straight out of the tile and into its footer.
     mount(slots(SHIP.abaddon))
 
-    fireEvent.keyDown(line(0), { key: 'ArrowDown' })
-    expect(cursorRow()).toBe('1')
-    expect(fireEvent.keyDown(line(1), { key: 'ArrowDown' })).toBe(false)
-    expect(cursorRow()).toBe('1')
+    for (const [from, landing] of [
+      [0, '1'],
+      [1, '2'],
+      [2, '3'],
+    ] as const) {
+      expect(fireEvent.keyDown(line(from), { key: 'Tab' })).toBe(false)
+      expect(cursorRow()).toBe(landing)
+    }
   })
 
   it('is one tab stop for the whole list, and everything else is out of the sequence', () => {
