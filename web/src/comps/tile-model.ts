@@ -245,8 +245,24 @@ export function withRow(
   at: number,
   typeId: number | null,
 ): PlacedSlot[] {
-  if (typeId === null) return slots.filter((_, index) => index !== at)
+  if (typeId === null) return withRowsGone(slots, [at])
   return slots.map((slot, index) => (index === at ? { ...slot, typeId } : slot))
+}
+
+/**
+ * The comp with every hull at these array indexes taken out.
+ *
+ * One pass, not `withRow` in a loop, and that is the point of it existing: each removal
+ * renumbers every index above it, so the second call in a loop would be given a number that had
+ * stopped meaning the row it was read from. Filtering the whole set at once never renumbers
+ * anything mid-way.
+ *
+ * The rows left behind keep the positions they had, so taking two hulls out of the middle of an
+ * arranged comp leaves the gap where they were rather than closing it up.
+ */
+export function withRowsGone(slots: readonly PlacedSlot[], ats: readonly number[]): PlacedSlot[] {
+  const going = new Set(ats)
+  return slots.filter((_, index) => !going.has(index))
 }
 
 /**

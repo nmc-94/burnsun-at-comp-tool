@@ -909,6 +909,55 @@ describe('moving between the rows from the keyboard', () => {
     expect(isFocused(within(line(0)).getByTestId('ship-search-input'))).toBe(true)
   })
 
+  it('empties the whole selection on Delete, not just the row it was pressed on', () => {
+    // Three rows marked and one hull disappearing is a gesture acting on something other than
+    // what is on screen. The same rule a drag of a row inside the selection already follows.
+    const { onChange } = mount(
+      slots(SHIP.abaddon, SHIP.apocalypse, SHIP.armageddon, SHIP.rifter),
+      true,
+      { follows: true },
+    )
+
+    fireEvent.keyDown(line(0), { key: 'ArrowDown', shiftKey: true })
+    fireEvent.keyDown(line(1), { key: 'ArrowDown', shiftKey: true })
+    expect(pickedRows()).toEqual([0, 1, 2])
+
+    fireEvent.keyDown(line(2), { key: 'Delete' })
+
+    expect(hullNames()).toEqual(['Rifter'])
+    expect(onChange).toHaveBeenCalledWith([{ position: 3, typeId: SHIP.rifter, isFlagship: false }])
+    // The cursor stays on the row it was pressed on, which is a blank one now.
+    expect(cursorRow()).toBe('2')
+  })
+
+  it('empties only the row the cursor is on when it is not part of the selection', () => {
+    const { onChange } = mount(slots(SHIP.abaddon, SHIP.orthrus, SHIP.rifter), true, {
+      follows: true,
+    })
+
+    // Picked out by clicking, then the cursor taken somewhere else entirely.
+    fireEvent.click(row(0))
+    expect(pickedRows()).toEqual([0])
+
+    fireEvent.keyDown(line(2), { key: 'Delete' })
+
+    expect(hullNames()).toEqual(['Abaddon', 'Orthrus'])
+    expect(onChange.mock.calls.at(-1)?.[0]).toHaveLength(2)
+  })
+
+  it('leaves the × naming one hull acting on one hull', () => {
+    // A control named "Remove Abaddon" that took three would be worse than the inconsistency.
+    const { onChange } = mount(slots(SHIP.abaddon, SHIP.apocalypse), true, { follows: true })
+
+    fireEvent.keyDown(line(0), { key: 'ArrowDown', shiftKey: true })
+    expect(pickedRows()).toEqual([0, 1])
+
+    fireEvent.click(within(line(0)).getByTestId('comp-row-remove'))
+
+    expect(hullNames()).toEqual(['Apocalypse'])
+    expect(onChange.mock.calls.at(-1)?.[0]).toHaveLength(1)
+  })
+
   it('designates a flagship on f, and stays on the row', () => {
     // The one edit that does not hand the cursor on: designating is a fact about the row
     // somebody is looking at, not a step down the comp.

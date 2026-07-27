@@ -31,6 +31,7 @@ import {
   withHullOn,
   withHullsAdded,
   withRow,
+  withRowsGone,
 } from './tile-model'
 import type { PlacedSlot, RowSelection } from './tile-model'
 
@@ -824,6 +825,41 @@ describe('selectRow', () => {
     const anchored = selectRow(EMPTY_SELECTION, 9)
 
     expect(selectRow(anchored, 2, { span: true, order: [0, 1, 2] }).rows).toEqual([2])
+  })
+})
+
+describe('withRowsGone', () => {
+  it('takes every named hull out in one pass, whatever order they are named in', () => {
+    const four = slots(SHIP.abaddon, SHIP.orthrus, SHIP.rifter, SHIP.condor)
+
+    expect(withRowsGone(four, [2, 0]).map((slot) => slot.typeId)).toEqual([
+      SHIP.orthrus,
+      SHIP.condor,
+    ])
+  })
+
+  it('is why this is not withRow in a loop', () => {
+    // Each removal renumbers every index above it, so the second call in a loop would be handed a
+    // number that had stopped meaning the row it was read from. Removing 0 and then 1 takes the
+    // Abaddon and the *Rifter* — the Orthrus having slid down into index 0 in between.
+    const three = slots(SHIP.abaddon, SHIP.orthrus, SHIP.rifter)
+    const looped = withRow(withRow(three, 0, null), 1, null)
+
+    expect(looped.map((slot) => slot.typeId)).toEqual([SHIP.orthrus])
+    expect(withRowsGone(three, [0, 1]).map((slot) => slot.typeId)).toEqual([SHIP.rifter])
+  })
+
+  it('leaves the rows behind on the rows they were on', () => {
+    const arranged = placed([0, SHIP.abaddon], [4, SHIP.orthrus], [7, SHIP.rifter])
+
+    // The gap where the Orthrus was stays a gap: taking hulls out does not close a comp up.
+    expect(rowsOf(withRowsGone(arranged, [1]))).toEqual([0, 7])
+  })
+
+  it('names nothing and changes nothing', () => {
+    const two = slots(SHIP.abaddon, SHIP.rifter)
+
+    expect(withRowsGone(two, [])).toEqual(two)
   })
 })
 

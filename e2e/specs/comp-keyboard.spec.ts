@@ -11,6 +11,7 @@ import { expectCompSaved } from '../src/wait'
 
 const ABADDON = 24_692
 const SCIMITAR = 11_978
+const RIFTER = 587
 
 /** The comp row the cursor is on, whether it rests on the row or in the field on it. */
 async function cursorRow(page: import('@playwright/test').Page): Promise<string | null> {
@@ -167,6 +168,31 @@ test('shift and the arrows carry the selection, and Ctrl+C ports what they gathe
   await expect(ported.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Scimitar'])
   // A port derives rather than moves, whichever way it was asked for.
   await expect(tile.getByTestId('comp-row')).toHaveCount(3)
+})
+
+test('Delete takes out every row shift and the arrows gathered', async ({ page, api, team }) => {
+  // Three rows marked and one hull disappearing is a gesture acting on something other than what
+  // is on screen. Worth a browser: the marks a person is reading are `.trow.picked`, and this
+  // asserts against those rather than against the state behind them.
+  const slug = await api.publishedRulesetSlug()
+  const comp = await api.createComp(team.id, 'Armor Brawl', slug)
+  await api.setSlots(comp.id, [ABADDON, SCIMITAR, SCIMITAR, RIFTER])
+  const board = await api.openBoard(team.id, [comp.id])
+
+  await page.goto(`/teams/${team.id}/boards/${board.id}`)
+  const tile = tileFor(page, comp.id)
+  await expect(tile.getByTestId('comp-row')).toHaveCount(4)
+
+  await tile.getByTestId('comp-row').first().click()
+  await page.keyboard.press('Shift+ArrowDown')
+  await page.keyboard.press('Shift+ArrowDown')
+  await expect(tile.locator('.trow.picked')).toHaveCount(3)
+
+  await page.keyboard.press('Delete')
+
+  await expect(tile.getByTestId('comp-row-name')).toHaveText(['Rifter'])
+  await expectCompSaved(tile)
+  expect((await api.getComp(comp.id)).shipCount).toBe(1)
 })
 
 test('Delete empties a row, and Ctrl+Z from the field that replaces it puts the hull back', async ({

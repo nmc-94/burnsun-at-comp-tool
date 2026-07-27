@@ -39,7 +39,7 @@ import {
   withFlagship,
   withHullOn,
   withHullsAdded,
-  withRow,
+  withRowsGone,
 } from './tile-model'
 import type { PlacedSlot, Row, RowSelection } from './tile-model'
 import ViolationsPopover from './ViolationsPopover'
@@ -406,15 +406,22 @@ export default function CompTile({
   }
 
   /**
-   * Empty the row the cursor is on, and stay there.
+   * Empty the rows this gesture names, and stay on the one the cursor is on.
    *
-   * Staying is the point: the row does not go away, it becomes a blank one, and the cursor lands
-   * in the search field that has just appeared on it — which is where a replacement would be
-   * typed. `openRow` is let go of too, or a hull arriving on that row later would find a swap
+   * `taken` is what makes the key and the × two different gestures over one function. **Delete
+   * empties the whole selection** when the row it was pressed on is part of one, which is the
+   * rule a drag already follows: three rows marked and one hull disappearing is a gesture acting
+   * on something other than what is on screen. The × does not, and cannot — it is a control
+   * named "Remove Abaddon", and a control that took three hulls while saying one would be worse
+   * than the inconsistency.
+   *
+   * Staying is the other half: the row does not go away, it becomes a blank one, and the cursor
+   * lands in the search field that has just appeared on it — which is where a replacement would
+   * be typed. `openRow` is let go of too, or a hull arriving on that row later would find a swap
    * apparently open on it.
    */
-  function removeRow(at: number, row: number) {
-    onChange(withRow(slots, at, null))
+  function removeRow(taken: number[], row: number) {
+    onChange(withRowsGone(slots, taken))
     setOpenRow((held) => (held === row ? null : held))
     goToRow(row)
   }
@@ -556,7 +563,8 @@ export default function CompTile({
     }
     if (isRowRemove(event)) {
       event.preventDefault()
-      removeRow(row.at, row.row)
+      // The whole selection when this row is in it, exactly as a drag of it would carry.
+      removeRow(dragging(row.at), row.row)
       return
     }
     if (isRowFlagship(event)) {
@@ -958,7 +966,7 @@ export default function CompTile({
                         // Out of the tab order with the rest; Delete on the row is its keyboard.
                         tabIndex={-1}
                         aria-label={`Remove ${hullName}`}
-                        onClick={() => removeRow(row.at, row.row)}
+                        onClick={() => removeRow([row.at], row.row)}
                       >
                         <ClearGlyph />
                       </button>
