@@ -48,7 +48,9 @@ const COMPS: Record<
   b: { name: 'Beta', typeIds: [SHIP.abaddon, SHIP.abaddon], version: 'v2026-07-23' },
   d: { name: 'Delta', typeIds: [SHIP.maulus], version: 'v2026-08-01' },
   // Two hulls that are not each other and not an Abaddon, so a replacement is visible in a
-  // list of names whichever direction it goes.
+  // list of names whichever direction it goes. Note the tile draws them by weight, so Gamma
+  // reads Scimitar (32) then Rifter (4) — the reverse of how they are stored, which is what
+  // `rowOf` and `lift` count along.
   g: { name: 'Gamma', typeIds: [SHIP.rifter, SHIP.scimitar], version: 'v2026-07-23' },
   r: { name: 'Rho', typeIds: [SHIP.rifter], version: 'v2026-07-23', level: 'viewer' },
 }
@@ -72,6 +74,7 @@ function stubFetch() {
           rulesetVersionLabel: comp[1].version,
           shipCount: comp[1].typeIds.length,
           createdByName: 'Kadir',
+          createdByCharacterId: 90000001,
           createdAt: '2026-07-01T00:00:00Z',
           updatedAt: '2026-07-01T00:00:00Z',
           yourLevel: comp[1].level ?? 'owner',
@@ -263,9 +266,10 @@ describe('dragging a hull onto a slot', () => {
     lift('Gamma')
     fireEvent.drop(rowOf('Beta', 1))
 
-    await waitFor(() => expect(hulls('Beta')).toEqual(['Abaddon', 'Rifter']))
+    // The Scimitar, which is the row Gamma draws first.
+    await waitFor(() => expect(hulls('Beta')).toEqual(['Abaddon', 'Scimitar']))
     // A copy, not a move — the same bargain every other landing here makes.
-    expect(hulls('Gamma')).toEqual(['Rifter', 'Scimitar'])
+    expect(hulls('Gamma')).toEqual(['Scimitar', 'Rifter'])
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1), { timeout: 2000 })
     expect(writes(calls).map((call) => call.url)).toEqual(['/api/v1/comps/b/slots'])
@@ -317,7 +321,9 @@ describe('dragging a hull onto a slot', () => {
 
     fireEvent.drop(rowOf('Gamma', 1))
 
-    await waitFor(() => expect(hulls('Gamma')).toEqual(['Rifter', 'Rifter']))
+    // The Scimitar off the first row, onto the second — so the Rifter that was there is gone
+    // and the comp fields two of them.
+    await waitFor(() => expect(hulls('Gamma')).toEqual(['Scimitar', 'Scimitar']))
   })
 
   it('refuses the row the hull was picked up from', async () => {
@@ -333,7 +339,7 @@ describe('dragging a hull onto a slot', () => {
     fireEvent.drop(rowOf('Gamma', 0))
 
     expect(rowOf('Gamma', 0).dataset.landing).toBe('false')
-    expect(hulls('Gamma')).toEqual(['Rifter', 'Scimitar'])
+    expect(hulls('Gamma')).toEqual(['Scimitar', 'Rifter'])
     expect(writes(calls)).toHaveLength(0)
   })
 
@@ -353,7 +359,8 @@ describe('dragging a hull onto a slot', () => {
     fireEvent.drop(rowOf('Beta', 1))
 
     await waitFor(() =>
-      expect(hulls('Beta')).toEqual(['Abaddon', 'Abaddon', 'Rifter', 'Scimitar']),
+      // Appended, then drawn by weight — which puts the Scimitar above the Rifter.
+      expect(hulls('Beta')).toEqual(['Abaddon', 'Abaddon', 'Scimitar', 'Rifter']),
     )
   })
 

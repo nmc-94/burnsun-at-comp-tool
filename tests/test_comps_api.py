@@ -290,6 +290,9 @@ def test_authorship_is_captured_once_and_survives_an_edit_by_someone_else(
 
     assert after["name"] == "Renamed by Salvos"
     assert after["createdByName"] == "Kadir"
+    # The id beside the name, and it is the one the delete rule reads: a client asking "is
+    # this mine" cannot ask it of a name somebody could rename themselves into.
+    assert after["createdByCharacterId"] == OWNER
 
 
 def test_a_comp_stays_bound_to_the_version_it_was_built_against(client, sign_in, publish):
@@ -393,6 +396,65 @@ def test_a_deleted_comp_is_gone_and_its_team_is_not(client, sign_in, publish):
     assert removed.status_code == 204
     assert client.get(f"/api/v1/comps/{comp['id']}").status_code == 404
     assert client.get(f"/api/v1/teams/{team['id']}").status_code == 200
+
+
+def test_an_editor_may_not_delete_a_comp_somebody_else_made(client, sign_in, publish, resolver):
+    """Editing someone else's draft is collaboration. Discarding it is not.
+
+    A 403 rather than the 404 the other refusals give, and that is the point: this comp is
+    plainly visible in the rail to the character being refused, so answering "no such comp"
+    would be a lie they could see through. What they are being told is whose it is.
+    """
+    publish()
+    resolver.knows("Salvos", EDITOR)
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    grant_to(client, team, "Salvos", "editor")
+    comp = make_comp(client, team)
+
+    sign_in(EDITOR, "Salvos")
+    refused = client.delete(f"/api/v1/comps/{comp['id']}")
+    # Still an editor in every other respect — the refusal is about authorship, not level.
+    built = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON))
+
+    assert refused.status_code == 403
+    assert built.status_code == 200
+
+
+def test_an_editor_may_delete_the_comp_they_made_themselves(client, sign_in, publish, resolver):
+    publish()
+    resolver.knows("Salvos", EDITOR)
+    sign_in(OWNER)
+    team = make_team(client)
+    grant_to(client, team, "Salvos", "editor")
+
+    sign_in(EDITOR, "Salvos")
+    mine = make_comp(client, team, name="Salvos' draft")
+    removed = client.delete(f"/api/v1/comps/{mine['id']}")
+
+    assert removed.status_code == 204
+
+
+def test_a_team_owner_may_delete_a_comp_they_did_not_make(client, sign_in, publish, resolver):
+    """Without this, a comp outlives its author's membership and nobody can remove it.
+
+    There is no way to hand a comp to a new author, so the owner clause is what keeps a
+    departed member's drafts from becoming permanent fixtures in the team's library.
+    """
+    publish()
+    resolver.knows("Salvos", EDITOR)
+    sign_in(OWNER)
+    team = make_team(client)
+    grant_to(client, team, "Salvos", "editor")
+
+    sign_in(EDITOR, "Salvos")
+    theirs = make_comp(client, team, name="Salvos' draft")
+
+    sign_in(OWNER)
+    removed = client.delete(f"/api/v1/comps/{theirs['id']}")
+
+    assert removed.status_code == 204
+    assert client.get(f"/api/v1/comps/{theirs['id']}").status_code == 404
 
 
 def test_a_comp_name_may_not_be_blank(client, sign_in, publish):

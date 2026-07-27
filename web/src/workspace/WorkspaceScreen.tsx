@@ -11,7 +11,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { messageFor } from '../api'
+import { readSettings } from '../settings'
+import { mayDeleteComp } from '../comps/access'
 import { createComp, forkComp, listComps } from '../comps/api'
+import DeleteCompDialog from '../comps/DeleteCompDialog'
+import {
+  flushDeletion,
+  hasDeletion,
+  holdDeletion,
+  takeDeletion,
+} from '../comps/pending-delete'
+import type { PendingDelete } from '../comps/pending-delete'
+import { offerUndoOnce, withdrawUndoOnce } from '../comps/undo-keys'
 import { vocabularyOf } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import { evaluate } from '../engine'
@@ -26,7 +37,8 @@ import { boardSize, tileHeights } from './board-metrics'
 import BoardControls from './BoardControls'
 import BoardGrid from './BoardGrid'
 import BoardTabs from './BoardTabs'
-import { seedCards } from './comp-cards'
+import { forgetCard, seedCards } from './comp-cards'
+import { forgetComp } from './hull-transfer'
 import LibraryRail from './LibraryRail'
 import { getWorkspace, putWorkspace } from './layout-api'
 import {
@@ -43,7 +55,10 @@ import {
   withBoardRenamed,
   withBoardSnap,
   withCompClosed,
+  withCompForgotten,
   withCompOpened,
+  withCompRestored,
+  spotsOf,
   withTileMoved,
   withTilePlaced,
   withTilesPlaced,
@@ -63,12 +78,20 @@ interface Props {
   readonly teamId: string
   /** Null means "whichever board the saved layout says was active". */
   readonly boardId: string | null
+  /** Who is signed in, for the one question a comp's payload cannot answer on its own: whether
+   *  it is theirs to delete. Null only on a route that renders without a session. */
+  readonly characterId: number | null
   /** True on `/teams/:id/settings`, which is the account menu's Team settings item and the
    *  address the settings page used to have. Both are answered by opening the dialog. */
   readonly openSettings?: boolean
 }
 
-export default function WorkspaceScreen({ teamId, boardId, openSettings = false }: Props) {
+export default function WorkspaceScreen({
+  teamId,
+  boardId,
+  characterId,
+  openSettings = false,
+}: Props) {
   const [comps, setComps] = useState<readonly CompDetail[] | null>(null)
   const [layout, setLayout] = useState<WorkspaceLayout | null>(null)
   const [layoutState, setLayoutState] = useState<LayoutState>('idle')
@@ -76,6 +99,9 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
   const [creating, setCreating] = useState(false)
   const [newCompId, setNewCompId] = useState<string | null>(null)
   const [railOpen, setRailOpen] = useState(false)
+  /** The comp a confirmation is open for, or null. The whole comp rather than its id, so the
+   *  dialog can name it and count its hulls without looking anything up. */
+  const [confirming, setConfirming] = useState<CompDetail | null>(null)
   // Component state, for the same reason the rail's own open/closed is: a modal does not
   // change where you are, and the board behind it is still the page. Mounted only while open,
   // so opening always reads a fresh list and it costs nothing shut.
@@ -101,6 +127,15 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
   // flush, which is why it is a ref rather than derived from `layout` at flush time.
   const pending = useRef<WorkspaceLayout | null>(null)
   const persisted = useRef<string>('')
+
+  // The arrangement as it stands, for the two callers that read it from outside a render: the
+  // undo key, which fires from a listener registered when the deletion was made, and a failed
+  // deletion, whose answer can arrive long after. Both have to put a comp back into the layout
+  // as it is *now*, not as it was when they were created.
+  const latest = useRef<WorkspaceLayout | null>(null)
+  useEffect(() => {
+    latest.current = layout
+  }, [layout])
 
   useEffect(() => {
     let cancelled = false
@@ -268,6 +303,29 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
     [board],
   )
 
+  /** Every comp open on any board, not just the one being looked at. The rail lists an empty
+   *  comp only while it is open somewhere — see `listable` in LibraryRail. */
+  const openAnywhere = useMemo(
+    () => new Set((layout?.boards ?? []).flatMap((each) => each.tiles.map((tile) => tile.compId))),
+    [layout],
+  )
+
+  /**
+   * Which comps this character may throw away — their own, or all of them if they own the team.
+   *
+   * A set rather than a predicate handed down, so a tile's props stay referentially stable and a
+   * rail leaf can answer the question without being given the whole comp. The server decides
+   * this again on its own; what this does is keep the control from being offered for somebody
+   * else's work in the first place.
+   */
+  const deletableCompIds = useMemo(
+    () =>
+      new Set(
+        (comps ?? []).filter((comp) => mayDeleteComp(comp, characterId)).map((comp) => comp.id),
+      ),
+    [comps, characterId],
+  )
+
   const wide = useWide()
   /**
    * How the board on screen is drawn, which is not always how it is *saved*.
@@ -405,6 +463,126 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
   )
 
   /**
+   * Put a deleted comp back, on every board it was open on and at the index and place it held.
+   *
+   * Reads the layout out of a ref rather than the closure, because both callers are late: the
+   * undo key fires from a listener registered at the moment of the deletion, and a deletion the
+   * server refused answers whenever it answers. The board may have been rearranged either way.
+   *
+   * The comp goes back on the end of the list rather than at its old index, which is where
+   * `create` and `fork` already put one — the rail groups by archetype and sorts nothing, so
+   * there is no order here to be faithful to.
+   */
+  const restoreComp = useCallback(
+    (lost: PendingDelete) => {
+      const now = latest.current
+      if (!now) return
+      setComps((current) =>
+        (current ?? []).some((comp) => comp.id === lost.comp.id)
+          ? (current ?? [])
+          : [...(current ?? []), lost.comp],
+      )
+      arrange(withCompRestored(now, lost.spots, activeBoard(now.boards, now.activeBoardId).id))
+    },
+    [arrange],
+  )
+
+  /**
+   * Throw a comp away — from the board, from the rail, and in a moment from the server.
+   *
+   * Everything visible happens now and the request waits, which is what makes the undo below
+   * lossless: it cancels something that has not happened rather than re-creating something that
+   * has. See `comps/pending-delete.ts` for why a hard delete cannot honestly be re-created.
+   */
+  const removeComp = useCallback(
+    (compId: string) => {
+      if (!layout) return
+      const going = (comps ?? []).find((comp) => comp.id === compId)
+      if (!going) return
+
+      holdDeletion({ comp: going, spots: spotsOf(layout, compId) }, (lost, problem) => {
+        // A refusal that arrives after the fact — an archived team answers 409, and nothing in
+        // the comp listing says a team is archived, so this cannot be gated in advance. The comp
+        // comes back rather than being left gone on screen and present on the server.
+        setError(messageFor(problem))
+        restoreComp(lost)
+      })
+
+      forgetCard(compId)
+      forgetComp(compId)
+      setComps((current) => (current ?? []).filter((comp) => comp.id !== compId))
+      // Otherwise restoring a comp that was new when it was deleted yanks the caret back into
+      // its name field, from a gesture that was about undoing a deletion.
+      setNewCompId((id) => (id === compId ? null : id))
+      arrange(withCompForgotten(layout, compId))
+
+      // Ctrl+Z belongs to the browser whenever the caret is in a field with something in it, and
+      // a drag onto the bin never moves focus — so a comp dragged away while the rail's search
+      // box still holds a query would be undone by a keystroke that never arrives. The menu and
+      // the footer button get this for free by unmounting; the drag does not.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+
+      offerUndoOnce(() => {
+        const taken = takeDeletion()
+        if (taken) restoreComp(taken)
+      })
+    },
+    [layout, comps, arrange, restoreComp],
+  )
+
+  /**
+   * The gesture behind all three delete controls — the rail's menu, the tile's footer, and the
+   * bin on the board. One rule about asking first, in one place, so the three cannot drift into
+   * meaning different things.
+   *
+   * A comp with nothing in it goes without a word whatever the setting says. That is the comp
+   * this whole feature exists for: `+ New comp` writes one to the server the moment it is
+   * clicked, so an abandoned click leaves an "Untitled comp" behind, and a modal in front of
+   * throwing that away would be friction guarding nothing.
+   */
+  const askRemoveComp = useCallback(
+    (compId: string) => {
+      const going = (comps ?? []).find((comp) => comp.id === compId)
+      if (!going) return
+      if (going.shipCount > 0 && readSettings().confirmCompDelete) {
+        setConfirming(going)
+        return
+      }
+      removeComp(compId)
+    },
+    [comps, removeComp],
+  )
+
+  useEffect(() => {
+    /** Give up the undo and send the deletion for real. */
+    function settle(options?: { keepalive?: boolean }) {
+      if (!hasDeletion()) return
+      withdrawUndoOnce()
+      flushDeletion(options)
+    }
+    function onPageHide(event: PageTransitionEvent) {
+      // Frozen for the back/forward cache is not left, and the page can come back with the undo
+      // still meaningful. For something nothing can reverse, the safe way to be wrong is to
+      // leave the comp alive.
+      if (event.persisted) return
+      settle({ keepalive: true })
+    }
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      // Leaving the workspace ends the window: the board this comp was on is not on screen any
+      // more, so there is nothing left for Ctrl+Z to put it back onto.
+      //
+      // Deliberately *not* also on `visibilitychange`, which the layout autosave below uses.
+      // That fires on every tab switch, and saving an arrangement early is free where deleting
+      // a comp early is somebody alt-tabbing to Slack and losing their undo.
+      settle()
+    }
+    // Keyed on the team, because switching teams does not unmount this component — it re-runs
+    // effects at the same position, and this cleanup is what makes a team switch settle.
+  }, [teamId])
+
+  /**
    * Where a tile was put down.
    *
    * The same route as opening or closing one: the arrangement is convenience state, so a
@@ -517,11 +695,14 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
       <LibraryRail
         comps={comps}
         openCompIds={openCompIds}
+        openAnywhere={openAnywhere}
         open={railOpen}
         onToggle={() => setRailOpen((open) => !open)}
         onOpenComp={openComp}
-        onCreate={() => void create()}
-        creating={creating}
+        onCloseComp={closeComp}
+        onForkComp={(compId) => void fork(compId)}
+        onDeleteComp={askRemoveComp}
+        deletableCompIds={deletableCompIds}
       />
 
       <div className="ws-main">
@@ -556,6 +737,8 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
           onCreate={() => void create()}
           onPort={(compId, positions) => void fork(compId, positions)}
           onFork={(compId) => void fork(compId)}
+          onDelete={askRemoveComp}
+          deletableCompIds={deletableCompIds}
           onReorder={moveTile}
           vocabulary={vocabulary}
           onCompChanged={recordChange}
@@ -587,13 +770,17 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
             />
           )}
 
-          {/* What a driver waits on instead of sleeping through the layout debounce, and the
-              one live region on a board of twenty tiles whose own save states are silent. */}
+          {/* Kept in the document and out of sight. Nobody watches a board to find out whether
+              its arrangement has been written — it always has, within 800ms, and the line said
+              so in the corner of every screenshot. What still needs it is `expectLayoutSaved`,
+              which waits on `data-layout-state` rather than sleeping through that debounce; the
+              node is the §6.8 automation vocabulary, not a report to a person. `hidden` also
+              takes it out of the accessibility tree, which a `role="status"` nobody can see
+              should not have been in. */}
           <p
-            className="ws-status"
+            hidden
             data-testid="workspace-layout-state"
             data-layout-state={layoutState}
-            role="status"
           >
             {layoutLabel(layoutState)}
           </p>
@@ -607,6 +794,21 @@ export default function WorkspaceScreen({ teamId, boardId, openSettings = false 
       </div>
 
       {settingsOpen && <TeamSettingsDialog teamId={teamId} onClose={closeSettings} />}
+
+      {confirming && (
+        <DeleteCompDialog
+          name={confirming.name}
+          shipCount={confirming.shipCount}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            // Shut first. The dialog restores focus to whatever opened it on unmount, and that
+            // control is often inside the tile that is about to go — closing after the delete
+            // would hand focus to an element on its way out of the document.
+            setConfirming(null)
+            removeComp(confirming.id)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -10,10 +10,11 @@
 // the price of every other copy of it, and any hand-rolled delta is a second pricing rule
 // waiting to disagree with the first.
 
-import { evaluate } from '../engine'
+import { evaluate, HULL_SIZE_ORDER } from '../engine'
 import type {
   Comp,
   CompSlot,
+  HullSize,
   LegalityResult,
   LegalitySummary,
   Ruleset,
@@ -53,15 +54,56 @@ export interface Candidate {
 }
 
 /**
- * The fixed row scaffold: filled rows first, then empty ones to the field size.
+ * Where a hull sits in the row order: biggest first, unresolved hulls last.
+ *
+ * `HULL_SIZE_ORDER` is the engine's own list, borrowed rather than restated — it is already
+ * descending, because it is the order a comp reports its size-cap violations in.
+ */
+function sizeRank(size: HullSize | null): number {
+  const at = size === null ? -1 : HULL_SIZE_ORDER.indexOf(size)
+  return at === -1 ? HULL_SIZE_ORDER.length : at
+}
+
+/**
+ * The order hulls are read in: **points descending, then hull size descending, then name**.
+ *
+ * A comp is read from the top down when you are deciding what to cut, and what you are looking
+ * for is the expensive end of it. Points first says that directly. Size breaks the ties points
+ * leaves — two hulls at the same value are not the same commitment — and the name settles the
+ * rest so the same comp always draws the same way rather than shuffling on every re-render.
+ *
+ * `points` is the effective cost, surcharge included, which is what the row actually shows.
+ */
+function byWeight(a: SlotEvaluation, b: SlotEvaluation): number {
+  if (a.points !== b.points) return b.points - a.points
+  const size = sizeRank(a.hullSize) - sizeRank(b.hullSize)
+  if (size !== 0) return size
+  return a.name.localeCompare(b.name)
+}
+
+/**
+ * The fixed row scaffold: filled rows first in weight order, then empty ones to the field size.
  *
  * Normally exactly `fieldSize` rows, which is what makes the tile a fixed height. It grows
  * only for a comp that already holds more hulls than the format allows — nothing here
  * refuses that comp, so nothing here may hide it either. There is no empty row to click in
  * that state, which is the scaffold having run out rather than a rule being enforced.
+ *
+ * **The sort is this array's order and nothing else.** Every row keeps the `index` it has in
+ * the stored slot list, and that is the number every gesture downstream carries — a hull
+ * replaced in place, a flagship designated, the rows a partial fork names for the server to
+ * take out of its own copy. Sorting the *stored* list instead would have been simpler here and
+ * wrong there: a comp already saved would have gone on drawing in its old order until somebody
+ * edited it, and re-saving every comp on open to fix that would move `updated_at` — and stale
+ * every share link — for the act of looking at one.
  */
 export function scaffold(result: LegalityResult, fieldSize: number): Row[] {
-  const rows: Row[] = result.slots.map((slot, index) => ({ kind: 'ship', index, slot }))
+  // Paired with their stored indexes *before* sorting, so the sort moves the pairs and the
+  // indexes travel with the hulls they belong to.
+  const placed = result.slots.map((slot, index) => ({ index, slot }))
+  placed.sort((a, b) => byWeight(a.slot, b.slot))
+
+  const rows: Row[] = placed.map(({ index, slot }) => ({ kind: 'ship', index, slot }))
   for (let index = rows.length; index < fieldSize; index += 1) {
     rows.push({ kind: 'empty', index })
   }
@@ -212,13 +254,30 @@ export const EMPTY_SELECTION: RowSelection = { rows: [], anchor: null }
 export function selectRow(
   selection: RowSelection,
   index: number,
-  options?: { readonly range?: boolean; readonly toggle?: boolean },
+  options?: {
+    readonly range?: boolean
+    readonly toggle?: boolean
+    /**
+     * The stored indexes of the filled rows **in the order they are drawn**.
+     *
+     * A range means the rows between these two *on screen*, and rows are no longer drawn in
+     * stored order — they are sorted by weight. Counting from anchor to index numerically would
+     * pick out a set that is not the one under the cursor, and would do it invisibly, since
+     * every index involved is a real row. Omitted, the range falls back to counting, which is
+     * right for a caller that has no order to offer.
+     */
+    readonly order?: readonly number[]
+  },
 ): RowSelection {
   if (options?.range && selection.anchor !== null) {
     const held = new Set(selection.rows)
-    const from = Math.min(selection.anchor, index)
-    const to = Math.max(selection.anchor, index)
-    for (let at = from; at <= to; at += 1) held.add(at)
+    const order = options.order
+    const from = order ? order.indexOf(selection.anchor) : selection.anchor
+    const to = order ? order.indexOf(index) : index
+    if (from === -1 || to === -1) return { rows: [index], anchor: index }
+    for (let at = Math.min(from, to); at <= Math.max(from, to); at += 1) {
+      held.add(order ? order[at]! : at)
+    }
     // The anchor stays put, so a second shift-click re-extends from where the range began
     // rather than from where the last one ended.
     return { rows: [...held].sort(ascending), anchor: selection.anchor }

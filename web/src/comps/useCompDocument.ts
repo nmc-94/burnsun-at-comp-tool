@@ -80,6 +80,37 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   const persisted = useRef<string>('')
   const pending = useRef<CompSlot[] | null>(null)
 
+  // Held in a ref so a caller's inline arrow does not have to appear in a dependency list and
+  // rebuild the callbacks below on every render of the board.
+  const changed = useRef(onChanged)
+  changed.current = onChanged
+
+  /**
+   * Whether the comp held nothing as of the last thing the board was told about it, or null
+   * before it has been read at all.
+   *
+   * The library rail lists an empty comp only while it is open on a board, and it decides that
+   * from the *listing*, which is fetched once when the workspace loads. So a comp that gains its
+   * first hull here would drop out of the rail the moment its tile closed, and one emptied by
+   * hand would go on being listed — both of them until something else caused a reload.
+   *
+   * Only on the crossing, though, and that is the whole reason this is a ref rather than a
+   * comparison the board could make for itself. Telling the board on every save would re-render
+   * every open tile's host on every debounce; telling it when a comp goes from nothing to
+   * something, or back, is a handful of times in a session.
+   */
+  const wasEmpty = useRef<boolean | null>(null)
+
+  /** Record whether this comp holds anything, and tell the board if the answer just changed. */
+  const noteEmptiness = useCallback((updated: CompDetail) => {
+    const empty = updated.shipCount === 0
+    const before = wasEmpty.current
+    wasEmpty.current = empty
+    // Never on the first read. That one is the listing's own answer arriving a second time, and
+    // announcing it would re-render the board once per tile on every board switch.
+    if (before !== null && before !== empty) changed.current?.(updated)
+  }, [])
+
   // Whole-list snapshots, because a slot's identity *is* its index: removing row 2 renumbers
   // every row below it, so there is no operation here to name and invert. `past` holds the
   // comps this tile has been, newest last; `future` holds the ones an undo stepped out of.
@@ -123,6 +154,9 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
       .then(async (found) => {
         if (cancelled || !found) return
         setComp(found)
+        // Seeds the comparison rather than announcing anything — see `noteEmptiness`. Without
+        // this, the first save after opening a tile would read a crossing that had not happened.
+        noteEmptiness(found)
         const loaded: CompSlot[] = found.slots.map((slot) => ({
           typeId: slot.typeId,
           isFlagship: slot.isFlagship,
@@ -142,7 +176,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     return () => {
       cancelled = true
     }
-  }, [compId])
+  }, [compId, noteEmptiness])
 
   const save = useCallback(
     async (next: CompSlot[]) => {
@@ -163,6 +197,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
         const updated = await trackWrite(compId, replaceSlots(compId, next.map(toWire)))
         persisted.current = JSON.stringify(next)
         setComp(updated)
+        noteEmptiness(updated)
         setSaveState('idle')
         setError(null)
       } catch (problem: unknown) {
@@ -174,7 +209,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
         inFlight.current -= 1
       }
     },
-    [compId],
+    [compId, noteEmptiness],
   )
 
   useEffect(() => {
@@ -256,11 +291,6 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     apply(next)
     return true
   }, [apply])
-
-  // Held in a ref so a caller's inline arrow does not have to appear in a dependency list and
-  // rebuild the callbacks below on every render of the board.
-  const changed = useRef(onChanged)
-  changed.current = onChanged
 
   const rename = useCallback(
     (name: string) => {

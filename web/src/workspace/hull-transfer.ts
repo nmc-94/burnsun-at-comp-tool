@@ -236,6 +236,27 @@ export function forgetCopiedFrom(compId: string): void {
   if (copied?.offer.fromCompId === compId) copied = null
 }
 
+/**
+ * Let go of everything to do with a comp that has been deleted.
+ *
+ * Three things point at a comp from in here and all three outlive its tile. A copy taken *out*
+ * of it carries a `settle` that closes over the hook the tile owned: pasted afterwards it
+ * flushes a slot write for a comp that is going away and then forks it — which, inside the
+ * window where the deletion has not been sent yet, *succeeds*, and makes a fork of something
+ * the person has just thrown out. A drag in progress is the same thing mid-gesture. And an
+ * offer committed *to* it is consumed on mount, so a deletion taken back would find hulls
+ * landing in the restored comp from a drag that ended before it was deleted.
+ *
+ * Deliberately not paired with anything that puts them back. Restoring a comp restores the
+ * comp; a clipboard is a statement about what you were doing a moment ago, and reviving one
+ * across a deletion would be guessing.
+ */
+export function forgetComp(compId: string): void {
+  forgetCopiedFrom(compId)
+  if (dragged?.offer.fromCompId === compId) dragged = null
+  if (transfers.delete(compId)) announce(compId)
+}
+
 /** Tests only. Vitest isolates per file, not per test, so module state outlives a test. */
 export function resetHullTransfers(): void {
   transfers.clear()

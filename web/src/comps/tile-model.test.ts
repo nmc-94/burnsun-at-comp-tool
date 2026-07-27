@@ -42,6 +42,11 @@ function costs(list: readonly CompSlot[]): number[] {
   return judge(list).slots.map((slot) => slot.points)
 }
 
+/** The hull names a scaffold draws, top to bottom, skipping the empty rows. */
+function names(rows: ReturnType<typeof scaffold>): string[] {
+  return rows.flatMap((row) => (row.kind === 'ship' ? [row.slot.name] : []))
+}
+
 describe('scaffold', () => {
   it('puts filled rows first and pads to the field size', () => {
     const rows = scaffold(judge(slots(SHIP.abaddon, SHIP.rifter)), 10)
@@ -57,6 +62,42 @@ describe('scaffold', () => {
 
     expect(rows).toHaveLength(10)
     expect(rows.some((row) => row.kind === 'empty')).toBe(false)
+  })
+
+  it('draws the expensive hulls first, whatever order they were stored in', () => {
+    // A comp is read from the top down when you are deciding what to cut, and what you are
+    // looking for is the expensive end of it.
+    const rows = scaffold(judge(slots(SHIP.rifter, SHIP.abaddon, SHIP.orthrus)), 10)
+
+    expect(names(rows)).toEqual(['Abaddon', 'Orthrus', 'Rifter'])
+  })
+
+  it('breaks a tie on points with the bigger hull', () => {
+    // Both are 10 points and they are not the same commitment: a destroyer is a hull you lose
+    // differently from a frigate.
+    const rows = scaffold(judge(slots(SHIP.deacon, SHIP.svipul)), 10)
+
+    expect(names(rows)).toEqual(['Svipul', 'Deacon'])
+  })
+
+  it('breaks a tie on points and size alphabetically, so the same comp always draws the same', () => {
+    // Three tactical destroyers at 10 points each. Without this the order would be whatever the
+    // slots happened to be stored in, and a comp would shuffle as it was edited.
+    const rows = scaffold(judge(slots(SHIP.svipul, SHIP.jackdaw, SHIP.confessor)), 10)
+
+    expect(names(rows)).toEqual(['Confessor', 'Jackdaw', 'Svipul'])
+  })
+
+  it('keeps every row pointing at the slot it is stored at', () => {
+    // The sort is the array's order and nothing else. `index` is what a hull swap, a flagship
+    // and a partial fork's row numbers all carry, and it has to survive the reordering or those
+    // gestures act on the wrong hull — silently, since every index involved is a real row.
+    const rows = scaffold(judge(slots(SHIP.rifter, SHIP.abaddon, SHIP.orthrus)), 10)
+
+    expect(rows.slice(0, 3).map((row) => row.index)).toEqual([1, 2, 0])
+    // And the empty rows still carry on from the end of the stored list, so clicking one
+    // appends rather than overwriting.
+    expect(rows.slice(3).map((row) => row.index)).toEqual([3, 4, 5, 6, 7, 8, 9])
   })
 
   it('grows rather than hiding hulls when a comp is over the field size', () => {

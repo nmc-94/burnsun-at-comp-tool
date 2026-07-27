@@ -59,6 +59,7 @@ function stubFetch() {
             rulesetVersionLabel: 'v2026-07-23',
             shipCount: comp[1].typeIds.length,
             createdByName: 'Kadir',
+            createdByCharacterId: 90000001,
             createdAt: '2026-07-01T00:00:00Z',
             updatedAt: '2026-07-01T00:00:00Z',
             yourLevel: 'owner',
@@ -171,7 +172,7 @@ describe('what a press takes hold of', () => {
     expect(press('Alpha', within(alpha).getByTestId('comp-name'))).toBe(true)
     expect(press('Alpha', within(alpha).getByTestId('comp-header'))).toBe(true)
     // And the footer, which is text rather than controls for most of its width.
-    expect(press('Alpha', within(alpha).getByTestId('comp-ruleset-version'))).toBe(true)
+    expect(press('Alpha', within(alpha).getByTestId('comp-author'))).toBe(true)
   })
 
   it.each([

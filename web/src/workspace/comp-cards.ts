@@ -29,9 +29,19 @@ function announce(compId: string): void {
   for (const listener of listeners.get(compId) ?? []) listener()
 }
 
-/** Fill the store from the team's comp list, judged once when the workspace opens. */
+/**
+ * Fill the store from the team's comp list, judged once when the workspace opens.
+ *
+ * A comp already in the store is left alone, and that is the whole of what makes this safe to
+ * call more than once. The seed is built from the *listing*, which is fetched when the workspace
+ * loads and never refreshed per keystroke — so re-seeding over a tile's published summary would
+ * revert that comp's rail dot and point total to whatever they were at page load and leave them
+ * there until it was next edited. The effect that calls this re-runs whenever the comp list
+ * changes identity, which a comp being created, forked, deleted or restored all do.
+ */
 export function seedCards(seeded: readonly CompCard[]): void {
   for (const card of seeded) {
+    if (cards.has(card.id)) continue
     cards.set(card.id, card)
     announce(card.id)
   }
@@ -53,6 +63,18 @@ export function publishCard(card: CompCard): void {
   }
   cards.set(card.id, card)
   announce(card.id)
+}
+
+/**
+ * Drop one comp's summary, for a comp that is not coming back.
+ *
+ * Announced as well as deleted, because a leaf still on screen for the moment it takes the
+ * board to redraw would otherwise go on reading a card for something that has been thrown away.
+ * Deleting without announcing would leave that leaf drawing a legality dot from memory.
+ */
+export function forgetCard(compId: string): void {
+  if (!cards.delete(compId)) return
+  announce(compId)
 }
 
 export function getCard(compId: string): CompCard | undefined {

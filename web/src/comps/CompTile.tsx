@@ -50,15 +50,6 @@ export interface RowDrop {
   readonly drop: (index: number) => void
 }
 
-/** Where a fork came from: what to call it, and where to go to see it. */
-export interface Lineage {
-  readonly name: string
-  /** Null once the parent has been deleted — the name outlives the link. */
-  readonly href: string | null
-  /** True when only some of the parent's rows were taken (§4.1c's partial derivation). */
-  readonly partial: boolean
-}
-
 interface Props {
   name: string
   slots: readonly CompSlot[]
@@ -69,11 +60,8 @@ interface Props {
   /** What the comp says it is. One archetype at most, and any number of tags. */
   archetype: string | null
   tags: readonly string[]
-  /** How long the thread is and how many comps were forked from this one, for the foot. */
+  /** How long the thread is, for the comment control's count. */
   commentCount: number
-  forkCount: number
-  /** Where this comp came from, when it is a fork. Null for a comp that is nobody's copy. */
-  lineage?: Lineage | null
   /** False for a viewer, who sees the same tile without any way to change it. */
   editable: boolean
   saveState: SaveState
@@ -118,6 +106,9 @@ interface Props {
   commentsOpen?: boolean
   /** Fork the whole comp. Where the new comp goes is the board's business, not the tile's. */
   onFork?: () => void
+  /** Delete the comp. Absent when it is not this character's to delete — and note this is not
+   *  the × in the corner, which only takes the tile off the board. */
+  onDelete?: () => void
   /** Opens the share panel. Absent when there is nothing to show and nothing to make. */
   onToggleShare?: () => void
   shareOpen?: boolean
@@ -135,8 +126,6 @@ export default function CompTile({
   archetype,
   tags,
   commentCount,
-  forkCount,
-  lineage,
   editable,
   saveState,
   onChange,
@@ -151,6 +140,7 @@ export default function CompTile({
   onToggleComments,
   commentsOpen,
   onFork,
+  onDelete,
   onToggleShare,
   shareOpen,
   shared,
@@ -228,6 +218,13 @@ export default function CompTile({
   }, [picking, openRow, selectedRows, onCopyRows])
 
   const rows = useMemo(() => scaffold(result, ruleset.fieldSize), [result, ruleset.fieldSize])
+
+  /** The filled rows' stored indexes, in the order they are drawn — what a shift-click range
+   *  counts along, now that drawn order and stored order are two different things. */
+  const drawnOrder = useMemo(
+    () => rows.filter((row) => row.kind === 'ship').map((row) => row.index),
+    [rows],
+  )
   const blamed = useMemo(() => rowsBlamedBy(result.violations), [result.violations])
   const pill = deltaPill(result.summary)
   const highlightedRows = new Set(highlighted)
@@ -263,6 +260,7 @@ export default function CompTile({
       selectRow(current, index, {
         range: event.shiftKey,
         toggle: event.ctrlKey || event.metaKey,
+        order: drawnOrder,
       }),
     )
   }
@@ -325,9 +323,13 @@ export default function CompTile({
             three branches below render different controls but each is one <li>, so a row
             is addressable however it is currently behaving. */}
         <ul className="rows" data-testid="comp-rows" aria-label="Comp slots">
-          {rows.map((row) => {
+          {rows.map((row, at) => {
             const open = openRow === row.index
-            const position = row.index + 1
+            // Where the row is *drawn*, which is what "slot 3" means to somebody looking at the
+            // tile — and, since rows are sorted by weight, no longer the same number as the
+            // index it is stored at. Every gesture still carries `row.index`; this is only ever
+            // a label. On the empty rows below the two coincide, filled rows being drawn first.
+            const position = at + 1
 
             if (row.kind === 'empty') {
               // An empty slot *is* its search, at rest — BurnSun's shape, and it saves the
@@ -482,6 +484,7 @@ export default function CompTile({
                           selectRow(current, row.index, {
                             range: shiftHeld(event.nativeEvent),
                             toggle: true,
+                            order: drawnOrder,
                           }),
                         )
                       }
@@ -589,14 +592,20 @@ export default function CompTile({
 
       </div>
 
+      {/* Who made it on the left, what you can do to it on the right, and nothing in between.
+          The counts that used to sit here — comments, forks — and the fork's lineage line were
+          reporting on the comp rather than offering anything, and a row of small grey numbers
+          is the first thing to go when twenty tiles are on screen at once. */}
       <div className="tfoot">
         <span className="fa" data-testid="comp-author">
           by {createdByName ?? 'unknown'}
         </span>
 
-        {/* The mockup's two footer glyphs, as real controls rather than decoration: the count
-            is what tells you whether there is a conversation to open, and the fork count is
-            beside the control that adds to it. */}
+        <span className="spacer" />
+
+        {/* Switched off at the cell rather than deleted here — see `COMMENTS_ENABLED` in
+            CompTileHost. The thread and its route are untouched; this is the one line that
+            decides whether there is a way in to them. */}
         {onToggleComments && (
           <button
             className="fa fa-act"
@@ -623,7 +632,6 @@ export default function CompTile({
             onClick={onFork}
           >
             <ForkGlyph />
-            {forkCount}
           </button>
         )}
 
@@ -645,46 +653,37 @@ export default function CompTile({
           </button>
         )}
 
-        {lineage && (
-          <span className="fa" data-testid="comp-lineage">
-            <ForkGlyph />
-            {/* A link while the parent is still there, plain text once it is gone: the name is
-                a record and outlives the comp, but a link to nothing is worse than no link. */}
-            {lineage.href ? (
-              <a
-                className="link"
-                href={lineage.href}
-                aria-label={`Open ${lineage.name}, which ${name} was forked from`}
-              >
-                {lineage.name}
-              </a>
-            ) : (
-              <span>{lineage.name}</span>
-            )}
-            {lineage.partial && <span className="faint"> (part)</span>}
-          </span>
+        {/* Last, at the far edge. Red only under the cursor: a footer with one permanently red
+            glyph in it is a footer with a beacon on the control nobody is looking for. */}
+        {onDelete && (
+          <button
+            className="fa fa-act fa-danger"
+            data-testid="comp-delete"
+            type="button"
+            aria-label={`Delete ${name}`}
+            onClick={onDelete}
+          >
+            <TrashGlyph />
+          </button>
         )}
 
-        <span className="spacer" />
-        {/* Stated, because an autosave nobody is told about is indistinguishable from no
-            autosave — and it is what lets a driver wait for a write instead of sleeping
-            through the debounce.
-
-            Not *announced*, though: aria-live is off here because a board opens twenty of
-            these at once and a screen reader would read "saved" twenty times before anyone
-            had done anything. The board carries one live region for the whole set. */}
+        {/* Drawn by nobody and read by everything. Both of these were visible until the footer
+            was cleared out, and both stay in the document because they are the §6.8 automation
+            vocabulary rather than decoration: `expectCompSaved` waits on `data-save-state`
+            instead of sleeping through the 600ms debounce, and two e2e specs prove a fork keeps
+            its parent's ruleset version by comparing the two labels. Deleting the nodes would
+            cost the suite its only way to know a write has landed. `hidden` rather than a
+            class, so nothing can style them back into view by accident. */}
         <span
-          className="fa faint"
+          hidden
           data-testid="comp-save-state"
           // The state itself, not just its wording: a driver waits on this rather than on
           // a clock, and it survives the label being rephrased.
           data-save-state={saveState}
-          role="status"
-          aria-live="off"
         >
           {saveLabel(saveState)}
         </span>
-        <span className="fa faint" data-testid="comp-ruleset-version">
+        <span hidden data-testid="comp-ruleset-version">
           v{versionLabel}
         </span>
       </div>
@@ -694,6 +693,16 @@ export default function CompTile({
 
 // The mockup's two footer glyphs. Decorative — every control they sit inside carries its own
 // accessible name — so they are hidden from the accessibility tree rather than described twice.
+
+/** A bin. Drawn open-lidded so it reads at 11px, where a closed lid is one grey bar. */
+function TrashGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M4 7h16M10 4h4M9 7v12M15 7v12M6 7l1 14h10l1-14" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function ChatGlyph() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

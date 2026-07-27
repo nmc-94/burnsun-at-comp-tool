@@ -29,11 +29,21 @@ interface Props {
   readonly comps: readonly CompDetail[]
   /** Which comps are on the board being looked at, so the rail can mark them. */
   readonly openCompIds: ReadonlySet<string>
+  /**
+   * Which comps are on *any* board, which is a different question and answers a different one:
+   * whether an empty comp is listed at all. See `listable` below.
+   */
+  readonly openAnywhere: ReadonlySet<string>
   readonly open: boolean
   readonly onToggle: () => void
   readonly onOpenComp: (compId: string) => void
-  readonly onCreate: () => void
-  readonly creating: boolean
+  /** The rest of what a leaf's context menu offers. Each is optional and each is absent for a
+   *  reason a leaf can see: not on this board, not forkable, not yours to delete. */
+  readonly onCloseComp: (compId: string) => void
+  readonly onForkComp: (compId: string) => void
+  readonly onDeleteComp: (compId: string) => void
+  /** Which comps this character may delete. */
+  readonly deletableCompIds: ReadonlySet<string>
 }
 
 interface Group {
@@ -44,11 +54,14 @@ interface Group {
 export default function LibraryRail({
   comps,
   openCompIds,
+  openAnywhere,
   open,
   onToggle,
   onOpenComp,
-  onCreate,
-  creating,
+  onCloseComp,
+  onForkComp,
+  onDeleteComp,
+  deletableCompIds,
 }: Props) {
   const [query, setQuery] = useState('')
   const [archetype, setArchetype] = useState<string | null>(null)
@@ -57,19 +70,45 @@ export default function LibraryRail({
   // because somebody just tagged a comp arrives open.
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
 
+  /**
+   * The comps this rail will admit to having — everything except a comp with no ships in it that
+   * is not open on a board.
+   *
+   * `+ New comp` writes a comp to the server the instant it is clicked, so every abandoned click
+   * leaves an "Untitled comp" holding nothing, and this is the one list a captain reads past
+   * constantly. Hiding them is not a delete: the rows stay, and a comp that gains a hull comes
+   * straight back.
+   *
+   * The exemption is what makes that safe rather than alarming. A comp you have just made is
+   * empty by definition and has to be findable while you fill it, and the rail is the board's
+   * index — clicking a leaf is how "where is that one" is answered on a canvas that can be
+   * panned away from, which a leaf that is not drawn cannot answer.
+   *
+   * Applied here, above everything else, so an unlisted comp contributes no archetype heading
+   * and no tag chip for something that cannot be reached.
+   *
+   * **Not applied to the `comps` prop itself, anywhere.** `normalizeLayout` drops tiles whose
+   * comp is missing from the listing it is given, so a list filtered before it reached that
+   * function would take a brand-new comp's tile off the board on the next load.
+   */
+  const listable = useMemo(
+    () => comps.filter((comp) => comp.shipCount > 0 || openAnywhere.has(comp.id)),
+    [comps, openAnywhere],
+  )
+
   // The same two vocabularies the tag editor offers, from the same place: what is in use.
-  const vocabulary = useMemo(() => vocabularyOf(comps), [comps])
+  const vocabulary = useMemo(() => vocabularyOf(listable), [listable])
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return comps.filter((comp) => {
+    return listable.filter((comp) => {
       if (needle && !comp.name.toLowerCase().includes(needle)) return false
       if (archetype !== null && comp.archetype !== archetype) return false
       // Every selected tag, not any: picking two narrows rather than widens, which is what
       // makes a second click on a tag useful at all.
       return tags.every((tag) => comp.tags.includes(tag))
     })
-  }, [comps, query, archetype, tags])
+  }, [listable, query, archetype, tags])
 
   const groups = useMemo(() => groupByArchetype(matches), [matches])
   const filtered = archetype !== null || tags.length > 0
@@ -84,7 +123,10 @@ export default function LibraryRail({
       <div className="lib-head">
         <span className="section-label">Team comps</span>
         <span className="tree-count" data-testid="library-count">
-          {comps.length}
+          {/* What is listed, not what the team has. A count that included the comps this rail
+              is deliberately not drawing would be a number nobody could reconcile with the
+              list underneath it. */}
+          {listable.length}
         </span>
       </div>
 
@@ -219,6 +261,11 @@ export default function LibraryRail({
                       fallbackName={comp.name}
                       open={openCompIds.has(comp.id)}
                       onOpen={onOpenComp}
+                      onClose={onCloseComp}
+                      // A viewer cannot fork, for the same reason they cannot build: a fork is
+                      // a comp created on the team.
+                      onFork={comp.yourLevel === 'viewer' ? undefined : onForkComp}
+                      onDelete={deletableCompIds.has(comp.id) ? onDeleteComp : undefined}
                     />
                   ))}
                 </ul>
@@ -228,16 +275,10 @@ export default function LibraryRail({
         })}
       </div>
 
-      <button
-        className="lib-new"
-        data-testid="library-new-comp"
-        type="button"
-        aria-label="New comp"
-        disabled={creating}
-        onClick={onCreate}
-      >
-        + New comp
-      </button>
+      {/* No "New comp" button here. The board already carries one — the dashed ghost tile,
+          which is also the only place a drag can land to fork — and two controls with one name
+          made "the control that makes a comp" ambiguous for a driver and for a person. The rail
+          is the library; making things belongs to the board. */}
 
       {/* Only ever visible on a narrow viewport, where the rail slides over the grid. A
           disclosure rather than a dialog: nothing is trapped and nothing is modal. */}

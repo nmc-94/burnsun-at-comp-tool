@@ -47,15 +47,16 @@ test('a hull dragged onto another comp’s slot replaces it, and stays where it 
   await from.getByTestId('comp-row').nth(0).dragTo(second)
 
   // Replaced, not appended — which is the whole distinction, and the one a row that failed to
-  // claim the event would get wrong while still looking like it worked.
-  await expect(onto.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Rifter'])
+  // claim the event would get wrong while still looking like it worked. Rows are drawn by
+  // weight, so the source's first row is its Scimitar and not the Rifter it is stored ahead of.
+  await expect(onto.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Scimitar'])
   // A copy: the row it came from keeps its hull, the same bargain a port makes.
-  await expect(from.getByTestId('comp-row-name')).toHaveText(['Rifter', 'Scimitar'])
+  await expect(from.getByTestId('comp-row-name')).toHaveText(['Scimitar', 'Rifter'])
 
   await expectCompSaved(onto)
   expect((await api.getComp(target.id)).slots.map((slot) => slot.typeId)).toEqual([
     ABADDON,
-    RIFTER,
+    SCIMITAR,
   ])
 })
 
@@ -117,7 +118,9 @@ test('a hull moved between slots of one comp lands, which a drop on the tile wou
 
   await tile.getByTestId('comp-row').nth(0).dragTo(tile.getByTestId('comp-row').nth(2))
 
-  await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Scimitar', 'Abaddon'])
+  // Two Abaddons now, which cost the same as each other and more than the Scimitar — so the
+  // pair sorts to the top however the slots are stored underneath.
+  await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Abaddon', 'Scimitar'])
 
   await expectCompSaved(tile)
   expect((await api.getComp(comp.id)).slots.map((slot) => slot.typeId)).toEqual([
@@ -151,5 +154,5 @@ test('two hulls at once go on the end, wherever they are let go of', async ({
   await from.getByTestId('comp-row').nth(1).click({ modifiers: ['ControlOrMeta'] })
   await from.getByTestId('comp-row').nth(0).dragTo(onto.getByTestId('comp-row').nth(0))
 
-  await expect(onto.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Rifter', 'Scimitar'])
+  await expect(onto.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Scimitar', 'Rifter'])
 })

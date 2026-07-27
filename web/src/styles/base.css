@@ -283,6 +283,19 @@ h3 {
   box-shadow: var(--shadow-1);
   z-index: 30;
 }
+/* The same panel opened at the cursor instead of under a trigger. Fixed rather than absolute
+   because it opens over the library rail, which is `overflow: auto` — an absolutely positioned
+   menu would be clipped at the rail's edge and would scroll with the list under it. `left`/`top`
+   come from the component; the anchored menu's `top`/`right` are unset so they cannot fight it.
+   Narrower, too: these are one-word actions, not a signed-in character's name. */
+.header-menu.pointer-menu {
+  position: fixed;
+  top: auto;
+  right: auto;
+  width: max-content;
+  min-width: 140px;
+  max-width: min(240px, calc(100vw - 24px));
+}
 .header-menu-who {
   display: flex;
   align-items: center;
@@ -449,6 +462,16 @@ h3 {
 }
 .btn.danger:hover:not(:disabled) {
   color: var(--danger);
+}
+/* The committing button in a destructive dialog. `.danger` on its own only colours on hover,
+   which is right for the small × controls it was written for and not enough for the one control
+   on a screen that is being weighed rather than clicked past. Outlined rather than filled: the
+   system has no filled red, and a dialog that shouts is a dialog people learn to dismiss without
+   reading. */
+.btn.danger.commit,
+.btn.danger.commit:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 .btn.right,
 .level.right {

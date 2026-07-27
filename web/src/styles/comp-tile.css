@@ -90,6 +90,13 @@
 /* The two footer glyphs are controls, not decoration — the comment count opens the thread and
    the fork count forks the comp — so they get a pointer and a hover, and nothing else: they sit
    in a 10.5px footer and a button chrome would swamp it. */
+/* The one destructive control in the footer. It sits at rest in the same grey as the counts
+   beside it and only takes the danger colour under the cursor or the focus ring — a footer with
+   a permanently red glyph in it puts the emphasis on the thing people reach for least. */
+.tfoot .fa-danger:hover,
+.tfoot .fa-danger:focus-visible {
+  color: var(--danger);
+}
 .tfoot .fa-act {
   font: inherit;
   color: inherit;

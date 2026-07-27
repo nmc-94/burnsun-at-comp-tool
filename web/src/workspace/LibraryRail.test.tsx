@@ -15,11 +15,20 @@ import type { CompDetail } from '../comps/types'
 import { publishCard, resetCompCards, seedCards } from './comp-cards'
 import LibraryRail from './LibraryRail'
 
+/**
+ * One comp for the rail to draw.
+ *
+ * `ships` defaults to one rather than none, because the rail does not list a comp holding
+ * nothing unless it is open on a board — so a fixture with no hulls would be testing the hiding
+ * rule by accident in every test that is about something else. The tests that *are* about it
+ * pass 0 deliberately.
+ */
 function comp(
   id: string,
   name: string,
   archetype: string | null = null,
   tags: string[] = [],
+  ships = 1,
 ): CompDetail {
   return {
     id,
@@ -27,8 +36,9 @@ function comp(
     name,
     rulesetSlug: 'atxxii',
     rulesetVersionLabel: 'v2026-07-23',
-    shipCount: 0,
+    shipCount: ships,
     createdByName: 'Kadir',
+    createdByCharacterId: 90000001,
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: '2026-07-01T00:00:00Z',
     yourLevel: 'owner',
@@ -41,7 +51,11 @@ function comp(
     forkCount: 0,
     shareSlug: null,
     shareStale: false,
-    slots: [],
+    slots: Array.from({ length: ships }, (_, position) => ({
+      position,
+      typeId: 587,
+      isFlagship: false,
+    })),
   }
 }
 
@@ -65,11 +79,14 @@ function rail(overrides: Partial<Parameters<typeof LibraryRail>[0]> = {}) {
     <LibraryRail
       comps={COMPS}
       openCompIds={new Set()}
+      openAnywhere={new Set()}
       open={false}
       onToggle={vi.fn()}
       onOpenComp={vi.fn()}
-      onCreate={vi.fn()}
-      creating={false}
+      onCloseComp={vi.fn()}
+      onForkComp={vi.fn()}
+      onDeleteComp={vi.fn()}
+      deletableCompIds={new Set(COMPS.map((each) => each.id))}
       {...overrides}
     />,
   )
@@ -191,6 +208,115 @@ describe('the library rail', () => {
     expect(toggle.getAttribute('aria-label')).toBe('Team comps')
     fireEvent.click(toggle)
     expect(onToggle).toHaveBeenCalled()
+  })
+})
+
+describe('the context menu on a leaf', () => {
+  /** Right-click, which is also what the keyboard's Menu key and Shift+F10 raise. */
+  const rightClick = (name: string) => fireEvent.contextMenu(leaf(name)!)
+
+  it('opens on the row, so the keyboard reaches it too', () => {
+    rail()
+
+    // The handler is on the `<li>`, not on the button inside it. `contextmenu` bubbles, so the
+    // Menu key pressed on the focused open-button arrives here exactly as a right-click does —
+    // which is what keeps this from being a control §6.8 cannot reach without a mouse.
+    fireEvent.contextMenu(within(leaf('Armor Brawl')!).getByTestId('library-comp-open'))
+
+    expect(screen.getByTestId('library-comp-menu')).toBeTruthy()
+  })
+
+  it('deletes the comp it was opened on', () => {
+    const onDeleteComp = vi.fn()
+    rail({ onDeleteComp })
+
+    rightClick('Armor Brawl')
+    fireEvent.click(screen.getByTestId('library-comp-delete'))
+
+    expect(onDeleteComp).toHaveBeenCalledWith('b')
+    // Dismissed on the way, so the caller is free to unmount the leaf this was opened from.
+    expect(screen.queryByTestId('library-comp-menu')).toBeNull()
+  })
+
+  it('offers no delete for a comp that is not this character to delete', () => {
+    rail({ deletableCompIds: new Set(['a']) })
+
+    rightClick('Armor Brawl')
+
+    // Absent rather than disabled: the server refuses it anyway, and a control that is only
+    // ever refused is one nobody should be able to reach for in the first place.
+    expect(screen.queryByTestId('library-comp-delete')).toBeNull()
+    expect(screen.getByTestId('library-comp-fork')).toBeTruthy()
+  })
+
+  it('offers Close for a comp that is on this board, and Open for one that is not', () => {
+    const onCloseComp = vi.fn()
+    rail({ openCompIds: new Set(['a']), onCloseComp })
+
+    rightClick('Angel Shield Kite')
+    fireEvent.click(screen.getByTestId('library-comp-close'))
+
+    expect(onCloseComp).toHaveBeenCalledWith('a')
+
+    rightClick('Zenith Rush')
+    expect(screen.getByTestId('library-comp-menu-open')).toBeTruthy()
+  })
+
+  it('shuts on Escape', () => {
+    rail()
+
+    rightClick('Armor Brawl')
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(screen.queryByTestId('library-comp-menu')).toBeNull()
+  })
+
+  it('shuts when a pointer goes down anywhere else', () => {
+    rail()
+
+    rightClick('Armor Brawl')
+    fireEvent.pointerDown(document.body)
+
+    expect(screen.queryByTestId('library-comp-menu')).toBeNull()
+  })
+})
+
+describe('comps holding nothing', () => {
+  // `+ New comp` writes a comp to the server the instant it is clicked, so every abandoned click
+  // leaves an "Untitled comp" with no hulls in the one list a captain reads past constantly.
+  const EMPTY = comp('e', 'Untitled comp', null, [], 0)
+
+  it('leaves an empty comp out of the list and out of the count', () => {
+    rail({ comps: [...COMPS, EMPTY] })
+
+    expect(leaf('Untitled comp')).toBeUndefined()
+    expect(screen.getByTestId('library-count').textContent).toBe('3')
+  })
+
+  it('lists it while it is open on a board', () => {
+    // The exemption that makes hiding safe rather than alarming: a comp you have just made is
+    // empty by definition and has to be findable while you fill it — and the rail is the board's
+    // index, so a leaf that is not drawn cannot answer "where is that one".
+    rail({ comps: [...COMPS, EMPTY], openAnywhere: new Set(['e']) })
+
+    expect(leaf('Untitled comp')).toBeTruthy()
+    expect(screen.getByTestId('library-count').textContent).toBe('4')
+  })
+
+  it('lists it while it is open on a board that is not the one being looked at', () => {
+    // `openCompIds` is the *active* board and drives `aria-current`; this rule is about any
+    // board at all, or switching tabs would make a comp appear and disappear from the library.
+    rail({ comps: [...COMPS, EMPTY], openAnywhere: new Set(['e']), openCompIds: new Set() })
+
+    expect(leaf('Untitled comp')).toBeTruthy()
+  })
+
+  it('takes its archetype heading with it', () => {
+    // Filtered above the grouping, so an unlisted comp does not leave a heading behind for a
+    // group with nothing reachable in it.
+    rail({ comps: [comp('a', 'Armor Brawl', 'Brawl'), comp('e', 'Untitled comp', 'Kite', [], 0)] })
+
+    expect(groupNames()).toEqual(['Brawl'])
   })
 })
 

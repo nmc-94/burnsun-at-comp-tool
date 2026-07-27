@@ -15,7 +15,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { noteEdited, registerUndoTarget, resetUndoTargets } from './undo-keys'
+import {
+  noteEdited,
+  offerUndoOnce,
+  registerUndoTarget,
+  resetUndoTargets,
+  withdrawUndoOnce,
+} from './undo-keys'
 
 function tile() {
   return { undo: vi.fn(() => true), redo: vi.fn(() => true) }
@@ -145,6 +151,89 @@ describe('which comp the key reaches', () => {
 
     expect(arriving.undo).toHaveBeenCalledTimes(1)
     expect(going.undo).not.toHaveBeenCalled()
+  })
+})
+
+describe('a step that belongs to no tile', () => {
+  it('answers the key on a workspace where nothing has been edited', () => {
+    // The case the whole one-shot exists for, and the one a branch inside the listener could not
+    // have covered: the listener is installed from `mostRecent`, which only an *edit* sets. A
+    // person who opens a board and deletes a comp has edited nothing, so without this there is
+    // no keydown handler in the document at all and Ctrl+Z reaches nothing.
+    const restore = vi.fn()
+
+    offerUndoOnce(restore)
+    const event = press('z')
+
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('gives the key back to a comp edited after it', () => {
+    // Recency, which is this module's whole rule. Delete a comp, then add a hull somewhere else,
+    // then press the key: what a person means is the hull. A "deletion always wins" branch would
+    // restore the comp instead.
+    const restore = vi.fn()
+    const alpha = tile()
+    registerUndoTarget('a', alpha)
+
+    offerUndoOnce(restore)
+    noteEdited('a')
+    press('z')
+
+    expect(alpha.undo).toHaveBeenCalledTimes(1)
+    expect(restore).not.toHaveBeenCalled()
+  })
+
+  it('runs once however long the key is held', () => {
+    // Taken out of the map before it is called, so a repeat walks past it. Without that, holding
+    // the key restores the same comp onto the board as many times as it repeats.
+    const restore = vi.fn()
+
+    offerUndoOnce(restore)
+    press('z')
+    press('z')
+    press('z')
+
+    expect(restore).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the key alone once it has been withdrawn', () => {
+    // Withdrawn when the deletion is sent for real — leaving the workspace, or deleting a second
+    // comp. A one-shot that outlived the thing it undoes would restore a comp the server no
+    // longer has.
+    const restore = vi.fn()
+
+    offerUndoOnce(restore)
+    withdrawUndoOnce()
+    const event = press('z')
+
+    expect(restore).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('offers no redo, so Ctrl+Shift+Z is left to the browser', () => {
+    // There is no second half to putting a comp back — the control that deleted it is still on
+    // screen. Answering the chord with nothing is this module's stance for a key it cannot act on.
+    const restore = vi.fn()
+
+    offerUndoOnce(restore)
+    const event = press('z', { shift: true })
+
+    expect(restore).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('still leaves a field with something typed in it alone', () => {
+    // Not a wrinkle to fix here — moving the one-shot above `hasTypingToUndo` would make that
+    // guard untrue for the module that owns it. It is why `removeComp` blurs: a tile dragged to
+    // the bin never moves focus, so a search box with a query in it would swallow the undo.
+    const restore = vi.fn()
+
+    offerUndoOnce(restore)
+    press('z', { on: field('search', 'angel') })
+
+    expect(restore).not.toHaveBeenCalled()
   })
 })
 

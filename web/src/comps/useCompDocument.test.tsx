@@ -24,6 +24,7 @@ const COMP = {
   rulesetVersionLabel: 'v2026-07-23',
   shipCount: 1,
   createdByName: 'Kadir',
+  createdByCharacterId: 90000001,
   createdAt: '2026-07-01T00:00:00Z',
   updatedAt: '2026-07-01T00:00:00Z',
   yourLevel: 'owner',

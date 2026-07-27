@@ -11,17 +11,16 @@
 // edit of *its own* comp — so no comp's slots are ever held anywhere but in the cell that
 // owns them, which is the whole of §6.7.
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { MouseEvent as PointerPress } from 'react'
 
 import type { CompSlot } from '../engine'
 import CommentThread from './CommentThread'
 import SharePanel from './SharePanel'
 import CompTile from './CompTile'
-import type { Lineage, RowDrop } from './CompTile'
+import type { RowDrop } from './CompTile'
 import { EMPTY_VOCABULARY } from './tag-model'
 import type { TagVocabulary } from './tag-model'
-import { hrefFor } from '../router/route'
 import { publishCard } from '../workspace/comp-cards'
 import {
   forgetCopiedFrom,
@@ -70,6 +69,16 @@ export interface TileDrag {
  */
 const ANSWERS_A_PRESS = 'a[href], button, input, textarea, select, [contenteditable]'
 
+/**
+ * Whether a tile offers a way into its comment thread.
+ *
+ * Off for now, and off *here* rather than by deleting anything: the thread component, its
+ * routes, its tests and the count on the comp payload are all untouched, so turning this back on
+ * is the whole of what re-enabling comments takes. A footer of small grey counts is what a board
+ * of twenty tiles least needs, and comments are the part of it nobody has asked for yet.
+ */
+const COMMENTS_ENABLED = false
+
 interface Props {
   readonly compId: string
   /** Take the tile off the board. The comp itself is untouched — a tile is only a view. */
@@ -85,6 +94,14 @@ interface Props {
    * it is still a whole tile.
    */
   readonly onFork?: (compId: string) => void
+  /**
+   * Delete the comp itself, which is a different act from `onClose` above and the reason the two
+   * controls do not sit together: the × takes a view away, this takes the work away.
+   *
+   * Absent when the comp is not this character's to delete, so the footer simply has no such
+   * button rather than one that fails when it is pressed.
+   */
+  readonly onDelete?: (compId: string) => void
   /** The team's two tag vocabularies, derived once by the board from its comp listing. */
   readonly vocabulary?: TagVocabulary
   /** Told when a write in here changes something the rail draws. */
@@ -108,6 +125,7 @@ export default function CompTileHost({
   onClose,
   autoFocusName,
   onFork,
+  onDelete,
   vocabulary,
   onCompChanged,
   tileDrag,
@@ -339,24 +357,6 @@ export default function CompTileHost({
     return true
   }
 
-  /**
-   * Where this comp came from, if it came from anywhere.
-   *
-   * Built here rather than in the tile because it is the one thing on screen that names another
-   * comp, and the tile is not allowed to know that other comps exist. `hrefFor` is a pure
-   * function over the URL grammar, so the tile still receives a string and no router.
-   */
-  const lineage = useMemo<Lineage | null>(() => {
-    if (!comp?.forkedFromName) return null
-    return {
-      name: comp.forkedFromName,
-      href: comp.forkedFromCompId
-        ? hrefFor({ kind: 'comp', compId: comp.forkedFromCompId })
-        : null,
-      partial: comp.forkKind === 'partial',
-    }
-  }, [comp])
-
   return (
     // The cell is both a drop target and — by its empty space and its header — something that
     // can be picked up, which is what the handlers below are for and what the rule objects to.
@@ -500,8 +500,6 @@ export default function CompTileHost({
             archetype={comp.archetype}
             tags={comp.tags}
             commentCount={threadCount ?? comp.commentCount}
-            forkCount={comp.forkCount}
-            lineage={lineage}
             editable={editable}
             saveState={saveState}
             onChange={edit}
@@ -516,13 +514,21 @@ export default function CompTileHost({
             // `vocabulary` is derived from the listing this cell already holds.
             onSaveTags={editable ? saveTags : undefined}
             vocabulary={vocabulary ?? EMPTY_VOCABULARY}
-            // Reading a thread is not editing, so a viewer gets this — they can comment even
-            // where they cannot build.
-            onToggleComments={() => setCommentsOpen((open) => !open)}
+            // Reading a thread is not editing, so a viewer gets this too — when it is on.
+            onToggleComments={
+              COMMENTS_ENABLED ? () => setCommentsOpen((open) => !open) : undefined
+            }
             commentsOpen={commentsOpen}
             onFork={
               onFork && editable ? () => void flush().then(() => onFork(compId)) : undefined
             }
+            // Not flushed, unlike the fork and the share beside it. Those two capture the comp
+            // on the server and so must not run ahead of the last keystroke; this one is asking
+            // for the comp to stop existing, and waiting to write an edit into something about
+            // to be deleted would only widen the window for the two to collide. What the delete
+            // does wait for is that same write settling, on the far side — see
+            // `comps/pending-delete.ts`.
+            onDelete={onDelete && editable ? () => onDelete(compId) : undefined}
             // A viewer sees the control only once there is a link, because copying one grants
             // no more than they already hold; an editor always sees it, because they are the
             // one who decides whether there is a link at all.

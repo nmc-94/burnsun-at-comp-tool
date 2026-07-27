@@ -8,7 +8,7 @@ import PickBanScreen from './pickban/PickBanScreen'
 import { hrefFor, isPublic, isWide, parseRoute, workspaceRoute } from './router/route'
 import type { Route } from './router/route'
 import { navigate, useRoute } from './router/useRoute'
-import type { Session } from './session'
+import type { Character, Session } from './session'
 import { fetchSession } from './session'
 import ShareView from './share/ShareView'
 import SignInScreen from './SignInScreen'
@@ -124,7 +124,7 @@ export default function App() {
       )}
 
       <main className={mainClass(route)}>
-        {renderRoute(route, session?.character?.characterName ?? null)}
+        {renderRoute(route, session?.character ?? null)}
       </main>
     </div>
   )
@@ -136,23 +136,38 @@ function mainClass(route: Route): string | undefined {
   return route.kind === 'teams' ? 'main-full' : 'main-column'
 }
 
-// The character's name is threaded in rather than fetched again: the teams screen tells someone
-// waiting on an invitation what to give a captain, and a grant is made against a name.
-function renderRoute(route: Route, characterName: string | null) {
+// The signed-in character is threaded in rather than fetched again. Both halves are used: the
+// teams screen tells someone waiting on an invitation what name to give a captain, because a
+// grant is made against a name — and the workspace needs the *id*, because "is this comp mine"
+// is a question a name cannot answer once anybody can rename themselves.
+function renderRoute(route: Route, character: Character | null) {
   switch (route.kind) {
     case 'teams':
-      return <TeamList characterName={characterName} />
+      return <TeamList characterName={character?.characterName ?? null} />
     case 'workspace':
       // `view` is Phase G's compare screen. Until it exists a compare URL still resolves to
       // a real board rather than to nothing, which is what keeps a shared link from rotting.
-      return <WorkspaceScreen teamId={route.teamId} boardId={route.boardId} />
+      return (
+        <WorkspaceScreen
+          teamId={route.teamId}
+          boardId={route.boardId}
+          characterId={character?.characterId ?? null}
+        />
+      )
     case 'team-settings':
       // Settings is a dialog over the board, not a page — so this address renders the board
       // and opens the dialog on it. The same component as the case above, deliberately: React
       // reconciles by position and type, so moving between a board and its settings does not
       // remount the workspace, and the board behind the dialog is the one that was already
       // there rather than a fresh load of it.
-      return <WorkspaceScreen teamId={route.teamId} boardId={null} openSettings />
+      return (
+        <WorkspaceScreen
+          teamId={route.teamId}
+          boardId={null}
+          characterId={character?.characterId ?? null}
+          openSettings
+        />
+      )
 
     case 'pick-ban':
       return (

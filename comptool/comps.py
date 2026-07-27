@@ -125,6 +125,10 @@ class CompDetail(_Response):
     ship_count: int
     #: Whoever created it, captured once. Null on comps made before anyone signed in.
     created_by_name: str | None
+    #: The same character as an id, because a name cannot be compared against. A client gates
+    #: its delete controls on "did I make this", and matching on ``created_by_name`` would
+    #: turn a character rename into somebody else's comp.
+    created_by_character_id: int | None
     created_at: datetime
     updated_at: datetime
     #: What the requesting character holds on the owning team. The SPA gates its controls
@@ -287,6 +291,7 @@ def _detail(
         # prints, and a client should not have to derive the headline from the payload.
         ship_count=len(comp.slots),
         created_by_name=comp.created_by_name,
+        created_by_character_id=comp.created_by_character_id,
         created_at=comp.created_at,
         updated_at=comp.updated_at,
         your_level=_LEVEL_NAMES[level],
@@ -642,11 +647,23 @@ def delete_comp(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
 ) -> Response:
-    """Delete a comp.
+    """Delete a comp: your own, or anyone's if you own the team.
 
     Unlike a team, a comp really is deleted. A team is a season's record and other
     people's work; a comp is one draft among many, and a builder who cannot throw one away
     accumulates clutter they have to read past every time.
+
+    **Whose comp, though.** Editing someone else's draft is collaboration and deleting it is
+    not, so the same editor grant that lets the whole team build cannot also let anyone
+    discard anyone's work. This is ``delete_comment``'s rule and it is deliberately spelled
+    the same way, including the owner clause — without which a comp made by someone who has
+    since left the team would be permanently unremovable, there being no way to hand a comp
+    to a new author.
+
+    Reached at editor level first, so a viewer still gets the 404 every other refusal here
+    gives and learns nothing from the difference between "may not" and "is not there". The
+    403 below is the opposite case on purpose: a comp you can plainly see, and are being told
+    is not yours.
 
     A comp forked from this one survives it. The child's ``forked_from_comp_id`` is set null
     by the database and its ``forked_from_name`` stays, so the fork still says where it came
@@ -655,6 +672,10 @@ def delete_comp(
     """
     comp, access = reach_comp(session, comp_id, viewer, AccessLevel.EDITOR)
     live(access)
+    if comp.created_by_character_id != viewer.character_id and access.level < AccessLevel.OWNER:
+        raise HTTPException(
+            status_code=403, detail="Only a comp's creator or the team's owner can delete it"
+        )
     session.delete(comp)
     session.commit()
     return Response(status_code=204)

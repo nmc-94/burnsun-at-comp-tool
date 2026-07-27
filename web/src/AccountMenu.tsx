@@ -15,6 +15,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { GearIcon, PickBanIcon, SignOutIcon, TeamsIcon } from './HeaderIcons'
 import { buildCcpPortraitUrl } from './lib/icons'
 import { useLinkProps } from './router/useRoute'
+import { readSettings, writeSetting } from './settings'
 import type { Session } from './session'
 import { signIn, signOut, signOutEverywhere } from './session'
 
@@ -126,6 +127,10 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
 
           <div className="header-menu-sep" />
 
+          <ConfirmDeletesItem />
+
+          <div className="header-menu-sep" />
+
           <button
             className="header-menu-item danger"
             data-testid="user-sign-out"
@@ -189,6 +194,62 @@ function initialsOf(name: string): string {
     .slice(0, 2)
     .map((word) => word[0]!.toUpperCase())
     .join('')
+}
+
+/**
+ * The one user preference that is not the theme, and the shape any later one should take.
+ *
+ * A toggle button carrying `aria-pressed`, not a checkbox — the theme control in the header bar
+ * already sets that precedent, and a checkbox in a list of links would be the only form control
+ * in the menu. Its own state, seeded from storage on mount: the menu is unmounted while shut, so
+ * opening it always reads whatever is stored rather than whatever this last remembered.
+ *
+ * The name says what is on rather than what clicking does, which is what `aria-pressed` needs to
+ * be true about.
+ */
+function ConfirmDeletesItem() {
+  const [on, setOn] = useState(() => readSettings().confirmCompDelete)
+  return (
+    <button
+      className="header-menu-item"
+      data-testid="menu-confirm-deletes"
+      type="button"
+      aria-pressed={on}
+      // No `title`. A title wins the accessible name over the element's own text, so the
+      // caveat that belongs here — that an empty comp goes without asking whatever this says —
+      // would become what a screen reader announces this control *as*. It is said where it is
+      // load-bearing instead: in the dialog this setting turns off.
+      onClick={() => setOn(writeSetting('confirmCompDelete', !on).confirmCompDelete)}
+    >
+      <CheckIcon on={on} /> Confirm comp deletes
+    </button>
+  )
+}
+
+/** A box that is ticked or not. Sized and coloured by `.header-menu-item svg` like the rest. */
+function CheckIcon({ on }: { readonly on: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+      <rect
+        x="2.5"
+        y="2.5"
+        width="11"
+        height="11"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+      {on && (
+        <path
+          d="M5 8.2l2.1 2.1L11 6.4"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+    </svg>
+  )
 }
 
 // Each link is its own component so `useLinkProps` is never called conditionally — the two

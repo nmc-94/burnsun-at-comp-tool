@@ -46,6 +46,17 @@ export interface Comp {
   /** What the comp says it is: one archetype at most, and any number of tags. */
   readonly archetype: string | null
   readonly tags: readonly string[]
+  /**
+   * Where the comp came from, if it was forked.
+   *
+   * Read here rather than off the tile because the tile no longer draws it — the footer is a
+   * name and three controls now. The name is a snapshot and outlives the parent; the id is set
+   * null when the parent is deleted, which is §4.1c's promise and `tests/test_comps_api.py`'s
+   * to prove.
+   */
+  readonly forkedFromCompId: string | null
+  readonly forkedFromName: string | null
+  readonly forkKind: 'full' | 'partial' | null
 }
 
 export interface Board {

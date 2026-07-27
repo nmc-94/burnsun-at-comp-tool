@@ -6,7 +6,7 @@
 // is internal. Correctness is pinned by the golden corpus in legality.test.ts.
 
 export { applyBans, banCandidacy, banPhaseState } from './ban-phase'
-export { evaluate } from './evaluate'
+export { evaluate, HULL_SIZE_ORDER } from './evaluate'
 export { duplicateSurcharge } from './inflation'
 export type {
   BanCandidacy,

@@ -509,6 +509,10 @@
 
 .wsgrid {
   flex: 1 1 auto;
+  /* So it can actually shrink inside `.wsboard`, whose own `min-height: 0` stops one flex item
+     short of this one. Without it a long board pushes the footer off the bottom instead of
+     scrolling. */
+  min-height: 0;
   overflow: auto;
   display: grid;
   gap: 14px;
@@ -698,10 +702,16 @@
  * Panning is therefore ordinary scrolling — which is where the keyboard paging, the two-finger
  * pan and shift-wheel all come from without being written.
  * -------------------------------------------------------------------------------------- */
+/* Both modes now, not just the canvas — the bin in the corner needs a positioning context and a
+ * grid is just as draggable. A flex column so the grid inside it keeps filling the way it did as
+ * a direct child of `.ws-main`; the canvas's own scroller is absolutely positioned and takes no
+ * notice either way. */
 .wsboard {
   flex: 1 1 auto;
   position: relative;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .wsfloat {
@@ -732,6 +742,52 @@
   z-index: 2;
   width: 150px;
   min-height: 64px;
+}
+
+/* The bin, in the opposite corner from the new-comp tile and drawn as its counterpart: the same
+ * dashed placeholder, the same size, the other side.
+ *
+ * Absent until a tile is actually being carried. There is no state and no re-render behind that
+ * — it reads the attribute the carry engines already write on the board element beside it
+ * (`data-reordering` on a grid, `data-floating` on a canvas), which is what lets a drag go on
+ * re-rendering nothing at all. `pointer-events` follows opacity so an invisible zone cannot
+ * quietly swallow a drop meant for the board. */
+.trash-zone {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2;
+  /* Deliberately larger than the new-comp tile it mirrors. That one is clicked, with a cursor
+     already resting on it; this one is arrived at mid-drag from anywhere on the board, often
+     across a scrolling canvas, and a target you have to aim at is one you drop a tile beside. */
+  width: 220px;
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--line-2, var(--line-1));
+  border-radius: var(--radius-lg, 10px);
+  background: var(--bg-panel);
+  color: var(--text-3);
+  font-size: 11.5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+}
+.wsgrid[data-reordering='true'] ~ .trash-zone,
+.wsfloat[data-floating='true'] ~ .trash-zone {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Under the cursor it commits to what it is. This is the one place in the app where a drop is
+   destructive, and the zone saying so while the tile is over it is the last thing between a
+   person and letting go. */
+.trash-zone-receiving {
+  border-color: var(--danger);
+  border-style: solid;
+  color: var(--danger);
 }
 
 /* Where a tile would land if it were let go of now.

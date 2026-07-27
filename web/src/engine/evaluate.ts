@@ -22,8 +22,10 @@ import type {
 } from './types'
 
 // Violations are emitted in a fixed order so a comp always reports its problems the same
-// way; this is the order sizes are checked in.
-const HULL_SIZE_ORDER: readonly HullSize[] = [
+// way; this is the order sizes are checked in. Biggest first, which is also the order the
+// tile's rows are sorted into — exported so there is one answer to "which hull is bigger"
+// rather than two that can drift.
+export const HULL_SIZE_ORDER: readonly HullSize[] = [
   'Battleship',
   'Battlecruiser',
   'Cruiser',

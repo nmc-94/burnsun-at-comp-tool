@@ -87,8 +87,15 @@ export function forkComp(
   })
 }
 
-export function deleteComp(compId: string): Promise<void> {
-  return request<void>(`/api/v1/comps/${compId}`, { method: 'DELETE' })
+/**
+ * Really delete it. The server refuses unless the comp is yours or the team is.
+ *
+ * `init` is how the tab-closing path passes `keepalive`, the same way `putWorkspace` does — a
+ * deletion held back for the undo window still has to be delivered when the window closes
+ * because the page is going away.
+ */
+export function deleteComp(compId: string, init?: RequestInit): Promise<void> {
+  return request<void>(`/api/v1/comps/${compId}`, { ...init, method: 'DELETE' })
 }
 
 /** The whole thread, oldest first. */

@@ -19,6 +19,7 @@ function comp(name: string, archetype: string | null, tags: string[]): CompDetai
     rulesetVersionLabel: '2026-07-23',
     shipCount: 0,
     createdByName: 'Kadir',
+    createdByCharacterId: 90000001,
     createdAt: '2026-07-25T10:00:00Z',
     updatedAt: '2026-07-25T10:00:00Z',
     yourLevel: 'owner',

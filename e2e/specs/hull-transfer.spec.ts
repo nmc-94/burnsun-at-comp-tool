@@ -58,7 +58,10 @@ test('two picked hulls port into a new comp, keeping the parent version', async 
   // parent's ruleset version rather than to whatever has published since.
   const parentVersion = await tile.getByTestId('comp-ruleset-version').textContent()
   await expect(ported.getByTestId('comp-ruleset-version')).toHaveText(parentVersion ?? '')
-  await expect(ported.getByTestId('comp-lineage')).toContainText('Armor Brawl')
+  // Asked of the server, not the tile: a fork's parentage is no longer drawn anywhere.
+  const portedComp = await api.getComp((await ported.getAttribute('data-comp-id'))!)
+  expect(portedComp.forkedFromName).toBe('Armor Brawl')
+  expect(portedComp.forkKind).toBe('partial')
 })
 
 test('the same rows port with Ctrl+C and Ctrl+V, no pointer involved', async ({
@@ -85,7 +88,9 @@ test('the same rows port with Ctrl+C and Ctrl+V, no pointer involved', async ({
 
   const ported = tileNamed(page, 'Armor Brawl (partial)')
   await expect(ported.getByTestId('comp-row-name')).toHaveText(['Scimitar', 'Scimitar'])
-  await expect(ported.getByTestId('comp-lineage')).toContainText('Armor Brawl')
+  expect((await api.getComp((await ported.getAttribute('data-comp-id'))!)).forkedFromName).toBe(
+    'Armor Brawl',
+  )
   // A port derives rather than moves, whichever way it was asked for.
   await expect(tile.getByTestId('comp-row')).toHaveCount(3)
 })

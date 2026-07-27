@@ -23,9 +23,11 @@ import {
   withBoardRenamed,
   withBoardSnap,
   moveTile,
+  spotsOf,
   withCompClosed,
   withCompForgotten,
   withCompOpened,
+  withCompRestored,
   withTileMoved,
   withTilePlaced,
   withTilesPlaced,
@@ -299,6 +301,71 @@ describe('the reducers', () => {
 
     expect(tilesOn(forgotten, 0)).toEqual(['c2'])
     expect(tilesOn(forgotten, 1)).toEqual([])
+  })
+
+  it('puts a forgotten comp back at the index and place it held', () => {
+    const layout = withTilePlaced(
+      layoutOf(['One', 'c1', 'c2', 'c3']),
+      'board-One',
+      'c2',
+      { x: 120, y: 40 },
+    )
+    const spots = spotsOf(layout, 'c2')
+
+    const restored = withCompRestored(withCompForgotten(layout, 'c2'), spots, 'board-One')
+
+    // Byte-identical, and that is the point rather than a nicety: the layout is compared to what
+    // was last persisted by stringifying it, so a delete taken back inside the 800ms debounce
+    // writes nothing at all. Reopening the comp instead would append it, placeless, and cost two
+    // spurious saves and a tile that visibly jumps.
+    expect(restored).toEqual(layout)
+    expect(tilesOn(restored)).toEqual(['c1', 'c2', 'c3'])
+  })
+
+  it('puts it back on every board it was open on', () => {
+    const layout = layoutOf(['One', 'c1', 'c2'], ['Two', 'c2'])
+    const spots = spotsOf(layout, 'c2')
+
+    const restored = withCompRestored(withCompForgotten(layout, 'c2'), spots, 'board-One')
+
+    expect(tilesOn(restored, 0)).toEqual(['c1', 'c2'])
+    expect(tilesOn(restored, 1)).toEqual(['c2'])
+  })
+
+  it('falls back to the active board when the one it was on has since closed', () => {
+    const layout = layoutOf(['One', 'c1'], ['Two', 'c2'])
+    const spots = spotsOf(layout, 'c2')
+
+    const gone = withBoardClosed(withCompForgotten(layout, 'c2'), 'board-Two')
+    const restored = withCompRestored(gone, spots, 'board-One')
+
+    // A comp that came back with nowhere to see it would look like the undo had failed.
+    expect(tilesOn(restored, 0)).toEqual(['c1', 'c2'])
+  })
+
+  it('leaves a comp out rather than overfilling a board the server would refuse', () => {
+    const full: [string, ...string[]] = [
+      'One',
+      ...Array.from({ length: MAX_TILES_PER_BOARD }, (_, at) => `c${at}`),
+    ]
+    const layout = layoutOf(full)
+    const spots = spotsOf(layout, 'c0')
+    // Deleting frees a slot, so this takes two tiles opened inside the window — and the server
+    // counts tiles with a `max_length`, so the alternative is not a crowded board but a 422 that
+    // fails the whole save.
+    const crowded = withCompOpened(withCompForgotten(layout, 'c0'), 'board-One', 'late')
+
+    const restored = withCompRestored(crowded, spots, 'board-One')
+
+    expect(tilesOn(restored).length).toBe(MAX_TILES_PER_BOARD)
+    expect(tilesOn(restored)).not.toContain('c0')
+  })
+
+  it('does not double a comp that is somehow already back', () => {
+    const layout = layoutOf(['One', 'c1'])
+    const spots = spotsOf(layout, 'c1')
+
+    expect(tilesOn(withCompRestored(layout, spots, 'board-One'))).toEqual(['c1'])
   })
 
   it('adds a board and makes it the one in front', () => {

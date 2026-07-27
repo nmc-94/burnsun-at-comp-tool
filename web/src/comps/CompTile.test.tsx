@@ -28,8 +28,6 @@ interface Says {
   readonly archetype?: string | null
   readonly tags?: readonly string[]
   readonly commentCount?: number
-  readonly forkCount?: number
-  readonly lineage?: React.ComponentProps<typeof CompTile>['lineage']
   /** Set to hand the tile the three Phase H handlers; left off, their controls do not appear. */
   readonly interactive?: boolean
 }
@@ -53,8 +51,6 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
       archetype={says.archetype ?? null}
       tags={says.tags ?? []}
       commentCount={says.commentCount ?? 0}
-      forkCount={says.forkCount ?? 0}
-      lineage={says.lineage ?? null}
       editable={editable}
       saveState="idle"
       onChange={onChange}
@@ -133,6 +129,9 @@ function row(index: number) {
  * them now — so the tile's own answer to "what is picked" is the checked state of the boxes,
  * which is the same thing a screen reader is told. Asserting on the `.picked` class instead
  * would be checking a stylesheet.
+ *
+ * **Positions on screen, not stored row numbers.** Rows are drawn in weight order, so the two
+ * differ — this says which boxes are ticked, and `dragFrom` below says which slots that means.
  */
 function pickedRows(): number[] {
   return screen
@@ -241,44 +240,40 @@ describe('the foot', () => {
     expect(onToggleComments).toHaveBeenCalled()
   })
 
-  it('forks from a control named for the comp, beside the count of its forks', () => {
-    const { onFork } = mount(slots(SHIP.abaddon), true, { interactive: true, forkCount: 2 })
+  it('forks from a control named for the comp', () => {
+    // The count that used to sit beside the glyph is gone: how many forks a comp has spawned is
+    // not something anybody was reading off twenty tiles at once, and the name is what a driver
+    // matches on either way.
+    const { onFork } = mount(slots(SHIP.abaddon), true, { interactive: true })
 
     const trigger = screen.getByRole('button', { name: 'Fork Angel Shield Kite' })
-    expect(trigger.textContent).toContain('2')
     fireEvent.click(trigger)
 
     expect(onFork).toHaveBeenCalled()
   })
 
-  it('says where a fork came from, and links to it while the parent is still there', () => {
-    mount(slots(SHIP.abaddon), true, {
-      lineage: { name: 'Angel Shield Kite', href: '/comps/parent-id', partial: false },
-    })
+  // The tile no longer draws a fork's lineage — the footer is a name and three controls now.
+  // `forked_from_comp_id` and its `forked_from_name` snapshot are untouched and still carry
+  // §4.1c's promise that provenance survives the parent's deletion; what proves it moved to
+  // `tests/test_comps_api.py`, which is where the SET NULL that makes it true actually lives.
 
-    const link = within(screen.getByTestId('comp-lineage')).getByRole('link')
-    expect(link.getAttribute('href')).toBe('/comps/parent-id')
-    expect(link.textContent).toBe('Angel Shield Kite')
-  })
-
-  it('still names the parent once it has been deleted, without a link to nothing', () => {
-    // `forkedFromName` is a snapshot and outlives the comp, which is the whole reason the
-    // column exists — but a link to a comp that is gone is worse than no link.
-    mount(slots(SHIP.abaddon), true, {
-      lineage: { name: 'Angel Shield Kite', href: null, partial: true },
-    })
-
-    const lineage = screen.getByTestId('comp-lineage')
-    expect(lineage.textContent).toContain('Angel Shield Kite')
-    expect(within(lineage).queryByRole('link')).toBeNull()
-  })
-
-  it('shows no comment, fork or lineage affordance on a tile wired for none', () => {
+  it('shows no comment or fork affordance on a tile wired for none', () => {
     mount(slots(SHIP.abaddon))
 
     expect(screen.queryByTestId('comp-comment-count')).toBeNull()
     expect(screen.queryByTestId('comp-fork')).toBeNull()
-    expect(screen.queryByTestId('comp-lineage')).toBeNull()
+  })
+
+  it('keeps the save state and the ruleset version out of sight and in the document', () => {
+    // Both were visible until the footer was cleared out. They stay because they are what a
+    // driver reads — `expectCompSaved` waits on `data-save-state` rather than sleeping through
+    // the 600ms debounce — so deleting the nodes would cost the e2e suite its clock.
+    mount(slots(SHIP.abaddon))
+
+    const saved = screen.getByTestId('comp-save-state')
+    expect(saved.hidden).toBe(true)
+    expect(saved.dataset.saveState).toBe('idle')
+    expect(screen.getByTestId('comp-ruleset-version').hidden).toBe(true)
   })
 })
 
@@ -580,8 +575,11 @@ describe('the flagship', () => {
     // to clicking one of the others was a violation raised a moment later.
     mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.scimitar, SHIP.bhaalgorn))
 
-    expect(within(row(0)).queryByTestId('comp-row-flagship-toggle')).toBeTruthy()
-    expect(within(row(1)).queryByTestId('comp-row-flagship-toggle')).toBeNull()
+    // Drawn by weight, so the order on screen is Bhaalgorn 53, Abaddon 40, Scimitar 32,
+    // Rifter 4 — and the star belongs to the Abaddon alone. The Bhaalgorn above it is the
+    // exception the ruleset names: a battleship that may not be a flagship.
+    expect(within(row(0)).queryByTestId('comp-row-flagship-toggle')).toBeNull()
+    expect(within(row(1)).queryByTestId('comp-row-flagship-toggle')).toBeTruthy()
     expect(within(row(2)).queryByTestId('comp-row-flagship-toggle')).toBeNull()
     expect(within(row(3)).queryByTestId('comp-row-flagship-toggle')).toBeNull()
   })
@@ -756,21 +754,27 @@ describe('picking rows out', () => {
     // copy — which is what lets the new comp keep the parent's ruleset version. The numbers
     // are the positions the slots were stored at: dense, from zero, in row order whatever
     // order they were ticked in.
+    // Drawn by weight — Abaddon 40, Orthrus 19, Rifter 4 — so a slot number in a label is a
+    // position on screen while the numbers handed over are the ones the slots are stored at.
     const { onDragRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
-    fireEvent.click(tick('Select Orthrus in slot 3'))
+    fireEvent.click(tick('Select Orthrus in slot 2'))
     fireEvent.click(tick('Select Abaddon in slot 1'))
 
     expect(dragFrom(onDragRows, 0)).toEqual([0, 2])
   })
 
-  it('extends a range when shift is held', () => {
+  it('extends a range down the rows as they are drawn, not as they are stored', () => {
+    // The case that makes the range order-aware. On screen this is Abaddon, Orthrus, Svipul,
+    // Rifter; stored it is Abaddon, Rifter, Orthrus, Svipul. Shift-clicking the third row means
+    // the three rows the cursor crossed — whose stored numbers are 0, 2 and 3, skipping the
+    // Rifter that sits between two of them in the list and last on the tile.
     const { onDragRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus, SHIP.svipul))
 
-    fireEvent.click(tick('Select Rifter in slot 2'))
-    fireEvent.click(tick('Select Svipul in slot 4'), { shiftKey: true })
+    fireEvent.click(tick('Select Abaddon in slot 1'))
+    fireEvent.click(tick('Select Svipul in slot 3'), { shiftKey: true })
 
-    expect(dragFrom(onDragRows, 1)).toEqual([1, 2, 3])
+    expect(dragFrom(onDragRows, 0)).toEqual([0, 2, 3])
   })
 
   it('forgets the selection when the rows change underneath it', () => {
@@ -778,8 +782,9 @@ describe('picking rows out', () => {
     // come to mean different hulls than the ones with ticks beside them — and a drag would
     // then carry hulls nobody picked.
     const { rerenderWith } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
-    fireEvent.click(tick('Select Orthrus in slot 3'))
-    expect(pickedRows()).toEqual([2])
+    fireEvent.click(tick('Select Orthrus in slot 2'))
+    // Second row on screen; stored at 2, which is the number a drag would carry.
+    expect(pickedRows()).toEqual([1])
 
     rerenderWith(slots(SHIP.rifter, SHIP.orthrus))
 
@@ -790,7 +795,7 @@ describe('picking rows out', () => {
     const { onDragRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
     fireEvent.click(tick('Select Abaddon in slot 1'))
-    fireEvent.click(tick('Select Orthrus in slot 3'))
+    fireEvent.click(tick('Select Orthrus in slot 2'))
 
     expect(dragFrom(onDragRows, 0)).toEqual([0, 2])
   })
@@ -800,7 +805,9 @@ describe('picking rows out', () => {
 
     fireEvent.click(tick('Select Abaddon in slot 1'))
 
-    expect(dragFrom(onDragRows, 1)).toEqual([1])
+    // The second row drawn is the Orthrus, stored at 2 — the number that travels is the stored
+    // one, whatever the row's position on screen.
+    expect(dragFrom(onDragRows, 1)).toEqual([2])
   })
 })
 
@@ -810,8 +817,10 @@ describe('copying the picked rows with the keyboard', () => {
     // reached two ways — see BoardTransfer.test.tsx for the other end of it.
     const { onCopyRows } = mount(slots(SHIP.abaddon, SHIP.rifter, SHIP.orthrus))
 
+    // The first two rows drawn — Abaddon and Orthrus — which are stored at 0 and 2. The same
+    // pair the drag test above hands over, picked the same way.
     fireEvent.click(row(0))
-    fireEvent.click(row(2), { ctrlKey: true })
+    fireEvent.click(row(1), { ctrlKey: true })
     fireEvent.keyDown(document, { key: 'c', ctrlKey: true })
 
     expect(onCopyRows).toHaveBeenCalledWith([0, 2])
@@ -906,7 +915,6 @@ describe('the save state', () => {
         archetype={null}
         tags={[]}
         commentCount={0}
-        forkCount={0}
         editable
         saveState="saving"
         onChange={vi.fn()}
@@ -915,12 +923,12 @@ describe('the save state', () => {
     )
 
     const state = screen.getByTestId('comp-save-state')
-    expect(state.textContent).toBe('saving…')
-    expect(state.getAttribute('role')).toBe('status')
     expect(state.getAttribute('data-save-state')).toBe('saving')
-    // Silent on purpose: a board opens twenty of these at once, so the live region that
-    // speaks belongs to the board, not to each tile. A driver reads the attributes above.
-    expect(state.getAttribute('aria-live')).toBe('off')
+    expect(state.textContent).toBe('saving…')
+    // Out of sight and out of the accessibility tree both. It used to be visible with
+    // `aria-live="off"` — stated to a person, deliberately not announced to twenty of them at
+    // once. Now nobody reads it but a driver, and `hidden` says exactly that.
+    expect(state.hidden).toBe(true)
     view.unmount()
   })
 })

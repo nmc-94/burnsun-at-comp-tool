@@ -24,6 +24,14 @@ export interface CompDetail {
   shipCount: number
   /** Captured when the comp was created and never reassigned. */
   createdByName: string | null
+  /**
+   * The same character as an id, which is the one that can be compared.
+   *
+   * Whether the delete controls appear is "did I make this", and asking it of the *name*
+   * would hand somebody else's comp to anyone who renamed their character into it. Null on
+   * comps made before anyone signed in, which no live deployment has.
+   */
+  createdByCharacterId: number | null
   createdAt: string
   updatedAt: string
   /** What the signed-in character holds on the owning team. Controls are gated on this. */

@@ -10,6 +10,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
+import { resetPendingDelete } from '../comps/pending-delete'
+import { resetUndoTargets } from '../comps/undo-keys'
 import { resetRulesetCache } from '../rulesets/cache'
 // jsdom builds <dialog> as a bare HTMLElement with no showModal, so the settings dialog
 // cannot mount without this. See ui/dialog-polyfill.ts.
@@ -40,6 +42,7 @@ function compBody(id: string, name: string, typeIds: number[], says: Says = {}) 
     rulesetVersionLabel: says.versionLabel ?? 'v2026-07-23',
     shipCount: typeIds.length,
     createdByName: 'Kadir',
+    createdByCharacterId: 90000001,
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: '2026-07-01T00:00:00Z',
     yourLevel: 'owner',
@@ -71,6 +74,8 @@ function stubServer(saved: unknown = { boards: [], activeBoardId: null, updatedA
   const calls: Recorded[] = []
   let layout = saved
   const stored = new Map<string, ReturnType<typeof compBody>>()
+
+  const removed = new Set<string>()
 
   const remember = (comp: ReturnType<typeof compBody>) => {
     stored.set(comp.id, comp)
@@ -132,8 +137,13 @@ function stubServer(saved: unknown = { boards: [], activeBoardId: null, updatedA
         // Sorted, the way the server sorts them, so the rail and the chips read in one order.
         tags: [...sent.tags].sort(),
       })
+    } else if (/\/api\/v1\/comps\/[^/]+$/.test(url) && init.method === 'DELETE') {
+      // A real delete, and 204 like the route: `request` reads that as "no body" and returns
+      // undefined, which is the shape the flush's catch has to not trip over.
+      removed.add(url.split('/').at(-1) ?? '')
+      return { ok: true, status: 204, statusText: 'No Content', json: async () => null, text: async () => '' }
     } else if (url.endsWith('/comps')) {
-      body = COMPS.map((comp) => state(comp.id))
+      body = COMPS.filter((comp) => !removed.has(comp.id)).map((comp) => state(comp.id))
     } else if (url.endsWith('/grants')) {
       // The settings dialog's second read. Empty is the interesting shape here — this file is
       // about the workspace, and who is on the team is TeamSettingsDialog.test.tsx's subject.
@@ -169,8 +179,13 @@ function stubServer(saved: unknown = { boards: [], activeBoardId: null, updatedA
 const savesOf = (calls: Recorded[]) =>
   calls.filter((call) => call.url.endsWith('/workspace') && call.init.method === 'PUT')
 
-async function open(boardId: string | null = null) {
-  const view = render(<WorkspaceScreen teamId="t1" boardId={boardId} />)
+/** The character every fixture comp is created by, so the delete controls are offered. */
+const ME = 90000001
+
+async function open(boardId: string | null = null, characterId: number | null = ME) {
+  const view = render(
+    <WorkspaceScreen teamId="t1" boardId={boardId} characterId={characterId} />,
+  )
   await waitFor(() => expect(screen.queryByTestId('workspace-loading')).toBeNull())
   return view
 }
@@ -216,6 +231,122 @@ afterEach(() => {
   // A drag ends on `dragend`, which a test that only fires `dragstart` and `drop` never
   // reaches — so the payload would outlive the test that set it.
   resetHullTransfers()
+  // A deletion a test left held would be flushed by the next test's first delete, putting a
+  // request in that test's `calls` that nothing in it asked for.
+  resetPendingDelete()
+  // And its one-shot would still be registered on the shared document.
+  resetUndoTargets()
+})
+
+describe('deleting a comp', () => {
+  const ONE_BOARD = {
+    boards: [{ id: 'b1', name: 'One', tiles: [{ compId: 'a' }, { compId: 'b' }] }],
+    activeBoardId: 'b1',
+    updatedAt: null,
+  }
+
+  const deletesOf = (calls: Recorded[]) => calls.filter((call) => call.init.method === 'DELETE')
+
+  const railLeaf = (compId: string) =>
+    screen.getByTestId('library-rail').querySelector(`[data-comp-id="${compId}"]`)!
+
+  /** Right-click a rail leaf and pick Delete, answering the confirmation if one appears. */
+  function deleteFromRail(compId: string) {
+    fireEvent.contextMenu(railLeaf(compId))
+    fireEvent.click(screen.getByTestId('library-comp-delete'))
+    const confirm = screen.queryByTestId('delete-comp-confirm')
+    if (confirm) fireEvent.click(confirm)
+  }
+
+  it('takes the comp off the board and out of the rail without sending anything', async () => {
+    const { calls } = stubServer(ONE_BOARD)
+    await open('b1')
+
+    deleteFromRail('a')
+
+    await waitFor(() => expect(tileNames()).toEqual(['b']))
+    expect(railLeaf('b')).toBeTruthy()
+    expect(screen.getByTestId('library-rail').querySelector('[data-comp-id="a"]')).toBeNull()
+    // The undo is only lossless while the request has not gone. A comp already deleted cannot
+    // be put back: its id is spent, its forks have been told to forget it, and every other
+    // person's saved board has dropped it.
+    expect(deletesOf(calls)).toHaveLength(0)
+  })
+
+  it('puts it back where it was when Ctrl+Z is pressed', async () => {
+    const { calls } = stubServer(ONE_BOARD)
+    await open('b1')
+
+    deleteFromRail('a')
+    await waitFor(() => expect(tileNames()).toEqual(['b']))
+    fireEvent.keyDown(document, { key: 'z', ctrlKey: true })
+
+    // Back at index 0, not appended after 'b': the tile is restored, not reopened.
+    await waitFor(() => expect(tileNames()).toEqual(['a', 'b']))
+    expect(deletesOf(calls)).toHaveLength(0)
+  })
+
+  it('sends the first deletion when a second comp is deleted', async () => {
+    const { calls } = stubServer(ONE_BOARD)
+    await open('b1')
+
+    deleteFromRail('a')
+    await waitFor(() => expect(tileNames()).toEqual(['b']))
+    deleteFromRail('b')
+
+    // One held at a time — which is what makes the rule "the last thing you deleted is the
+    // thing that comes back" true without a timer nobody can see.
+    await waitFor(() => expect(deletesOf(calls).map((call) => call.url)).toEqual(['/api/v1/comps/a']))
+    expect(tileNames()).toEqual([])
+  })
+
+  it('asks first for a comp with hulls in it, and not for an empty one', async () => {
+    stubServer(ONE_BOARD)
+    await open('b1')
+
+    fireEvent.contextMenu(railLeaf('a'))
+    fireEvent.click(screen.getByTestId('library-comp-delete'))
+    expect(screen.getByTestId('delete-comp-dialog')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('delete-comp-confirm'))
+    await waitFor(() => expect(tileNames()).toEqual(['b']))
+
+    // The comp the ghost tile makes has no hulls, and it is the whole reason this feature
+    // exists. A modal in front of throwing that away would be friction guarding nothing.
+    fireEvent.click(screen.getByTestId('board-new-comp'))
+    await waitFor(() => expect(tileNames()).toContain('made'))
+    fireEvent.contextMenu(railLeaf('made'))
+    fireEvent.click(screen.getByTestId('library-comp-delete'))
+
+    expect(screen.queryByTestId('delete-comp-dialog')).toBeNull()
+    await waitFor(() => expect(tileNames()).toEqual(['b']))
+  })
+
+  it('sends the held deletion when the team changes underneath it', async () => {
+    const { calls } = stubServer(ONE_BOARD)
+    const view = await open('b1')
+
+    deleteFromRail('a')
+    await waitFor(() => expect(tileNames()).toEqual(['b']))
+    view.rerender(<WorkspaceScreen teamId="t2" boardId={null} characterId={ME} />)
+
+    // Switching teams does *not* unmount this component — React reconciles the same type at the
+    // same position — so the flush rides on the effect's cleanup instead, which runs because
+    // `save` is keyed on the team. Asserted explicitly because that is a property of two
+    // separate decisions lining up, and neither of them was made with this in mind.
+    await waitFor(() => expect(deletesOf(calls).map((call) => call.url)).toEqual(['/api/v1/comps/a']))
+  })
+
+  it('sends the held deletion when the workspace is left', async () => {
+    const { calls } = stubServer(ONE_BOARD)
+    const view = await open('b1')
+
+    deleteFromRail('a')
+    await waitFor(() => expect(tileNames()).toEqual(['b']))
+    view.unmount()
+
+    // Leaving ends the window: there is no board left for Ctrl+Z to put the tile back onto.
+    await waitFor(() => expect(deletesOf(calls).map((call) => call.url)).toEqual(['/api/v1/comps/a']))
+  })
 })
 
 describe('opening a workspace', () => {
@@ -511,14 +642,16 @@ describe('arranging', () => {
 
 describe('porting rows into a new comp', () => {
   async function openWithAlpha() {
-    stubServer({
+    const server = stubServer({
       boards: [{ id: 'b1', name: 'Angel doctrines', tiles: [{ compId: 'a' }] }],
       activeBoardId: 'b1',
       updatedAt: '2026-07-24T00:00:00Z',
     })
     const view = await open()
     await waitFor(() => expect(screen.getByLabelText('Alpha')).toBeTruthy())
-    return view
+    // The recorded calls come back too: with the tile no longer drawing a fork's lineage, what
+    // the fork request carried is where that behaviour is now observable.
+    return { ...view, calls: server.calls }
   }
 
   /**
@@ -565,20 +698,18 @@ describe('porting rows into a new comp', () => {
   })
 
   it('records the parent on the new comp, so the fork says where it came from', async () => {
-    await openWithAlpha()
+    const { calls } = await openWithAlpha()
 
     port()
 
-    // The tile fetches its own comp *and* the ruleset that comp is pinned to, so the lineage
-    // has to survive both round trips and not merely be in the fork's response. Waited for by
-    // the mark itself rather than by the tile's name: the name arrives with the comp, a whole
-    // fetch before the tile has anything to draw.
-    const lineage = await waitFor(() =>
-      within(screen.getByLabelText('Alpha (partial)')).getByTestId('comp-lineage'),
-    )
-    expect(lineage.textContent).toContain('Alpha')
-    // Flagged as a partial derivation, because only some of the parent's rows were taken.
-    expect(lineage.textContent).toContain('part')
+    // The tile no longer *draws* the lineage, so what is checked here is that the fork carries
+    // it — recorded as a partial derivation, and reaching the client through the fork's own
+    // response. `forked_from_comp_id` surviving the parent's deletion is §4.1c's promise and is
+    // proved where the SET NULL lives, in `tests/test_comps_api.py`.
+    const made = await waitFor(() => screen.getByLabelText('Alpha (partial)'))
+    expect(made).toBeTruthy()
+    const fork = calls.find((call) => call.init.method === 'POST' && call.url.endsWith('/fork'))
+    expect(JSON.parse(String(fork!.init.body)).positions).toEqual([0])
   })
 
   it('leaves the comp the rows came out of exactly as it was', async () => {
@@ -638,8 +769,8 @@ describe('forking a whole comp', () => {
     expect(JSON.parse(String(forked?.init.body))).toEqual({ name: 'Alpha (fork)' })
   })
 
-  it('opens the fork on the board, saying where it came from and holding the parent’s hulls', async () => {
-    await openWithAlpha()
+  it('opens the fork on the board, recording where it came from and holding the parent’s hulls', async () => {
+    const { calls } = await openWithAlpha()
 
     fireEvent.click(screen.getByRole('button', { name: 'Fork Alpha' }))
 
@@ -647,9 +778,9 @@ describe('forking a whole comp', () => {
     expect(within(made).getAllByTestId('comp-row-name').map((row) => row.textContent)).toEqual([
       'Abaddon',
     ])
-    expect(within(made).getByTestId('comp-lineage').textContent).toContain('Alpha')
-    // A full fork, so nothing calls it partial.
-    expect(within(made).getByTestId('comp-lineage').textContent).not.toContain('part')
+    // No `positions`, which is what makes it a full fork rather than a derivation of some rows.
+    const fork = calls.find((call) => call.init.method === 'POST' && call.url.endsWith('/fork'))
+    expect(JSON.parse(String(fork!.init.body))).toEqual({ name: 'Alpha (fork)' })
   })
 
   it('leaves the comp it was forked from alone', async () => {
@@ -659,7 +790,6 @@ describe('forking a whole comp', () => {
 
     await waitFor(() => expect(tileNames()).toContain('made'))
     const alpha = screen.getByLabelText('Alpha')
-    expect(within(alpha).queryByTestId('comp-lineage')).toBeNull()
     expect(within(alpha).getByTestId('comp-save-state').dataset.saveState).toBe('idle')
   })
 })
@@ -737,7 +867,7 @@ describe('team settings', () => {
 
   it('opens on arrival at the settings URL', async () => {
     stubServer()
-    render(<WorkspaceScreen teamId="t1" boardId={null} openSettings />)
+    render(<WorkspaceScreen teamId="t1" boardId={null} characterId={ME} openSettings />)
 
     await waitFor(() => expect(screen.getByTestId('team-settings-dialog')).toBeTruthy())
     // The board is behind it, not replaced by it — the dialog is over the workspace.

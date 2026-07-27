@@ -11,6 +11,8 @@ import type { CSSProperties, RefObject } from 'react'
 
 import CompTileHost from '../comps/CompTileHost'
 import type { TileDrag } from '../comps/CompTileHost'
+import TrashZone from './TrashZone'
+import type { TileTrash } from './TrashZone'
 import type { TagVocabulary } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
 import { inTextField, isPaste } from '../lib/keys'
@@ -67,6 +69,16 @@ interface Props {
    * where a drag that would otherwise rearrange the board derives a comp instead.
    */
   readonly onFork?: (compId: string) => void
+  /**
+   * Delete a comp outright, from the tile's footer or from the bin in the corner.
+   *
+   * Whose confirmation, if any, and whose undo is the board's caller's business — this only
+   * says which gesture happened.
+   */
+  readonly onDelete?: (compId: string) => void
+  /** Which of `compIds` this character may delete, so a tile knows whether to draw the control.
+   *  Absent means none of them. */
+  readonly deletableCompIds?: ReadonlySet<string>
   /**
    * Put a comp's tile at a given position on this board.
    *
@@ -125,6 +137,8 @@ export default function BoardGrid({
   onCreate,
   onPort,
   onFork,
+  onDelete,
+  deletableCompIds,
   onReorder,
   vocabulary,
   onCompChanged,
@@ -416,6 +430,7 @@ export default function BoardGrid({
       onClose={onClose}
       autoFocusName={compId === newCompId}
       onFork={onFork}
+      onDelete={deletableCompIds?.has(compId) ? onDelete : undefined}
       vocabulary={vocabulary}
       onCompChanged={onCompChanged}
       tileDrag={tileDrag}
@@ -431,6 +446,39 @@ export default function BoardGrid({
       tileFork={tileFork}
     />
   )
+
+  /**
+   * Carrying a tile onto the bin, which deletes the comp rather than moving it.
+   *
+   * Deliberately unlike `tileFork` above in one respect: it does not settle the tile's
+   * outstanding edit before acting. A fork reads the comp's rows on the server and so must not
+   * run ahead of the last keystroke; this asks for the comp to stop existing, and flushing an
+   * edit into it first would only widen the window in which the write and the delete collide.
+   * What the deletion waits for instead is that write *settling*, on the far side — see
+   * `comps/pending-delete.ts`.
+   */
+  const tileTrash = useMemo<TileTrash | undefined>(() => {
+    if (!onDelete) return undefined
+    return {
+      carrying: () => carrying.current !== null && deletableCompIds?.has(carrying.current.carried) === true,
+      hover: () => {
+        carrying.current?.home()
+      },
+      drop() {
+        const held = carrying.current
+        if (!held) return
+        // Home first, as a fork's drop does: whether the comp survives is decided elsewhere —
+        // a confirmation may still refuse, and Ctrl+Z may still take it back — so the board's
+        // arrangement is left exactly as it was rather than half-committed to a landing.
+        held.cancel()
+        carrying.current = null
+        settling.current = null
+        onDelete(held.carried)
+      },
+    }
+  }, [onDelete, deletableCompIds])
+
+  const trash = <TrashZone tileTrash={tileTrash} />
 
   const nothingOpen = compIds.length === 0 && (
     <p className="board-empty" data-testid="board-empty">
@@ -516,13 +564,19 @@ export default function BoardGrid({
     </section>
   )
 
-  if (!floating) return board
-
+  // The wrapper is now returned in both modes. It used to be the canvas's alone — the grid needs
+  // no positioning context of its own, since its ghost tile is simply its last cell. What wants
+  // one in both is the bin: a tile is just as draggable on a grid, and pinning the zone to
+  // `.ws-main` instead would mean giving that element a positioning context it does not have and
+  // putting the bin outside the board it belongs to.
   return (
     <div className="wsboard" style={{ '--tile-w': `${canvas?.tileWidth ?? 0}px` } as CSSVars}>
       {board}
-      {ghost}
-      {nothingOpen}
+      {floating && ghost}
+      {floating && nothingOpen}
+      {/* After the board, and it has to be: whether it shows is a sibling selector on the
+          attribute the carry engines write on the board element. */}
+      {trash}
     </div>
   )
 }

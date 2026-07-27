@@ -144,8 +144,9 @@ test('the header being a handle does not stop the name being edited', async ({
   await name.pressSequentially('Renamed by hand')
 
   // Somewhere on another tile that is not a control at all, which is the case worth pinning:
-  // a click on a focusable thing would move focus whatever the tile did.
-  await tileFor(page, beta.id).getByTestId('comp-ruleset-version').click()
+  // a click on a focusable thing would move focus whatever the tile did. The author line, now
+  // that the version label beside it is in the document but not on the screen.
+  await tileFor(page, beta.id).getByTestId('comp-author').click()
 
   // Waited on the tile's own name rather than on `comp-save-state`, which is the slot
   // autosave's and says nothing about a rename — that one is written straight through, and
@@ -262,7 +263,10 @@ test('carried onto the new-comp tile, the whole comp forks and the board is left
   await expect(forked).toBeVisible()
   // The all-rows case of a port: same hulls, pinned to the parent's version, recording it.
   await expect(forked.getByTestId('comp-row-name')).toHaveText(['Abaddon'])
-  await expect(forked.getByTestId('comp-lineage')).toContainText('Gamma')
+  // Asked of the server, not the tile: a fork's parentage is no longer drawn anywhere.
+  const forkedComp = await api.getComp((await forked.getAttribute('data-comp-id'))!)
+  expect(forkedComp.forkedFromName).toBe('Gamma')
+  expect(forkedComp.forkKind).toBe('full')
   const parentVersion = await tileFor(page, gamma.id).getByTestId('comp-ruleset-version').textContent()
   await expect(forked.getByTestId('comp-ruleset-version')).toHaveText(parentVersion ?? '')
 

@@ -388,6 +388,90 @@ export function withCompForgotten(layout: WorkspaceLayout, compId: string): Work
   }
 }
 
+/**
+ * Everywhere one comp was open, so a deletion can be put back exactly as it stood.
+ *
+ * The whole tile, not just its id: a tile carries the place it was put down at, and reopening
+ * a comp is not the same act as never having closed it.
+ */
+export interface CompSpot {
+  readonly boardId: string
+  /** Where in the board's list it sat — which on a floating board is also its place in the
+   *  stack, so restoring to the end would quietly bring it to the front. */
+  readonly index: number
+  readonly tile: WorkspaceTile
+}
+
+/** Where this comp is open, in the form `withCompRestored` takes back. */
+export function spotsOf(layout: WorkspaceLayout, compId: string): CompSpot[] {
+  const spots: CompSpot[] = []
+  for (const board of layout.boards) {
+    const index = board.tiles.findIndex((tile) => tile.compId === compId)
+    const tile = board.tiles[index]
+    if (tile) spots.push({ boardId: board.id, index, tile })
+  }
+  return spots
+}
+
+/**
+ * Put a forgotten comp's tiles back where they were.
+ *
+ * Deliberately not `withCompOpened`, which is the same gesture only in the sense that both end
+ * with a tile on a board. That one appends, and appends something *placeless* — so on a canvas
+ * the tile would be handed a free slot on the next render and visibly jump, and the layout would
+ * never again stringify to what was last persisted, which is what the save debounce compares.
+ * A delete taken back inside the debounce should write nothing at all, and only a byte-identical
+ * restore makes that true.
+ *
+ * A board closed in the meantime simply has nothing to take its tiles back; the comp is still
+ * restored to the rest. `fallbackBoardId` covers the case where that leaves nowhere at all,
+ * because a comp that came back with no way to see it would look like the undo had failed.
+ *
+ * A board that has filled up since keeps its tile out. Deleting frees a slot, so this needs two
+ * tiles opened during the window to happen at all — and the server counts tiles with a
+ * `max_length`, so the alternative is not a crowded board but a 422 that fails the whole save.
+ */
+export function withCompRestored(
+  layout: WorkspaceLayout,
+  spots: readonly CompSpot[],
+  fallbackBoardId: string,
+): WorkspaceLayout {
+  const byBoard = new Map<string, CompSpot[]>()
+  for (const spot of spots) {
+    if (!layout.boards.some((board) => board.id === spot.boardId)) continue
+    byBoard.set(spot.boardId, [...(byBoard.get(spot.boardId) ?? []), spot])
+  }
+  if (byBoard.size === 0) {
+    const first = spots[0]
+    if (!first) return layout
+    // Placed rather than opened, so a canvas still gets it back where it was even though the
+    // board it belonged to is gone.
+    return mapBoard(layout, fallbackBoardId, (board) =>
+      board.tiles.some((tile) => tile.compId === first.tile.compId) ||
+      board.tiles.length >= MAX_TILES_PER_BOARD
+        ? board
+        : { ...board, tiles: [...board.tiles, first.tile] },
+    )
+  }
+
+  return {
+    ...layout,
+    boards: layout.boards.map((board) => {
+      const mine = byBoard.get(board.id)
+      if (!mine) return board
+      const tiles = [...board.tiles]
+      // Ascending, so each splice lands at the index it was recorded at rather than at one
+      // shifted by the insert before it.
+      for (const spot of [...mine].sort((a, b) => a.index - b.index)) {
+        if (tiles.some((tile) => tile.compId === spot.tile.compId)) continue
+        if (tiles.length >= MAX_TILES_PER_BOARD) break
+        tiles.splice(Math.min(spot.index, tiles.length), 0, spot.tile)
+      }
+      return { ...board, tiles }
+    }),
+  }
+}
+
 export function withBoardAdded(layout: WorkspaceLayout, name?: string): WorkspaceLayout {
   if (layout.boards.length >= MAX_BOARDS) return layout
   const board: WorkspaceBoard = {

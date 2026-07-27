@@ -51,6 +51,7 @@ function stubFetch() {
           rulesetVersionLabel: comp[1].version,
           shipCount: comp[1].typeIds.length,
           createdByName: 'Kadir',
+          createdByCharacterId: 90000001,
           createdAt: '2026-07-01T00:00:00Z',
           updatedAt: '2026-07-01T00:00:00Z',
           yourLevel: 'owner',
