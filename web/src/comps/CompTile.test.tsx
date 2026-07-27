@@ -36,6 +36,15 @@ interface Says {
   readonly commentCount?: number
   /** Set to hand the tile the three Phase H handlers; left off, their controls do not appear. */
   readonly interactive?: boolean
+  /**
+   * Re-render from the tile's own edits, the way the cell does.
+   *
+   * Off by default, because most tests want to assert *what* an edit was and a spy says that
+   * better than a re-render does. It is on for the keyboard's, which cannot be read any other
+   * way: the cursor is handed on in the same commit that lands the edit, so a tile whose slots
+   * never change is a tile the hand-off never arrives in.
+   */
+  readonly follows?: boolean
 }
 
 /** Render the tile over `slots`, re-judging on every change the way CompScreen does. */
@@ -73,6 +82,7 @@ function mount(slots: PlacedSlot[], editable = true, says: Says = {}) {
     />
   )
   const view = render(tile(slots))
+  if (says.follows) onChange.mockImplementation((next: PlacedSlot[]) => view.rerender(tile(next)))
   return {
     onChange,
     onDragRows,
@@ -183,6 +193,30 @@ function pickedRows(): number[] {
 function dragFrom(onDragRows: ReturnType<typeof vi.fn>, index: number): number[] {
   fireEvent.dragStart(row(index))
   return onDragRows.mock.calls.at(-1)?.[0] as number[]
+}
+
+/**
+ * A row by the comp row it is on, filled or empty.
+ *
+ * The cursor is counted in these rather than in positions on screen, so this is what a keyboard
+ * test points at. `row(n)` above is the other thing — the nth *filled* row as drawn.
+ */
+function line(row: number): HTMLElement {
+  const found = screen.getByTestId('comp-rows').querySelector<HTMLElement>(`[data-row="${row}"]`)
+  if (!found) throw new Error(`the tile draws no row ${row}`)
+  return found
+}
+
+/** The comp row the cursor is on, whether it is resting on the row or in the field on it. */
+function cursorRow(): string | null {
+  const at = document.activeElement
+  if (!(at instanceof HTMLElement)) return null
+  return at.closest('[data-row]')?.getAttribute('data-row') ?? null
+}
+
+/** Everything in the list a Tab from outside could land on. */
+function tabStops(): HTMLElement[] {
+  return [...screen.getByTestId('comp-rows').querySelectorAll<HTMLElement>('[tabindex="0"]')]
 }
 
 describe('the scaffold', () => {
@@ -718,7 +752,7 @@ describe('the hull search from the keyboard', () => {
     expect(cursor.closest('[data-testid="comp-row-empty"]')?.getAttribute('data-row')).toBe('2')
   })
 
-  it('leaves the cursor alone after a swap, which is one edit rather than a sequence', () => {
+  it('hands the cursor on after a swap, the way it does after filling a row', () => {
     const { onChange } = mount(slots(SHIP.abaddon))
     const field = openSwap(0)
     fireEvent.change(field, { target: { value: 'co' } })
@@ -726,10 +760,256 @@ describe('the hull search from the keyboard', () => {
     fireEvent.keyDown(field, { key: 'Enter' })
 
     expect(onChange).toHaveBeenCalledWith(slots(SHIP.condor))
-    // The swap closes and nothing else claims the cursor — a swap is a deliberate change to a
-    // row that already has a hull in it, not a step on the way to the next one.
+    // The swap closes and the cursor goes to the row after it. Correcting a comp is a pass down
+    // it — stopping dead on each correction would put a Tab between every two of them.
     expect(within(row(0)).queryByTestId('ship-search-input')).toBeNull()
-    expect(screen.queryAllByTestId('ship-search-input').some(isFocused)).toBe(false)
+    const cursor = document.activeElement as HTMLElement
+    expect(cursor.closest('[data-testid="comp-row-empty"]')?.getAttribute('data-row')).toBe('1')
+  })
+})
+
+// Walking a comp without the pointer.
+//
+// What jsdom can say and what it cannot is the whole shape of this block. It moves no focus of
+// its own — a Tab it reports as unprevented moves nothing — so every assertion here is either
+// about *the key being claimed* (`fireEvent`'s boolean, which is `preventDefault` inverted) or
+// about where the tile put the cursor itself, which is a real `.focus()` call and does land.
+// That a real Tab enters at the roving stop and a real Tab off the end leaves the tile is
+// Playwright's, in comp-edit.spec.ts.
+describe('moving between the rows from the keyboard', () => {
+  it('claims Tab and puts the cursor on the next row', () => {
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    expect(fireEvent.keyDown(line(0), { key: 'Tab' })).toBe(false)
+
+    expect(cursorRow()).toBe('1')
+  })
+
+  it.each([
+    ['Tab', {}, '1'],
+    ['ArrowDown', {}, '1'],
+    ['Tab', { shiftKey: true }, '0'],
+    ['ArrowUp', {}, '0'],
+  ])('reads %s%s as one motion, landing on row %s', (key, held, landing) => {
+    // Four keys, two motions. A row's handler asks "forwards or backwards" rather than matching
+    // strings, which is what keeps the two pairs from drifting apart — see `isRowNext`.
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+    const from = key === 'ArrowUp' || 'shiftKey' in held ? 1 : 0
+
+    fireEvent.keyDown(line(from), { key, ...held })
+
+    expect(cursorRow()).toBe(landing)
+  })
+
+  it('picks the row it lands on out, exactly as a click on it would', () => {
+    // Descending weights, so the rows are drawn in the order they are stored and `pickedRows`,
+    // which counts along the screen, says the same numbers this test points at.
+    mount(slots(SHIP.abaddon, SHIP.orthrus, SHIP.rifter))
+
+    fireEvent.keyDown(line(0), { key: 'ArrowDown' })
+    expect(pickedRows()).toEqual([1])
+
+    // Replaces rather than accumulates, which is what a plain click means everywhere else.
+    fireEvent.keyDown(line(1), { key: 'ArrowDown' })
+    expect(pickedRows()).toEqual([2])
+  })
+
+  it('leaves Tab to the browser at either end, which is how the cursor gets out of the tile', () => {
+    // The only way jsdom can express "and then the browser takes it from here": the key comes
+    // back unclaimed. Where it actually goes is comp-edit.spec.ts's.
+    mount(slots(SHIP.abaddon))
+
+    expect(fireEvent.keyDown(line(0), { key: 'Tab', shiftKey: true })).toBe(true)
+    // Row 1 is the last stop under a sort — the nine blank lines below it are one offer.
+    expect(fireEvent.keyDown(line(1), { key: 'Tab' })).toBe(true)
+  })
+
+  it('claims the arrows at either end even though they move nothing', () => {
+    // Unclaimed, an arrow at the end of the list scrolls the page under a cursor that did not
+    // move, which reads as the tile having lost it.
+    mount(slots(SHIP.abaddon))
+
+    expect(fireEvent.keyDown(line(0), { key: 'ArrowUp' })).toBe(false)
+    expect(cursorRow()).toBe(null)
+  })
+
+  it('opens the row’s search on Enter and puts the cursor in it', () => {
+    mount(slots(SHIP.abaddon))
+
+    expect(fireEvent.keyDown(line(0), { key: 'Enter' })).toBe(false)
+
+    const field = within(row(0)).getByTestId('ship-search-input')
+    expect(isFocused(field)).toBe(true)
+  })
+
+  it('hands the cursor back to the row when Escape closes the search', () => {
+    // It used to fall to the document body, which is somebody having to find their place again.
+    mount(slots(SHIP.abaddon))
+    const field = openSwap(0)
+
+    fireEvent.keyDown(field, { key: 'Escape' })
+
+    expect(within(row(0)).queryByTestId('ship-search-input')).toBeNull()
+    expect(isFocused(line(0))).toBe(true)
+  })
+
+  it('drags the selection along with shift, and shortens it on the way back', () => {
+    // Same points, so the names order them: Abaddon, Apocalypse, Armageddon down rows 0, 1, 2.
+    mount(slots(SHIP.abaddon, SHIP.apocalypse, SHIP.armageddon))
+
+    // The first of these begins with nothing picked out, which is the state a Tab *into* the
+    // tile leaves — a focus rather than a gesture. The row being left has to be anchored on, or
+    // the run loses the hull it started from.
+    fireEvent.keyDown(line(0), { key: 'ArrowDown', shiftKey: true })
+    expect(pickedRows()).toEqual([0, 1])
+    fireEvent.keyDown(line(1), { key: 'ArrowDown', shiftKey: true })
+    expect(pickedRows()).toEqual([0, 1, 2])
+
+    // Back one, and the row let go of is let go of — a span, not a range. Reversing over a
+    // shift-*click* would leave all three, which is the difference the two branches exist for.
+    fireEvent.keyDown(line(2), { key: 'ArrowUp', shiftKey: true })
+    expect(pickedRows()).toEqual([0, 1])
+  })
+
+  it('takes every filled row on Ctrl+A, and no blank one', () => {
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    expect(fireEvent.keyDown(line(0), { key: 'a', ctrlKey: true })).toBe(false)
+
+    expect(pickedRows()).toEqual([0, 1])
+  })
+
+  it('toggles the row on Space, and types one into a field', () => {
+    // The guard that makes this work is not `defaultPrevented` — a search claims no printable
+    // key at all, so a row that only checked that would make "Harbinger Navy Issue" untypeable.
+    mount(slots(SHIP.abaddon))
+
+    expect(fireEvent.keyDown(line(0), { key: ' ' })).toBe(false)
+    expect(pickedRows()).toEqual([0])
+
+    const field = openSearch()
+    expect(fireEvent.keyDown(field, { key: ' ' })).toBe(true)
+    expect(pickedRows()).toEqual([0])
+  })
+
+  it('empties the row on Delete and leaves the cursor in the field that replaces it', () => {
+    const { onChange } = mount(slots(SHIP.abaddon, SHIP.rifter), true, { follows: true })
+
+    expect(fireEvent.keyDown(line(0), { key: 'Delete' })).toBe(false)
+
+    expect(onChange).toHaveBeenCalledWith([{ position: 1, typeId: SHIP.rifter, isFlagship: false }])
+    // The row did not go away; it became a blank one, and that is where a replacement is typed.
+    expect(cursorRow()).toBe('0')
+    expect(isFocused(within(line(0)).getByTestId('ship-search-input'))).toBe(true)
+  })
+
+  it('designates a flagship on f, and stays on the row', () => {
+    // The one edit that does not hand the cursor on: designating is a fact about the row
+    // somebody is looking at, not a step down the comp.
+    const { onChange } = mount(slots(SHIP.abaddon, SHIP.rifter), true, { follows: true })
+
+    expect(fireEvent.keyDown(line(0), { key: 'f' })).toBe(false)
+
+    expect(onChange.mock.calls.at(-1)?.[0][0].isFlagship).toBe(true)
+    expect(cursorRow()).toBe('0')
+    expect(pickedRows()).toEqual([0])
+  })
+
+  it('leaves f alone where there is no star to press', () => {
+    // A key that silently did nothing on the eight rows out of ten without the control would
+    // read as a broken one, so it is claimed only where the control exists.
+    const { onChange } = mount(slots(SHIP.bhaalgorn))
+
+    expect(fireEvent.keyDown(line(0), { key: 'f' })).toBe(true)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('lets f be an f in a field', () => {
+    mount(slots(SHIP.abaddon))
+
+    expect(fireEvent.keyDown(openSearch(), { key: 'f' })).toBe(true)
+  })
+
+  it('walks every row of an arranged comp, gap or no gap', () => {
+    writeSetting('sortRowsByWeight', false)
+    mount(placed([0, SHIP.abaddon], [3, SHIP.rifter]))
+
+    fireEvent.keyDown(line(0), { key: 'ArrowDown' })
+    expect(cursorRow()).toBe('1')
+    fireEvent.keyDown(line(1), { key: 'ArrowDown' })
+    expect(cursorRow()).toBe('2')
+    fireEvent.keyDown(line(2), { key: 'ArrowDown' })
+    expect(cursorRow()).toBe('3')
+  })
+
+  it('folds a sorted comp’s blank lines into one stop', () => {
+    // They all fill the same row — there is nowhere to choose between them — so eight of the
+    // nine would be presses spent going nowhere.
+    mount(slots(SHIP.abaddon))
+
+    fireEvent.keyDown(line(0), { key: 'ArrowDown' })
+    expect(cursorRow()).toBe('1')
+    expect(fireEvent.keyDown(line(1), { key: 'ArrowDown' })).toBe(false)
+    expect(cursorRow()).toBe('1')
+  })
+
+  it('is one tab stop for the whole list, and everything else is out of the sequence', () => {
+    // The invariant, not an example: this is what catches a control added to a row later
+    // without a `tabIndex`, which would be a fiftieth stop nobody meant to add.
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    expect(tabStops()).toHaveLength(1)
+    expect(tabStops()[0]).toBe(line(0))
+
+    const focusable = screen
+      .getByTestId('comp-rows')
+      .querySelectorAll<HTMLElement>('a, button, input, select, textarea, [tabindex]')
+    expect([...focusable].every((each) => each.tabIndex <= 0)).toBe(true)
+  })
+
+  it('follows the cursor, so the stop is wherever the keyboard got to', () => {
+    mount(slots(SHIP.abaddon, SHIP.rifter))
+
+    fireEvent.keyDown(line(0), { key: 'ArrowDown' })
+
+    expect(tabStops()).toEqual([line(1)])
+  })
+
+  it('gives a viewer no tab stop at all', () => {
+    // Twenty read-only tiles on a board would otherwise be two hundred dead stops.
+    mount(slots(SHIP.abaddon, SHIP.rifter), false)
+
+    expect(tabStops()).toEqual([])
+  })
+
+  it('keeps the cursor on its row when a hull is spliced in above it', () => {
+    // Rows used to be keyed on the slot index, which is always the set {0..n-1} — so a splice
+    // did not unmount anything, it reassigned which hull each key stood for, React reused the
+    // node, and the focused row silently became a different one.
+    writeSetting('sortRowsByWeight', false)
+    const { rerenderWith } = mount(placed([0, SHIP.abaddon], [5, SHIP.rifter]))
+
+    fireEvent.keyDown(line(0), { key: 'ArrowDown' })
+    fireEvent.keyDown(line(1), { key: 'ArrowDown' })
+    fireEvent.keyDown(line(2), { key: 'ArrowDown' })
+    expect(cursorRow()).toBe('3')
+
+    rerenderWith(placed([0, SHIP.abaddon], [2, SHIP.condor], [5, SHIP.rifter]))
+
+    expect(cursorRow()).toBe('3')
+  })
+
+  it('keeps an open search on its row when a hull is spliced in above it', () => {
+    // `openRow` was a slot index too, and `withHullOn` splices by position — so a hull arriving
+    // on a lower row renumbered every index below it and the search hopped a row.
+    writeSetting('sortRowsByWeight', false)
+    const { rerenderWith } = mount(placed([0, SHIP.abaddon], [5, SHIP.rifter]))
+    fireEvent.click(within(line(5)).getByTestId('comp-row-search'))
+
+    rerenderWith(placed([0, SHIP.abaddon], [2, SHIP.condor], [5, SHIP.rifter]))
+
+    expect(within(line(5)).queryByTestId('ship-search-input')).not.toBeNull()
+    expect(within(line(2)).queryByTestId('ship-search-input')).toBeNull()
   })
 })
 

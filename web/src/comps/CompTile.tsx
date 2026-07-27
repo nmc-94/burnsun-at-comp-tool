@@ -5,11 +5,22 @@
 // flag and its popover, and `slots` become the row scaffold. Anything that needed working
 // out lives in tile-model.ts, where it can be tested without a DOM.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import type { LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
-import { inTextField, isCopy, isCopyDrag } from '../lib/keys'
+import {
+  inTextField,
+  isCopy,
+  isCopyDrag,
+  isRowFlagship,
+  isRowNext,
+  isRowOpen,
+  isRowPrev,
+  isRowRemove,
+  isRowSelect,
+  isSelectAll,
+} from '../lib/keys'
 import { useSetting } from '../settings'
 import CopyImageButton from './CopyImageButton'
 import ShipSearch, { SearchGlyph } from './ShipSearch'
@@ -20,16 +31,18 @@ import {
   deltaPill,
   EMPTY_SELECTION,
   firstFreeRow,
+  navigableRows,
   offersFlagship,
   rowsBlamedBy,
   scaffold,
+  selectEvery,
   selectRow,
   withFlagship,
   withHullOn,
   withHullsAdded,
   withRow,
 } from './tile-model'
-import type { PlacedSlot, RowSelection } from './tile-model'
+import type { PlacedSlot, Row, RowSelection } from './tile-model'
 import ViolationsPopover from './ViolationsPopover'
 
 /**
@@ -167,9 +180,32 @@ export default function CompTile({
   shared,
   shareStale,
 }: Props) {
+  /** The row whose hull search is open, if any — a comp row number, like the cursor. */
   const [openRow, setOpenRow] = useState<number | null>(null)
-  // The empty row whose search should take the cursor, set by the pick before it. See `pick`.
-  const [focusEmpty, setFocusEmpty] = useState<number | null>(null)
+  /**
+   * The row holding the tile's one tab stop, and the keyboard's place in the list.
+   *
+   * A **comp row number**, which is the only one of the three numberings that survives
+   * everything this has to survive: the weight sort does not change it, a hull spliced in above
+   * does not renumber it the way it renumbers every array index below, and after a swap under a
+   * sort the row moves up the tile and the cursor goes with the hull rather than staying on the
+   * line it was drawn on.
+   */
+  const [cursor, setCursor] = useState<number | null>(null)
+  /**
+   * One shot: put the cursor on this row once the commit that changes the tile's shape lands.
+   *
+   * Separate from `cursor`, and it has to be. A persistent value driving a `focus()` effect
+   * would take the cursor back every time that row remounted — which empty rows do whenever one
+   * is filled — snatching it from wherever somebody had actually moved on to. This starts null,
+   * so nothing is focused on mount, and it is cleared the moment it is spent.
+   *
+   * `select` is what makes an *edit* different from a *move*. An edit clears the selection on
+   * the way through (see the reconciliation below, which cannot know a keystroke caused it), so
+   * the row it lands on has to be re-taken or the cursor arrives invisible. A move has already
+   * said what it wants selected — a span, perhaps — and must not have it overwritten.
+   */
+  const [claim, setClaim] = useState<{ row: number; select: boolean } | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [highlighted, setHighlighted] = useState<readonly number[]>([])
   // Rows, not comps: this is a gesture inside one tile and it belongs nowhere near the URL.
@@ -177,6 +213,7 @@ export default function CompTile({
   const [pickedFrom, setPickedFrom] = useState(slots)
   const nameField = useRef<HTMLInputElement>(null)
   const root = useRef<HTMLDivElement>(null)
+  const keysId = useId()
 
   // A selection is a list of row numbers, and removing a row renumbers every row below it.
   // Held across an edit it would quietly come to mean different hulls than the ones with
@@ -256,6 +293,29 @@ export default function CompTile({
     () => rows.flatMap((row) => (row.kind === 'ship' ? [row.at] : [])),
     [rows],
   )
+  /** The rows the cursor walks: every filled one, and the blank lines that are somewhere to be. */
+  const navigable = useMemo(() => navigableRows(rows, sorted), [rows, sorted])
+  /**
+   * The row that is the tile's tab stop — the cursor's, or the first row when it has never been
+   * anywhere. Falls back rather than sticking, because the row it was on can stop being
+   * navigable: the sort goes back on and eight blank lines become one.
+   */
+  const tabStop = navigable.some((row) => row.row === cursor) ? cursor : (navigable[0]?.row ?? null)
+
+  // The cursor lands where the last gesture aimed it, after the render that made room for it.
+  // Deliberately not keyed on `cursor`: this fires once per gesture, and firing on a row's
+  // remount instead would be the tile taking the keyboard back off somebody.
+  useEffect(() => {
+    if (!claim) return
+    focusTarget(root.current, claim.row)?.focus()
+    if (claim.select) {
+      // Whatever hull is on that row *now* — an edit renumbered the list on the way here, and
+      // a row that came out empty simply has nothing to take, which is the right answer too.
+      const at = slots.findIndex((slot) => slot.position === claim.row)
+      if (at !== -1) setSelectedRows(selectRow(EMPTY_SELECTION, at))
+    }
+    setClaim(null)
+  }, [claim, slots])
   const blamed = useMemo(() => rowsBlamedBy(result.violations), [result.violations])
   const pill = deltaPill(result.summary)
   const highlightedRows = new Set(highlighted)
@@ -264,22 +324,101 @@ export default function CompTile({
   /**
    * A hull chosen from a row's search, landing on row `row`.
    *
-   * `fromEmpty` is what turns a pick into the next pick. Building a comp is nine of these in a
-   * row, and the field that was typed in is about to stop being an empty row — so unless the
-   * cursor is handed on, every hull after the first costs a click to get back to a field. Where
-   * it goes is the first row of the comp that is *still* empty afterwards, which on an arranged
-   * comp is the next gap and not the next line down.
+   * **A pick always hands the cursor on**, and where to is the one thing the two kinds of pick
+   * disagree about. Building a comp is nine of these in a row, and the field that was typed into
+   * is about to stop being an empty row — so filling one aims at the first row of the comp that
+   * is *still* empty afterwards, which on an arranged comp is the next gap and not the next line
+   * down. Swapping a hull aims at the row after the one changed, because correcting a comp is a
+   * pass down it and stopping dead on each correction would make every second keystroke a Tab.
    *
-   * Null when nothing is left to hand it to — a comp filled to the field size — and null for a
-   * swap, which is one deliberate edit to a row that already has a hull in it rather than a step
-   * in a sequence.
+   * Nowhere to go leaves the cursor alone rather than moving it somewhere arbitrary: a comp
+   * filled to the field size has no next empty row, and the last row has nothing after it.
    */
   function pick(row: number, typeId: number, fromEmpty: boolean) {
     const next = withHullOn(slots, row, typeId)
     onChange(next)
     setOpenRow(null)
+    const landing = fromEmpty ? emptyAfterPick(next) : rowAfter(row)
+    if (landing !== null) goToRow(landing)
+  }
+
+  /** The row a hull typed into an empty one hands the cursor to, or null for a comp that is
+   *  full — `fieldSize` because the scaffold stops there and so does anywhere to type. */
+  function emptyAfterPick(next: readonly PlacedSlot[]): number | null {
     const free = firstFreeRow(next)
-    setFocusEmpty(fromEmpty && free < ruleset.fieldSize ? free : null)
+    return free < ruleset.fieldSize ? free : null
+  }
+
+  /** The next row the cursor would walk to, or null at the end of the list. */
+  function rowAfter(row: number): number | null {
+    const at = navigable.findIndex((each) => each.row === row)
+    return at === -1 ? null : (navigable[at + 1]?.row ?? null)
+  }
+
+  /**
+   * Put the cursor on row `row` after an edit, and pick that row out when it gets there.
+   *
+   * The pair always travel together, which is the rule that keeps a keyboard cursor visible: a
+   * row the keyboard is on reads as picked out, and the edit that got here has just cleared the
+   * selection. See `claim`.
+   */
+  function goToRow(row: number) {
+    setCursor(row)
+    setClaim({ row, select: true })
+  }
+
+  /**
+   * Move the cursor `by` rows from `from`, and say whether there was one to move to.
+   *
+   * **False at both ends, and the caller leaves the key alone when it is.** That is the whole of
+   * how Tab gets out of a tile: the browser carries the cursor on to whatever follows the list,
+   * because nothing here claimed the keystroke. An arrow is claimed either way — there is
+   * nowhere for it to go and the alternative is the page scrolling under a cursor that did not
+   * move.
+   *
+   * `extend` drags the selection along behind, from the anchor. An empty row is passed over
+   * rather than added: selection is of hulls and a blank line has none, and leaving the anchor
+   * where it is means a span that crosses a gap resumes on the far side of it.
+   */
+  function stepCursor(from: Row, by: number, extend: boolean): boolean {
+    const at = navigable.findIndex((row) => row.row === from.row)
+    const next = at === -1 ? undefined : navigable[at + by]
+    if (!next) return false
+    setCursor(next.row)
+    setClaim({ row: next.row, select: false })
+    setSelectedRows((current) => {
+      if (next.kind !== 'ship') return extend ? current : EMPTY_SELECTION
+      // Anchored on the row being *left*, when nothing has been picked out yet. Tabbing into a
+      // tile from outside moves the cursor without touching the selection — it is a focus, not a
+      // gesture — so a shift-arrow straight afterwards would otherwise begin at the row after
+      // the one somebody started from, and lose the first hull of the run they meant.
+      const held =
+        extend && current.anchor === null && from.kind === 'ship'
+          ? selectRow(current, from.at)
+          : current
+      return selectRow(held, next.at, { span: extend, order: drawnOrder })
+    })
+    return true
+  }
+
+  /**
+   * Empty the row the cursor is on, and stay there.
+   *
+   * Staying is the point: the row does not go away, it becomes a blank one, and the cursor lands
+   * in the search field that has just appeared on it — which is where a replacement would be
+   * typed. `openRow` is let go of too, or a hull arriving on that row later would find a swap
+   * apparently open on it.
+   */
+  function removeRow(at: number, row: number) {
+    onChange(withRow(slots, at, null))
+    setOpenRow((held) => (held === row ? null : held))
+    goToRow(row)
+  }
+
+  /** The row's tick, from the keyboard — one spelling for the box and the space bar, so the
+   *  two cannot come to mean different things. */
+  function toggleRow(at: number, range: boolean) {
+    setSelectedRows((current) => selectRow(current, at, { toggle: true, range, order: drawnOrder }))
   }
 
   /** A drag of a row inside the selection takes the whole selection with it. */
@@ -367,6 +506,73 @@ export default function CompTile({
     )
   }
 
+  /**
+   * Everything a row answers to from the keyboard.
+   *
+   * **Two guards before any of it, and they are not the same guard.** The first is
+   * `defaultPrevented`: the row's own search sits inside it and gets the keystroke first, so a
+   * key that control has already claimed is not this one's. Nothing nested here stops an event
+   * propagating — the outer handler checks instead — which is the same bargain Escape has always
+   * made with `openRow`.
+   *
+   * The second is that a row which *is* a field keeps everything but the four keys that move the
+   * cursor. `defaultPrevented` alone would not do it, because a search claims no printable key
+   * at all: Space would pick the row out instead of typing a space, and "Harbinger Navy Issue"
+   * would be untypeable. This is `answersItsOwnPress`'s twin — that one keeps a click on a
+   * control from being a click on the row, and this keeps a keystroke in a field from being a
+   * keystroke on it.
+   *
+   * What is left is one key per thing the row's controls do, because those controls have left the
+   * tab order and a named button nothing can reach is a button nobody has. Enter is the
+   * magnifier, Delete is the ×, `f` is the star, Space is the tick — and Ctrl+A takes the comp.
+   */
+  function rowKeys(event: React.KeyboardEvent, row: Row, isField: boolean) {
+    if (event.defaultPrevented) return
+
+    const forwards = isRowNext(event)
+    if (forwards || isRowPrev(event)) {
+      const moved = stepCursor(row, forwards ? 1 : -1, event.shiftKey)
+      if (moved || event.key !== 'Tab') event.preventDefault()
+      return
+    }
+    if (isField || row.kind !== 'ship') return
+
+    if (isRowOpen(event)) {
+      event.preventDefault()
+      setOpenRow(row.row)
+      // Not `select`: opening a search is not an edit, so the row is still picked out from
+      // however the cursor got here, and the field about to appear draws its own accent rule.
+      setClaim({ row: row.row, select: false })
+      return
+    }
+    if (isRowSelect(event)) {
+      event.preventDefault()
+      toggleRow(row.at, event.shiftKey)
+      return
+    }
+    if (isRowRemove(event)) {
+      event.preventDefault()
+      removeRow(row.at, row.row)
+      return
+    }
+    if (isRowFlagship(event)) {
+      // The star is not on every row — a flagship is battleships minus a short list — and a key
+      // that silently did nothing on the other eight would read as a broken one. Claimed only
+      // where the control exists, so `f` is an ordinary `f` everywhere else.
+      if (!offersFlagship(ruleset, row.slot)) return
+      event.preventDefault()
+      onChange(withFlagship(slots, row.slot.isFlagship ? null : row.at))
+      // Stays put, unlike every other edit here: designating a flagship is a fact about the row
+      // somebody is looking at, not a step down the comp.
+      goToRow(row.row)
+      return
+    }
+    if (isSelectAll(event) && drawnOrder.length > 0) {
+      event.preventDefault()
+      setSelectedRows(selectEvery(drawnOrder, row.at))
+    }
+  }
+
   return (
     <div className="tile" data-testid="comp-tile" ref={root}>
       {/* Named for a driver because it is somewhere to take hold of: a board picks a tile up
@@ -421,10 +627,32 @@ export default function CompTile({
           compName={name}
         />
 
+        {/* Said once, on the way in, rather than on every row: ten rows each announcing five
+            shortcuts is the hint becoming the noise it was meant to spare. It is here at all
+            because the row's controls have left the tab order, and somebody who cannot see the
+            marks the pointer reveals has no other way to learn the keys that replaced them. */}
+        {editable && (
+          <p className="visually-hidden" id={keysId}>
+            Arrow keys or Tab move between slots, and shift takes the selection along. Enter
+            swaps the hull on a slot, Delete empties it, F designates a flagship, and Space adds
+            the slot to the selection.
+          </p>
+        )}
         {/* A list, because that is what it is: one entry per slot the format allows. The
             three branches below render different controls but each is one <li>, so a row
-            is addressable however it is currently behaving. */}
-        <ul className="rows" data-testid="comp-rows" aria-label="Comp slots">
+            is addressable however it is currently behaving.
+         *
+         * Each row carries `aria-setsize` and `aria-posinset` now that the rows are something a
+         * keyboard walks: "3 of 10" is most of what tells somebody who cannot see the tile where
+         * in it they have got to. Both are supported on a list item and neither is spelled out
+         * anywhere else on a filled row — the empty rows say their slot in the field's name,
+         * and the filled ones only ever said their hull. */}
+        <ul
+          className="rows"
+          data-testid="comp-rows"
+          aria-label="Comp slots"
+          aria-describedby={editable ? keysId : undefined}
+        >
           {rows.map((row, drawn) => {
             // Where the row is *drawn*, which is what "slot 3" means to somebody looking at the
             // tile — and, under a weight sort, not the same number as the row it is stored on.
@@ -450,6 +678,11 @@ export default function CompTile({
                 // `data-landing`. The keyboard twin is the field inside it, which does the very
                 // same edit by name.
                 //
+                // No `tabIndex` here, unlike the filled rows: this row's focus target is the
+                // field it holds, and a focusable line *around* a focusable field would be two
+                // stops for one row. `onFocus` still fires for the field inside it — React's is
+                // focusin — which is what keeps the tab stop following a click into one.
+                //
                 // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
                 <li
                   className={empty.join(' ')}
@@ -457,6 +690,10 @@ export default function CompTile({
                   data-testid="comp-row-empty"
                   data-row={row.row}
                   data-landing={marked ? 'true' : 'false'}
+                  aria-setsize={rows.length}
+                  aria-posinset={position}
+                  onFocus={editable ? () => setCursor(row.row) : undefined}
+                  onKeyDown={editable ? (event) => rowKeys(event, row, true) : undefined}
                   {...landingHandlers(row.lands)}
                 >
                   {/* Spans the icon track as well as the name: an empty slot has no hull to
@@ -470,17 +707,8 @@ export default function CompTile({
                         ruleset={ruleset}
                         current={result}
                         label={`Add a hull in slot ${position}`}
-                        // Handed on by the pick before this one, and only ever to a row that
-                        // was already on screen — the row just filled is the one that goes
-                        // away, so nothing here is focusing something it created.
-                        takeFocus={focusEmpty === row.row}
+                        tabStop={tabStop === row.row}
                         onPick={(typeId) => pick(row.lands, typeId, true)}
-                        onDismiss={() => {
-                          setOpenRow(null)
-                          // Let go of the hand-off when the cursor leaves of its own accord, so
-                          // a row that is merely still on screen cannot claim it back later.
-                          setFocusEmpty((held) => (held === row.row ? null : held))
-                        }}
                       />
                     ) : (
                       // Excluded from a capture like the editor's search above it, so the
@@ -498,7 +726,7 @@ export default function CompTile({
             }
 
             const slot = row.slot
-            const open = openRow === row.at
+            const open = openRow === row.row
             const icon = buildCcpTypeIconUrl(slot.typeId, 32)
             const classes = ['trow']
             // Blamed and highlighted are counted in slot indexes, because that is what a
@@ -517,38 +745,49 @@ export default function CompTile({
             if (rowDrop?.landing === row.row) classes.push('landing')
 
             return (
-              // A row is a list item that can be dragged, clicked and dropped on, which is what
-              // `draggable` and the six handlers below are for and what the two rules
-              // object to.
+              // A row is a list item that can be dragged, clicked, dropped on and — now — put
+              // the cursor on, which is what `tabIndex`, `draggable` and the handlers below are
+              // for and what the rule objects to.
               //
-              // The click is answered rather than waived: it is a shortcut over the row's own
-              // select box, which is still here, still focusable and still named for its hull
-              // and its slot — it is merely not drawn.
+              // **The row is the tile's tab stop, and the only one.** Every control on it is out
+              // of the sequence, because four of them per row over ten rows was forty presses
+              // through things nobody was aiming at to reach the far side of one comp. What they
+              // do is reachable by a key each instead; see `rowKeys`.
               //
               // The drag is answered too, but only half of it. Rows picked out here can be
               // taken out into a comp of their own with Ctrl+C and Ctrl+V, which is the same
               // operation the new-comp tile's drop performs, through the same code. Carrying
               // them into a comp that *already exists* is still the drag and only the drag —
-              // there is no way to say which comp without pointing at one.
+              // there is no way to say which comp without pointing at one. What the drop owes on
+              // its own account is that its state can be read rather than inferred, which is
+              // `data-landing` below.
               //
-              // A row is now also somewhere a hull can be *put down*, and that half has no
-              // keyboard twin either: the row's own search does the same edit by name, and it
-              // is a button, focusable and labelled for its hull and its slot. What the drop
-              // owes on its own account is that its state can be read rather than inferred,
-              // which is `data-landing` below.
-              // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
+              // Keyed on the row and not on `row.at`, which is a trap rather than a preference.
+              // The array indexes are always the set `{0..n-1}`, so splicing a hull in does not
+              // unmount anything — it reassigns which hull each key stands for, React reuses the
+              // node, and the focused row silently becomes a different one. Stored positions do
+              // not move under a splice, so keying on them makes a row's identity the row.
+              // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
               <li
                 className={classes.join(' ')}
-                key={row.at}
+                key={row.row}
                 data-testid="comp-row"
                 // The comp's own row, which is what a person points at and what the empty rows
                 // beside it are numbered in. Not the slot index: the two part company on an
                 // arranged comp, and only one of them means anything outside this component.
+                // Also how `focusTarget` finds a row, which is why it stays unique per tile.
                 data-row={row.row}
                 // Whether a hull let go of now would replace this row's — the same bargain the
                 // new-comp tile's `data-receiving` makes, and written at rest as well so a
                 // driver can find it before the gesture starts.
                 data-landing={rowDrop?.landing === row.row ? 'true' : 'false'}
+                aria-setsize={rows.length}
+                aria-posinset={position}
+                // The stop moves with the cursor, and steps aside while this row is a field:
+                // the search inside takes it then, or the row would be two stops for one place.
+                tabIndex={editable && !open ? (tabStop === row.row ? 0 : -1) : undefined}
+                onFocus={editable ? () => setCursor(row.row) : undefined}
+                onKeyDown={editable ? (event) => rowKeys(event, row, open) : undefined}
                 onClick={editable ? (event) => pickRow(event, row.at) : undefined}
                 onDoubleClick={editable ? (event) => duplicateRow(event, slot.typeId) : undefined}
                 draggable={editable && onDragRows !== undefined}
@@ -593,27 +832,24 @@ export default function CompTile({
                       data-testid="comp-row-select"
                       type="checkbox"
                       checked={picked.has(row.at)}
+                      // Out of the tab order along with the rest of the row's controls, and it
+                      // is the one that gives up the most: it used to be the keyboard's only
+                      // handle on the selection. Space on the row is that now, through the same
+                      // `toggleRow`. What this still is, and the reason it stays in the markup
+                      // at all, is the only legal statement of picked-or-not in the
+                      // accessibility tree — a list item cannot carry `aria-selected` — so a
+                      // reader browsing the row still hears it, and quick-nav still reaches it.
+                      tabIndex={-1}
                       // Named for the slot as well as the hull: a comp legitimately holds
                       // three of the same hull, and picking the wrong one of three controls
                       // called "Select Abaddon" is a mistake nothing on screen would show.
                       aria-label={`Select ${hullName} in slot ${position}`}
-                      onChange={(event) =>
-                        setSelectedRows((current) =>
-                          // React synthesises a checkbox's change from the click that caused
-                          // it, so the native event is the one carrying the shift key — and
-                          // the space bar raises a click too, which is how the keyboard gets
-                          // the same gesture without a second handler.
-                          //
-                          // A toggle whatever the pointer does, because this is a checkbox:
-                          // a plain *click on the row* replaces the selection, but a box that
-                          // cleared its neighbours when ticked would not be one.
-                          selectRow(current, row.at, {
-                            range: shiftHeld(event.nativeEvent),
-                            toggle: true,
-                            order: drawnOrder,
-                          }),
-                        )
-                      }
+                      // React synthesises a checkbox's change from the click that caused it, so
+                      // the native event is the one carrying the shift key. A toggle whatever
+                      // the pointer does, because this is a checkbox: a plain *click on the row*
+                      // replaces the selection, but a box that cleared its neighbours when
+                      // ticked would not be one.
+                      onChange={(event) => toggleRow(row.at, shiftHeld(event.nativeEvent))}
                     />
                   )}
                 </span>
@@ -628,11 +864,19 @@ export default function CompTile({
                       ruleset={ruleset}
                       current={result}
                       label={`Swap ${hullName} in slot ${position}`}
-                      takeFocus
+                      tabStop={tabStop === row.row}
                       onPick={(typeId) => pick(row.row, typeId, false)}
-                      onCancel={() => setOpenRow(null)}
+                      // Escape hands the cursor back to the row rather than dropping it: the
+                      // field it was in is about to stop existing, and focus that falls to the
+                      // document body is a person who has to find their place again.
+                      onCancel={() => {
+                        setOpenRow(null)
+                        setClaim({ row: row.row, select: false })
+                      }}
                       // Looking away is cancelling. A swap covers the hull's name while it is
-                      // open, so one left behind is a row that will not say what is in it.
+                      // open, so one left behind is a row that will not say what is in it. No
+                      // claim here — the cursor has gone somewhere of its own accord, and
+                      // calling it back would be the tile arguing with it.
                       onDismiss={() => setOpenRow(null)}
                     />
                   ) : (
@@ -654,6 +898,8 @@ export default function CompTile({
                       className="flagset"
                       data-testid="comp-row-flagship-toggle"
                       type="button"
+                      // Out of the tab order with the rest; `f` on the row is its keyboard.
+                      tabIndex={-1}
                       aria-pressed={slot.isFlagship}
                       aria-label={
                         slot.isFlagship
@@ -686,9 +932,17 @@ export default function CompTile({
                         data-testid="comp-row-search"
                         data-capture-exclude="true"
                         type="button"
+                        // Out of the tab order with the rest; Enter on the row is its keyboard.
+                        tabIndex={-1}
                         aria-label={`Swap ${hullName}`}
                         aria-expanded={open}
-                        onClick={() => setOpenRow(open ? null : row.at)}
+                        onClick={() => {
+                          setOpenRow(open ? null : row.row)
+                          // The field only exists because somebody just asked for it, so the
+                          // cursor goes in — the same hand-off Enter makes, because this is the
+                          // same act by another route.
+                          setClaim({ row: row.row, select: false })
+                        }}
                       >
                         <SearchGlyph />
                       </button>
@@ -697,8 +951,10 @@ export default function CompTile({
                         data-testid="comp-row-remove"
                         data-capture-exclude="true"
                         type="button"
+                        // Out of the tab order with the rest; Delete on the row is its keyboard.
+                        tabIndex={-1}
                         aria-label={`Remove ${hullName}`}
-                        onClick={() => onChange(withRow(slots, row.at, null))}
+                        onClick={() => removeRow(row.at, row.row)}
                       >
                         <ClearGlyph />
                       </button>
@@ -886,12 +1142,31 @@ function shiftHeld(event: Event): boolean {
 }
 
 /**
+ * Where the cursor goes on row `row`: the search field on it, or the row itself.
+ *
+ * Found in the DOM rather than kept in a map of refs, because the DOM already knows. A second
+ * record would have to be held in step with `openRow`, with `editable`, and with every row that
+ * mounts or unmounts as the comp is edited — three ways to be wrong about which element to focus,
+ * where there is currently none. `data-row` is already on both kinds of row for a driver to read
+ * and is unique across a tile, which is the whole of what this needs.
+ */
+function focusTarget(root: HTMLElement | null, row: number): HTMLElement | null {
+  const line = root?.querySelector<HTMLElement>(`[data-testid="comp-rows"] [data-row="${row}"]`)
+  if (!line) return null
+  return line.querySelector<HTMLElement>('[data-testid="ship-search-input"]') ?? line
+}
+
+/**
  * Whether a press landed on something inside the row that already means something.
  *
  * A press on a control inside a row is that control's, not the row's — the magnifier swaps the
- * hull, the star designates a flagship, the × empties the slot, and the row's own select box is
- * how a keyboard reaches the selection. Each says what it does, and none of them says "pick this
- * row out" or "make another of these".
+ * hull, the star designates a flagship, the × empties the slot, and the tick box adds it to the
+ * selection. Each says what it does, and none of them says "pick this row out" or "make another
+ * of these".
+ *
+ * The keyboard's twin of this is the second guard in `rowKeys`, and the two are separate because
+ * they answer different questions: this asks what was pressed, and that asks what the row
+ * currently *is* — a keystroke belongs to a field whatever part of it the caret sits in.
  */
 function answersItsOwnPress(event: React.MouseEvent): boolean {
   const target = event.target

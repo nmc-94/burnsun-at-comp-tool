@@ -18,11 +18,13 @@ import {
   EMPTY_SELECTION,
   firstFreeRow,
   introducedBy,
+  navigableRows,
   offersFlagship,
   previewRow,
   rowsBlamedBy,
   toEngineComp,
   scaffold,
+  selectEvery,
   selectRow,
   slotsAt,
   withFlagship,
@@ -780,6 +782,103 @@ describe('selectRow', () => {
     const run = selectRow(selectRow(EMPTY_SELECTION, 0), 2, { range: true })
 
     expect(selectRow(run, 7, { toggle: true }).rows).toEqual([0, 1, 2, 7])
+  })
+
+  it('shortens a span when it is dragged back the way it came, where a range would not', () => {
+    // The one difference between the two, and the reason there are two. A shift-*click* is a
+    // second aimed gesture, so it can only mean "and also these". A shift-*arrow* is the cursor
+    // being dragged a row at a time, and one that could not be pulled back would be a selection
+    // nobody could correct without starting over.
+    const anchored = selectRow(EMPTY_SELECTION, 2)
+    const reached = selectRow(anchored, 5, { span: true })
+    expect(reached.rows).toEqual([2, 3, 4, 5])
+
+    expect(selectRow(reached, 3, { span: true }).rows).toEqual([2, 3])
+    expect(selectRow(reached, 3, { range: true }).rows).toEqual([2, 3, 4, 5])
+  })
+
+  it('drops whatever a span did not reach, rather than adding to it', () => {
+    const stray = selectRow(selectRow(EMPTY_SELECTION, 8, { toggle: true }), 2)
+
+    expect(selectRow(stray, 4, { span: true }).rows).toEqual([2, 3, 4])
+  })
+
+  it('keeps a span anchored, so reversing over it stays measured from the same end', () => {
+    const anchored = selectRow(EMPTY_SELECTION, 4)
+
+    expect(selectRow(anchored, 1, { span: true }).anchor).toBe(4)
+    expect(selectRow(anchored, 1, { span: true }).rows).toEqual([1, 2, 3, 4])
+  })
+
+  it('counts a span along the drawn order, not up the stored numbers', () => {
+    // Same reason a range does: the rows the two ends bracket are the rows *on screen*, and a
+    // weight sort means those are not the rows the numbers bracket.
+    const order = [3, 0, 2, 1]
+    const anchored = selectRow(EMPTY_SELECTION, 3)
+
+    expect(selectRow(anchored, 2, { span: true, order }).rows).toEqual([0, 2, 3])
+  })
+
+  it('falls back to naming one row when the anchor is no longer in the order', () => {
+    // The hull the anchor named has been removed. Meaningless rather than wrong, so it means
+    // the row that was actually asked for.
+    const anchored = selectRow(EMPTY_SELECTION, 9)
+
+    expect(selectRow(anchored, 2, { span: true, order: [0, 1, 2] }).rows).toEqual([2])
+  })
+})
+
+describe('selectEvery', () => {
+  it('takes every filled row, in row order whatever order they are drawn in', () => {
+    expect(selectEvery([3, 0, 2], null).rows).toEqual([0, 2, 3])
+  })
+
+  it('anchors where the cursor already is, so a shift-arrow after it trims from there', () => {
+    expect(selectEvery([0, 1, 2, 3], 2).anchor).toBe(2)
+  })
+
+  it('anchors on the first row when the cursor is nowhere in it', () => {
+    expect(selectEvery([4, 5], null).anchor).toBe(4)
+    expect(selectEvery([4, 5], 9).anchor).toBe(4)
+  })
+
+  it('is an empty selection over a comp with no hulls in it', () => {
+    expect(selectEvery([], null)).toEqual(EMPTY_SELECTION)
+  })
+})
+
+describe('navigableRows', () => {
+  it('is every row of an arranged comp, gaps and all', () => {
+    // Sort off is the mode where where a hull sits is something somebody decided, so every gap
+    // is a place and every place is a stop.
+    const rows = scaffold(judge(placed([0, SHIP.abaddon], [5, SHIP.rifter])), 8, {
+      rows: [0, 5],
+      sorted: false,
+    })
+
+    expect(navigableRows(rows, false).map((row) => row.row)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  })
+
+  it('collapses the blank lines under a sorted comp to the one that is somewhere to be', () => {
+    // They all report the same `lands` — there is nowhere to choose between them — so eight of
+    // the nine stops would be presses spent going nowhere.
+    const rows = scaffold(judge(slots(SHIP.abaddon, SHIP.rifter)), 8)
+
+    expect(navigableRows(rows, true).map((row) => row.row)).toEqual([0, 1, 2])
+    expect(navigableRows(rows, true).filter((row) => row.kind === 'empty')).toHaveLength(1)
+  })
+
+  it('keeps every filled row whichever way the comp is drawn', () => {
+    const rows = scaffold(judge(slots(SHIP.rifter, SHIP.abaddon)), 4)
+
+    // Weight order puts the Abaddon first, and both are still stops.
+    expect(navigableRows(rows, true).filter((row) => row.kind === 'ship')).toHaveLength(2)
+  })
+
+  it('is every row of a comp with no room left, there being no blank line to fold away', () => {
+    const rows = scaffold(judge(slots(SHIP.abaddon, SHIP.rifter)), 2)
+
+    expect(navigableRows(rows, true)).toHaveLength(2)
   })
 })
 

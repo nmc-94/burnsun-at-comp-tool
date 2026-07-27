@@ -6,9 +6,25 @@
 // corrected and the others would not, and the failure would be a copy that cannot be pasted or
 // an edit that cannot be taken back.
 
+/**
+ * Everything any of these reads off a keystroke.
+ *
+ * Structural rather than `KeyboardEvent`, because the comp tile's rows answer keys through JSX
+ * and React's synthetic event is not one — while the board and the undo keys listen on
+ * `document` and get the real thing. A native event satisfies this, so both kinds of caller
+ * read the same predicates and there is still one spelling of each chord.
+ */
+interface Chord {
+  readonly key: string
+  readonly shiftKey: boolean
+  readonly ctrlKey: boolean
+  readonly metaKey: boolean
+  readonly altKey: boolean
+}
+
 /** Control *or* command, always both. Neither means anything else on these keys, so taking
  *  both costs nothing and guessing the platform wrong would cost the gesture. */
-function withModifier(event: KeyboardEvent, key: string): boolean {
+function withModifier(event: Chord, key: string): boolean {
   // Alt excluded: alt-C and friends are how a good many keyboard layouts type a character,
   // and swallowing those would break typing to save a shortcut nobody asked for.
   if (!(event.ctrlKey || event.metaKey) || event.altKey) return false
@@ -50,6 +66,60 @@ export function isRedo(event: KeyboardEvent): boolean {
  */
 export function isCopyDrag(event: { ctrlKey: boolean; metaKey: boolean }): boolean {
   return event.ctrlKey || event.metaKey
+}
+
+/** Select every row of the comp under the cursor. Ctrl+A everywhere else is the browser's,
+ *  which is why the tile only claims it while a row rather than a field holds the focus. */
+export function isSelectAll(event: Chord): boolean {
+  return withModifier(event, 'a')
+}
+
+/**
+ * The keys a comp's rows answer to, spelled once.
+ *
+ * Two of these carry a claim worth stating rather than repeating: **Tab and Down are one
+ * motion**, as are Shift+Tab and Up, so a row's handler asks "forwards or backwards" rather
+ * than matching four strings and getting one of them subtly wrong. And **Delete and Backspace
+ * both empty a slot**, because the two keys mean one thing to everybody who is not writing
+ * the handler.
+ *
+ * Shift is allowed through on the two motions, and is the whole of how a selection is dragged
+ * along behind the cursor. Control, command and alt are not: Ctrl+Tab belongs to the browser's
+ * tabs and Alt+Left to its history, and a tile that swallowed either would be a tile somebody
+ * could not get out of.
+ */
+function unmodified(event: Chord): boolean {
+  return !event.ctrlKey && !event.metaKey && !event.altKey
+}
+
+export function isRowNext(event: Chord): boolean {
+  if (!unmodified(event)) return false
+  return event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey)
+}
+
+export function isRowPrev(event: Chord): boolean {
+  if (!unmodified(event)) return false
+  return event.key === 'ArrowUp' || (event.key === 'Tab' && event.shiftKey)
+}
+
+/** Open the row's hull search — the keyboard's spelling of the magnifier. */
+export function isRowOpen(event: Chord): boolean {
+  return unmodified(event) && event.key === 'Enter'
+}
+
+/** Add the row to the selection, or take it out — the spelling the row's own tick box has. */
+export function isRowSelect(event: Chord): boolean {
+  return unmodified(event) && event.key === ' '
+}
+
+export function isRowRemove(event: Chord): boolean {
+  return unmodified(event) && (event.key === 'Delete' || event.key === 'Backspace')
+}
+
+/** Designate the row's hull as the flagship, or clear it. A bare letter, which only a row that
+ *  is not a field may read — see the guard in `rowKeys`. */
+export function isRowFlagship(event: Chord): boolean {
+  return unmodified(event) && event.key.toLowerCase() === 'f'
 }
 
 /**

@@ -617,14 +617,15 @@
   width: 18px;
   height: 18px;
 }
-/* The row's tick, kept for the keyboard and taken off the screen.
+/* The row's tick, kept for a reader and taken off the screen.
 
    Rows are picked out by clicking them now — plainly, with control, or with shift — so a box
    drawn over every hull icon was a second control for a thing the row already does, and it
-   covered the one picture on the row that says which hull it is. It stays in the markup
-   because it is the only handle a keyboard or a screen reader has: a control nothing can
-   focus is a control nobody has. Clipped rather than `display: none`, which would take it out
-   of the tab order and out of the accessibility tree along with it. */
+   covered the one picture on the row that says which hull it is. The keyboard reaches the
+   selection through the row itself now (Space, see `rowKeys`), so this is no longer the handle
+   it was; what it still is, and why it stays in the markup, is the only place the accessibility
+   tree can be told whether a row is picked out, a list item having no `aria-selected` to carry.
+   Clipped rather than `display: none`, which would take it out of that tree along with it. */
 .rowpick {
   position: absolute;
   width: 1px;
@@ -636,24 +637,59 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-/* Focus lands on the box; the ring is drawn on the row, because the row is what the box acts
-   on and the only one of the two a person can see. */
-.trow:has(.rowpick:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
 /* A picked row keeps its tint while the cursor is elsewhere, so a selection built across
-   several rows is still visible as one thing. */
+   several rows is still visible as one thing.
+
+   It is also the whole of what says where the keyboard is, and that is deliberate rather than
+   an omission. Moving the cursor onto a row picks it out — the same thing a click does — so a
+   second mark for focus would be a second answer to a question already answered, and the ring
+   this replaces was worse than redundant: it fired off the tick box, so it appeared on rows
+   that were *not* picked out, and it was drawn identically to `.trow.landing` below. A blank
+   row cannot be tinted, having no hull to pick out, and does not need to be: it is a search
+   field at rest, and the field draws its own accent rule when the cursor is in it. */
 .trow.picked {
   background: var(--accent-soft);
+}
+/* The same tint for the row the keyboard is on, and no ring over the top of it.
+
+   Deleting the old rule was not enough on its own: a focusable element gets the browser's own
+   outline, so a Tab went on drawing a border round the row — the same border in a different
+   colour, which is not the thing that was wrong with it.
+
+   The tint is here as well as on `.picked` because the two are not quite the same set. Moving
+   the cursor *within* the list picks the row out, so it is already tinted; but tabbing *into*
+   the tile is a focus rather than a gesture, and a click that landed there would have selected
+   while a Tab does not. Saying it in CSS rather than by selecting on focus keeps that out of the
+   selection entirely — a focus fires on mousedown, before the click, so a plain-replace there
+   would turn every control-click into an ordinary one.
+
+   `:focus-visible` rather than `:focus`, so a click never draws it. The trade is deliberate and
+   it is real: a background wash is a quieter indicator than an outline, and across a
+   shift-clicked run of rows it cannot say which of them holds the keyboard. What it buys is that
+   a row reached by Tab and a row reached by clicking look the same, which is the whole of what a
+   cursor moving down a list should look like.
+
+   `.trow.landing` keeps its outline: later in the file and equally specific, so it still wins,
+   and it is now the only ring a row can draw. */
+.trow:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+}
+/* The row's actions are drawn on approach, and a keyboard never approaches. Without this a
+   pass down the rows would show a cursor moving over controls that were never on screen —
+   they are out of the tab order now, so `.rowact:focus-visible` can no longer reveal them.
+
+   The focused row only, not every picked one: a shift-click across five rows would otherwise
+   put ten marks on screen at once. */
+.trow:focus-visible .rowact {
+  opacity: 1;
 }
 .trow[draggable="true"] {
   cursor: grab;
 }
-/* The row a hull under the cursor would replace. The same ring the row's own focus draws, and
-   for the same reason — it is a mark on one row saying "this one", and there is no second
-   meaning for it to be confused with. Inset, so a board of tiles two rows apart does not have
-   rings overlapping their neighbours. */
+/* The row a hull under the cursor would replace, and the one ring on a row — it used to share
+   the mark with focus, which was two meanings for one outline until focus stopped drawing one.
+   Inset, so a board of tiles two rows apart does not have rings overlapping their neighbours. */
 .trow.landing {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

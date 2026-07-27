@@ -11,16 +11,25 @@
 //
 // The shape is BurnSun's empty module slot, port for port: a bare field behind a magnifier,
 // a hairline rule under it, and the matches in a panel that floats over the tile rather than
-// pushing it open. An empty row *is* this control at rest — nothing to click before typing —
-// which is why `takeFocus` is a prop rather than something this always does: a tile draws
-// eight of these and only the one a swap opened may take the cursor.
+// pushing it open. An empty row *is* this control at rest — nothing to click before typing.
 //
-// It is a **combobox**, and says so. The field owns the keyboard: arrows move a highlight down
-// the matches, Enter or Tab takes the highlighted one, Escape backs out. The options are not in
-// the tab order at all — `tabIndex={-1}` — because the field is the single way in and a Tab that
-// stepped into the list would be a Tab that no longer picks. That is the pair the whole gesture
-// rests on: type, Tab, type, Tab, and a comp is built without the cursor ever leaving the
-// keyboard.
+// **Where the cursor is belongs to the tile, not to this.** A tile draws ten of these and at
+// most one of them may hold the keyboard; only the tile knows which, and only the tile can put
+// it back after a pick unmounts the field it was typed into. This used to focus itself off a
+// `takeFocus` prop, which made two owners of one cursor and is why focus simply evaporated
+// after a swap. `tabStop` is the whole of what is left: whether this field is *the* way in.
+//
+// It is a **combobox**, and says so. The field owns the keyboard while there is a list under
+// it: arrows move a highlight down the matches, Enter or Tab takes the highlighted one, Escape
+// backs out. The options are not in the tab order at all — `tabIndex={-1}` — because the field
+// is the single way in and a Tab that stepped into the list would be a Tab that no longer
+// picks. That is the pair the whole gesture rests on: type, Tab, type, Tab, and a comp is built
+// without the cursor ever leaving the keyboard.
+//
+// **What it does not claim, it lets past.** With nothing highlighted there is nothing for Enter
+// or an arrow to take, and Shift+Tab never takes anything at all — so those keys go unprevented
+// and the row underneath reads them as "move the cursor". Nothing here stops a key propagating;
+// the row checks `defaultPrevented` instead, which is the same bargain Escape already makes.
 //
 // The roles are claimed because they are implemented. `aria-activedescendant` is what tells a
 // screen reader which match the arrows are on while focus stays in the field, and it is only
@@ -66,8 +75,13 @@ interface Props {
    * address, exactly as ten "Add hull" buttons were.
    */
   label: string
-  /** Take the cursor. True only when a row's swap trigger opened this. */
-  takeFocus?: boolean
+  /**
+   * Whether this field is the tile's one tab stop.
+   *
+   * A tile is a single stop from outside and Tab walks its rows from there, so every control
+   * in it but one is out of the sequence. Which one is the tile's answer — this only obeys it.
+   */
+  tabStop: boolean
 }
 
 /** BurnSun's magnifier, at the size its module rows draw it. */
@@ -89,7 +103,7 @@ export default function ShipSearch({
   onCancel,
   onDismiss,
   label,
-  takeFocus,
+  tabStop,
 }: Props) {
   const [query, setQuery] = useState('')
   const [focused, setFocused] = useState(false)
@@ -97,17 +111,8 @@ export default function ShipSearch({
   // so the highlight is always on the best answer to what has been typed *so far* — which is
   // the thing Enter has to be able to hit without being looked at.
   const [active, setActive] = useState(0)
-  const field = useRef<HTMLInputElement>(null)
   const menu = useRef<HTMLDivElement>(null)
   const listId = useId()
-
-  // Focused deliberately rather than with the `autoFocus` attribute. The behaviour is the
-  // same and it is wanted — the field only exists because someone just asked to swap a hull
-  // — but saying it here makes it a decision about this control, not a blanket attribute.
-  useEffect(() => {
-    if (!takeFocus) return
-    field.current?.focus()
-  }, [takeFocus])
 
   const candidates = useMemo(
     () => annotate(searchHulls(ruleset, query), slots, row, ruleset, current),
@@ -175,8 +180,11 @@ export default function ShipSearch({
       <input
         className="rowsearch-input"
         data-testid="ship-search-input"
-        ref={field}
         type="text"
+        // Out of the tab order unless the tile says this row is where the cursor lives. There is
+        // one stop per tile and the rows are walked from it; ten fields each taking their own
+        // would be the sequence the rows replaced.
+        tabIndex={tabStop ? 0 : -1}
         value={query}
         // No placeholder, which is BurnSun's: an empty slot is a blank field behind a
         // magnifier, and a line of grey prose in every unfilled row is nine sentences
@@ -212,8 +220,12 @@ export default function ShipSearch({
             return
           }
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            // Claimed even with nothing to move through, so Down never drops the caret to the
-            // end of a query somebody is halfway through editing.
+            // Only while there is a list to move through. With none — an empty field, or a
+            // query nothing matches — the arrow is not this control's, and letting it past is
+            // what lets the same two keys walk the tile's rows. The caret cannot be dropped to
+            // the end of a half-typed query by the fall-through, because the row claims the
+            // very same event a moment later.
+            if (candidates.length === 0) return
             event.preventDefault()
             step(event.key === 'ArrowDown' ? 1 : -1)
             return
@@ -224,8 +236,12 @@ export default function ShipSearch({
           // `pick` in CompTile), and letting Tab through as well would land the cursor two
           // places from where anyone meant.
           if (event.key !== 'Enter' && event.key !== 'Tab') return
-          // Only when there is something to take. A Tab out of an empty field is an ordinary
-          // Tab, and a comp with nine of these in it must not be nine keystrokes to cross.
+          // Shift+Tab is going *back*, and nothing is ever taken on the way out of somewhere.
+          // It used to commit — the same branch as a plain Tab — so backing out of a search
+          // put a hull in the row and swallowed the move as well.
+          if (event.key === 'Tab' && event.shiftKey) return
+          // Only when there is something to take. A Tab out of an empty field is the row's, and
+          // a comp with nine of these in it must not be nine keystrokes to cross.
           if (!chosen) return
           event.preventDefault()
           take()

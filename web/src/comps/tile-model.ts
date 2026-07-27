@@ -202,6 +202,23 @@ function shipOf(row: Row): SlotEvaluation {
   return row.slot
 }
 
+/**
+ * The rows a cursor can be put on, in the order they are drawn.
+ *
+ * Every filled row, and the empty rows that are somewhere to *be*. Those are not the same set,
+ * and the difference is the whole of this function: **under a weight sort the blank lines below
+ * the comp are one offer, not nine.** They all report the same `lands`, because there is nowhere
+ * to choose between them, so nine tab stops that all fill the same row would be eight presses
+ * spent going nowhere. With the sort off every gap is its own row and its own stop, which is the
+ * mode where where a hull sits is a thing somebody decided.
+ *
+ * Same predicate the tile marks a drop target with — one answer to "is this blank line a place",
+ * so the row the keyboard can reach and the row a hull would land on cannot come apart.
+ */
+export function navigableRows(rows: readonly Row[], sorted: boolean): Row[] {
+  return rows.filter((row) => row.kind === 'ship' || !sorted || row.lands === row.row)
+}
+
 /** The signed distance from the point cap, as the tile shows it. */
 export function deltaPill(summary: LegalitySummary): DeltaPill {
   const delta = summary.pointsUsed - summary.pointCap
@@ -429,21 +446,30 @@ export const EMPTY_SELECTION: RowSelection = { rows: [], anchor: null }
 /**
  * Row `index` picked, or unpicked.
  *
- * The three gestures every list of rows answers to, and they are deliberately the ones a file
+ * The four gestures every list of rows answers to, and they are deliberately the ones a file
  * list uses rather than a set invented here. **Plain replaces**: clicking a row means "this
  * one", so whatever was picked before lets go. **Toggle** — control or command held, and the
  * row's own select box, because a checkbox that cleared its neighbours would be lying about
  * what it is — adds or removes the one row and leaves the rest alone. **Range** extends from
  * the anchor by union, so a range only ever adds; the way back out is a toggle on a row in it.
+ * **Span** is exactly the anchor-to-here run and nothing else.
+ *
+ * Range and span differ in one line and the difference is the pointer against the keyboard. A
+ * shift-*click* is a second aimed gesture, so it can only reasonably mean "and also these" —
+ * there is no reading of it that takes rows away from somewhere the cursor is not. A
+ * shift-*arrow* is the cursor being dragged, one row at a time, and a drag that could not be
+ * shortened by going back the way it came would be a selection nobody could correct.
  *
  * The anchor is the last row touched *without* shift, which is what makes a second shift-click
- * re-extend from where the person last pointed rather than from wherever the last range ended.
+ * re-extend from where the person last pointed rather than from wherever the last range ended —
+ * and what lets shift-arrow reverse over its own path.
  */
 export function selectRow(
   selection: RowSelection,
   index: number,
   options?: {
     readonly range?: boolean
+    readonly span?: boolean
     readonly toggle?: boolean
     /**
      * The stored indexes of the filled rows **in the order they are drawn**.
@@ -457,15 +483,13 @@ export function selectRow(
     readonly order?: readonly number[]
   },
 ): RowSelection {
-  if (options?.range && selection.anchor !== null) {
-    const held = new Set(selection.rows)
-    const order = options.order
-    const from = order ? order.indexOf(selection.anchor) : selection.anchor
-    const to = order ? order.indexOf(index) : index
-    if (from === -1 || to === -1) return { rows: [index], anchor: index }
-    for (let at = Math.min(from, to); at <= Math.max(from, to); at += 1) {
-      held.add(order ? order[at]! : at)
-    }
+  if ((options?.span || options?.range) && selection.anchor !== null) {
+    const reached = spanBetween(selection.anchor, index, options.order)
+    // An anchor that is no longer a row — the hull it named has been removed — makes the
+    // gesture meaningless rather than wrong, so it falls back to naming this row alone.
+    if (!reached) return { rows: [index], anchor: index }
+    // The one difference: a span *is* the run, a range adds it to what was already held.
+    const held = options.span ? new Set(reached) : new Set([...selection.rows, ...reached])
     // The anchor stays put, so a second shift-click re-extends from where the range began
     // rather than from where the last one ended.
     return { rows: [...held].sort(ascending), anchor: selection.anchor }
@@ -479,6 +503,41 @@ export function selectRow(
   }
 
   return { rows: [index], anchor: index }
+}
+
+/**
+ * Every row between `anchor` and `index` inclusive, counted along `order` — or null when one of
+ * the two is not in it.
+ *
+ * Along the order rather than numerically, because a range means the rows between these two *on
+ * screen* and the screen is sorted by weight. Counting would pick out a set that is not the one
+ * under the cursor, and would do it invisibly, since every index it named would be a real row.
+ */
+function spanBetween(
+  anchor: number,
+  index: number,
+  order?: readonly number[],
+): number[] | null {
+  const from = order ? order.indexOf(anchor) : anchor
+  const to = order ? order.indexOf(index) : index
+  if (from === -1 || to === -1) return null
+  const reached: number[] = []
+  for (let at = Math.min(from, to); at <= Math.max(from, to); at += 1) {
+    reached.push(order ? order[at]! : at)
+  }
+  return reached
+}
+
+/**
+ * Every filled row of the comp, picked out at once.
+ *
+ * The anchor goes where the cursor already is rather than to the top, so a shift-arrow straight
+ * after this shortens the selection from the row somebody is looking at. Taking the lot and then
+ * trimming from one end is how a select-all is usually undone.
+ */
+export function selectEvery(order: readonly number[], anchor: number | null): RowSelection {
+  const held = anchor !== null && order.includes(anchor) ? anchor : (order[0] ?? null)
+  return { rows: [...order].sort(ascending), anchor: held }
 }
 
 function ascending(a: number, b: number): number {

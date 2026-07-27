@@ -119,9 +119,9 @@ function removeRow(from: string, row = 0) {
   fireEvent.click(picked)
 }
 
-/** Pressed on the body, because that is genuinely where focus is by now. */
+/** Pressed wherever the cursor has ended up, which is genuinely where the key would be. */
 function pressUndo(options: { shift?: boolean } = {}) {
-  fireEvent.keyDown(document.body, {
+  fireEvent.keyDown(document.activeElement ?? document.body, {
     key: 'z',
     ctrlKey: true,
     shiftKey: options.shift ?? false,
@@ -141,16 +141,21 @@ afterEach(() => {
 })
 
 describe('taking back a removed hull', () => {
-  it('puts it back in the tile it was removed from, with nothing focused there', async () => {
+  it('puts it back in the tile it was removed from, from a cursor left in the empty row', async () => {
     stubFetch()
     grid(['a', 'b'])
     await settled(['Alpha', 'Beta'])
 
     removeRow('Alpha')
     expect(hulls('Alpha')).toEqual([])
-    // The button that did it has gone with the row, so the tile that must answer the key
-    // contains no focused element at all.
-    expect(document.activeElement).toBe(document.body)
+    // The button that did it has gone with the row, and the tile keeps the cursor rather than
+    // dropping it: the row is a blank one now, so focus lands in the search that has taken its
+    // place. Which puts the caret in a text field at the moment the key is pressed — and it is
+    // `hasTypingToUndo` rather than `inTextField` that decides, precisely so an emptied box does
+    // not swallow the one edit somebody is most likely to want back.
+    const cursor = document.activeElement as HTMLInputElement
+    expect(cursor.dataset.testid).toBe('ship-search-input')
+    expect(cursor.value).toBe('')
 
     pressUndo()
 
