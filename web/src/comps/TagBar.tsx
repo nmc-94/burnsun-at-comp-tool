@@ -307,6 +307,10 @@ function Picker({
   return (
     <div
       className={`tagbar-slot${open ? ' tagbar-slot-open' : ''}`}
+      // Kept out of a copied picture, both of them. What a comp *says* it is belongs in the
+      // image; the two invitations to say something do not, and a band that is nothing but
+      // placeholders collapses out of the picture entirely rather than leaving a gap.
+      data-capture-exclude="true"
       onBlur={(event) => {
         if (event.currentTarget.contains(event.relatedTarget)) return
         onClose()

@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CompSlot, LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
 import { inTextField, isCopy } from '../lib/keys'
+import CopyImageButton from './CopyImageButton'
 import ShipSearch, { SearchGlyph } from './ShipSearch'
 import TagBar from './TagBar'
 import { EMPTY_VOCABULARY } from './tag-model'
@@ -358,7 +359,9 @@ export default function CompTile({
                         onDismiss={() => setOpenRow(null)}
                       />
                     ) : (
-                      <span className="rowsearch rowsearch-mute" />
+                      // Excluded from a capture like the editor's search above it, so the
+                      // picture of a comp is the same picture whoever asked for it.
+                      <span className="rowsearch rowsearch-mute" data-capture-exclude="true" />
                     )}
                   </span>
                   {/* No cost cell at all, not a dash standing in for one. An empty slot costs
@@ -460,7 +463,19 @@ export default function CompTile({
                 }}
               >
                 <span className="ic">
-                  {icon && <img className="hicon" src={icon} alt="" width={18} height={18} />}
+                  {/* Named so a driver can find it, which the copy-to-image spec needs: the
+                      icon is the one thing on the row fetched from another origin, so it is
+                      the one thing a rasterizer can silently leave out of the picture. */}
+                  {icon && (
+                    <img
+                      className="hicon"
+                      data-testid="comp-row-icon"
+                      src={icon}
+                      alt=""
+                      width={18}
+                      height={18}
+                    />
+                  )}
                   {editable && (
                     <input
                       className="rowpick"
@@ -558,6 +573,7 @@ export default function CompTile({
                       <button
                         className="rowact"
                         data-testid="comp-row-search"
+                        data-capture-exclude="true"
                         type="button"
                         aria-label={`Swap ${hullName}`}
                         aria-expanded={open}
@@ -568,6 +584,7 @@ export default function CompTile({
                       <button
                         className="rowact rowact-clear"
                         data-testid="comp-row-remove"
+                        data-capture-exclude="true"
                         type="button"
                         aria-label={`Remove ${hullName}`}
                         onClick={() => onChange(withRow(slots, row.index, null))}
@@ -603,6 +620,12 @@ export default function CompTile({
 
         <span className="spacer" />
 
+        {/* First of the right-hand group, and the only one of them a viewer always gets: a
+            picture of a comp grants nothing that looking at the tile does not, and somebody
+            reviewing a comp they cannot edit is exactly who wants to paste it into a channel.
+            It photographs `root` — this tile and no more of the page than this tile. */}
+        <CopyImageButton target={root} compName={name} />
+
         {/* Switched off at the cell rather than deleted here — see `COMMENTS_ENABLED` in
             CompTileHost. The thread and its route are untouched; this is the one line that
             decides whether there is a way in to them. */}
@@ -610,6 +633,7 @@ export default function CompTile({
           <button
             className="fa fa-act"
             data-testid="comp-comment-count"
+            data-capture-exclude="true"
             type="button"
             aria-expanded={commentsOpen ?? false}
             // The count stays out of the name. A name that moves with state cannot be matched
@@ -627,6 +651,7 @@ export default function CompTile({
           <button
             className="fa fa-act"
             data-testid="comp-fork"
+            data-capture-exclude="true"
             type="button"
             aria-label={`Fork ${name}`}
             onClick={onFork}
@@ -639,6 +664,7 @@ export default function CompTile({
           <button
             className="fa fa-act"
             data-testid="comp-share"
+            data-capture-exclude="true"
             type="button"
             aria-expanded={shareOpen ?? false}
             // Whether it is shared goes in an attribute, never in the name — and it is what a
@@ -659,6 +685,7 @@ export default function CompTile({
           <button
             className="fa fa-act fa-danger"
             data-testid="comp-delete"
+            data-capture-exclude="true"
             type="button"
             aria-label={`Delete ${name}`}
             onClick={onDelete}

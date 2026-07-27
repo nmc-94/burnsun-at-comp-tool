@@ -40,6 +40,8 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
   const onSaveTags = vi.fn()
   const onToggleComments = vi.fn()
   const onFork = vi.fn()
+  const onDelete = vi.fn()
+  const onToggleShare = vi.fn()
   const tile = (next: CompSlot[]) => (
     <CompTile
       name="Angel Shield Kite"
@@ -60,6 +62,8 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
       onSaveTags={says.interactive ? onSaveTags : undefined}
       onToggleComments={says.interactive ? onToggleComments : undefined}
       onFork={says.interactive ? onFork : undefined}
+      onDelete={says.interactive ? onDelete : undefined}
+      onToggleShare={says.interactive ? onToggleShare : undefined}
     />
   )
   const view = render(tile(slots))
@@ -70,6 +74,8 @@ function mount(slots: CompSlot[], editable = true, says: Says = {}) {
     onSaveTags,
     onToggleComments,
     onFork,
+    onDelete,
+    onToggleShare,
     rerenderWith: (next: CompSlot[]) => view.rerender(tile(next)),
   }
 }
@@ -930,5 +936,83 @@ describe('the save state', () => {
     // once. Now nobody reads it but a driver, and `hidden` says exactly that.
     expect(state.hidden).toBe(true)
     view.unmount()
+  })
+})
+
+// What a copied picture of the tile contains.
+//
+// The rasterizer drops a flagged node *and everything under it*, so these ask the question the
+// way the filter does — of the node and its ancestors — rather than checking where somebody
+// happened to put an attribute. What is actually rasterized is a browser's business and is
+// settled in e2e/specs/comp-copy-png.spec.ts; this is only about what was offered to it.
+
+/** Whether this node would be left out of the picture, by its own flag or one it sits under. */
+function excludedFromCapture(el: Element): boolean {
+  return el.closest('[data-capture-exclude="true"]') !== null
+}
+
+describe('what a copied picture leaves out', () => {
+  it('leaves out the footer’s controls and keeps who made the comp', () => {
+    mount(slots(SHIP.abaddon), true, { interactive: true })
+
+    for (const id of ['comp-copy-image', 'comp-comment-count', 'comp-fork', 'comp-share', 'comp-delete']) {
+      expect([id, excludedFromCapture(screen.getByTestId(id))]).toEqual([id, true])
+    }
+    // The author is the one thing down there that is a fact about the comp rather than an
+    // offer to change it, so it stays in the picture.
+    expect(excludedFromCapture(screen.getByTestId('comp-author'))).toBe(false)
+  })
+
+  it('leaves out the two placeholders and keeps what the comp says it is', () => {
+    mount(slots(SHIP.abaddon), true, {
+      interactive: true,
+      archetype: 'Kite',
+      tags: ['Shield'],
+    })
+
+    // An applied value is content. The invitation to apply another is not — and with an
+    // archetype set, the tags placeholder is the only one still drawn.
+    expect(excludedFromCapture(screen.getByTestId('comp-tags-add'))).toBe(true)
+    expect(excludedFromCapture(screen.getByTestId('comp-archetype-chip'))).toBe(false)
+    expect(excludedFromCapture(screen.getByTestId('comp-tag-chip'))).toBe(false)
+  })
+
+  it('leaves out a row’s search and its marks, and keeps the hull and the numbers', () => {
+    mount(slots(SHIP.abaddon), true, { interactive: true })
+
+    expect(excludedFromCapture(screen.getByTestId('comp-row-search'))).toBe(true)
+    expect(excludedFromCapture(screen.getByTestId('comp-row-remove'))).toBe(true)
+    // The search on the first empty slot, which is an offer rather than a hull.
+    const firstEmpty = screen.getAllByTestId('comp-row-empty')[0]!
+    expect(excludedFromCapture(within(firstEmpty).getByTestId('ship-search'))).toBe(true)
+
+    expect(excludedFromCapture(screen.getByTestId('comp-row-name'))).toBe(false)
+    expect(excludedFromCapture(screen.getByTestId('comp-row-cost'))).toBe(false)
+    expect(excludedFromCapture(screen.getByTestId('comp-row-surcharge'))).toBe(false)
+  })
+
+  it('flags no child of a row, which would slide the cost column into the wrong track', () => {
+    mount(slots(SHIP.abaddon), true, { interactive: true })
+
+    // `.trow` is a five-track grid whose children are placed implicitly, so dropping one of
+    // them — the actions span, say — moves the surcharge and cost left by a column and quietly
+    // wrecks the numbers in every picture. The flags belong on the leaves inside. Stated as an
+    // invariant over the whole row so that a later tidy-up cannot reintroduce it anywhere.
+    const row = screen.getAllByTestId('comp-row')[0]!
+    const flagged = [...row.children].filter((child) =>
+      child.hasAttribute('data-capture-exclude'),
+    )
+    expect(flagged).toEqual([])
+    // ...and yet the controls held inside those children are still left out.
+    expect(excludedFromCapture(screen.getByTestId('comp-row-search'))).toBe(true)
+  })
+
+  it('leaves an empty slot’s rule out for a viewer too, so both pictures match', () => {
+    // A viewer gets a muted stand-in where the editor gets a field. If only one of the two were
+    // dropped, the same comp would photograph differently depending on who asked.
+    mount(slots(SHIP.abaddon), false)
+
+    const firstEmpty = screen.getAllByTestId('comp-row-empty')[0]!
+    expect(firstEmpty.querySelector('[data-capture-exclude="true"]')).toBeTruthy()
   })
 })

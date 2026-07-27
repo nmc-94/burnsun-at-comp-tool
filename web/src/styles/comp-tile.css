@@ -108,6 +108,25 @@
 .tfoot .fa-act:hover {
   color: var(--text-1);
 }
+/* Copy-as-image. It reports what happened by swapping its glyph and holding the new one for a
+   moment: there is no room for a word in a 10.5px footer of bare marks, and one that came and
+   went would reflow the row every time somebody copied a comp — the wording goes to a live
+   region instead, where it costs no space.
+
+   These sit *after* the hover above, and match it for specificity, so the answer stays legible
+   under the cursor that just asked for it. Without that, copying and not moving the mouse shows
+   the check in the hover grey. */
+.tfoot .fa-copy:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.tfoot .fa-copy.status-copied,
+.tfoot .fa-copy.status-saved {
+  color: var(--accent);
+}
+.tfoot .fa-copy.status-error {
+  color: var(--danger);
+}
 
 /* The chips band. Reserved-and-empty on a comp that says nothing, filled once it does — the
    band was held open through Phases E–G so that arrival is a change of content, not a

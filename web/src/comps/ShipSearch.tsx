@@ -98,6 +98,11 @@ export default function ShipSearch({
     <div
       className={`rowsearch${focused || searching ? ' active' : ''}`}
       data-testid="ship-search"
+      // Never in a copied picture — not on an empty slot, where it is an offer rather than a
+      // hull, and not over a filled one either, where it is covering the name the picture is
+      // supposed to show. `.trow` is a fixed 24px, so an empty row stays a blank line and a
+      // short comp still reads as seven of ten.
+      data-capture-exclude="true"
       onFocus={() => setFocused(true)}
       onBlur={(event) => {
         if (event.currentTarget.contains(event.relatedTarget)) return
