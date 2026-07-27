@@ -4,6 +4,10 @@ Drives the real application in a real browser. Black-box on purpose: nothing her
 from `web/src`, so the only contract it depends on is the published one —
 `docs/REQUIREMENTS.md` §6.8's test ids and accessible names, and the REST API.
 
+[`docs/DRIVING-THE-UI.md`](../docs/DRIVING-THE-UI.md) is the guide to the vocabulary: signing
+in without EVE, and the shape of every gesture the board supports. This file is about running
+the suite.
+
 ## Running it
 
 The app has to be up, with both development seams switched on. Add to the repo-root `.env`:

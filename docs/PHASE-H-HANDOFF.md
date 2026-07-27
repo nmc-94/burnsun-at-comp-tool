@@ -73,8 +73,8 @@ cd web && npm install && npm run lint && npm test && npm run build
 > `env.py` prefers `ALEMBIC_DATABASE_URL`. **Head is `0004`** — Phase G added no migration,
 > so Phase H's first is `0005`.
 
-`README.md` under "Driving the front end" has the session-cookie one-liner and a worked
-walkthrough of the Phase G gestures; extend it rather than starting a second vocabulary.
+`docs/DRIVING-THE-UI.md` has the session-cookie one-liner and a worked walkthrough of the
+Phase G gestures; extend it rather than starting a second vocabulary.
 
 ## Design stance (carried forward, non-negotiable)
 

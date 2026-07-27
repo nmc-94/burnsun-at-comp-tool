@@ -1,20 +1,228 @@
 # AT Comp Tool
 
-A web app for building and validating EVE Online Alliance Tournament team
-compositions ("comps"): assemble candidate 10-ship comps and always know, in real
-time, whether a comp is legal and how many points are left — checked against a
-versioned, ingested ruleset (point cap, per-ship values, duplicate-hull inflation,
-hull-size caps, per-match logistics limit, bans, flagship exemptions).
+A web app for building and validating EVE Online Alliance Tournament team compositions
+("comps"). Assemble candidate 10-ship comps and always know, in real time, whether a comp is
+legal and how many points are left — checked against a versioned ruleset (point cap, per-ship
+values, duplicate-hull inflation, hull-size caps, per-match logistics limit, bans, flagship
+exemptions).
 
-It ships under the **BurnSun** brand by default, but the brand lives in one
-configurable place so a self-hoster can rebrand without touching component code.
+It ships under the **BurnSun** brand, and is built to be self-hosted.
 
-## Architecture
+---
 
-A single service: one **FastAPI** app that serves the built **React/Vite/TypeScript**
-SPA (as static files, same origin as the API) plus one **Postgres**. The legality
-engine runs **client-side** in TypeScript for instant per-tile feedback; the server
-persists teams, comps, and the resolved ruleset.
+## Quick start
+
+You need **Docker** with Compose. Nothing else — no Python, no Node, no configuration.
+
+```bash
+git clone https://github.com/nmc-94/burnsun-at-comp-tool.git
+```
+
+```bash
+cd burnsun-at-comp-tool && docker compose up --build
+```
+
+Open **http://localhost:8000**.
+
+The first build takes a few minutes (it compiles the SPA, then installs the app). After that,
+in order: Postgres starts, the app applies migrations, publishes the bundled ATXXII ruleset,
+and serves the API and the SPA from one origin.
+
+**You are now running a useful instance.** Ship data and the full ruleset render with no
+sign-in and no EVE credentials — that is published tournament data. Sign-in is what adds
+*teams*, and it is [optional](#turn-on-sign-in-eve-sso).
+
+### Check it came up
+
+```bash
+curl -s http://localhost:8000/api/health
+```
+
+You want `"status": "ok"` and `"db": {"ok": true, …}`.
+
+> **Do not stop at the `200`.** This endpoint returns HTTP `200` even when the database is
+> completely unreachable — the query is wrapped so it only flips a field in the body
+> (`comptool/health.py`). Read the body. `"status": "degraded"` means the app is up and the
+> database is not.
+
+### Stop, and start again
+
+```bash
+docker compose down
+```
+
+Restarts are safe: migrations are incremental and the ruleset seed is idempotent, so both
+re-run as no-ops. Your data lives in the `comptool_pg` volume and survives. `docker compose
+down -v` deletes that volume and everything in it.
+
+---
+
+## Turn on sign-in (EVE SSO)
+
+Without it, the app serves ruleset data and offers no teams. To enable it:
+
+1. Register an application at [developers.eveonline.com](https://developers.eveonline.com):
+
+   | Field | Value |
+   |---|---|
+   | Connection Type | **Authentication & API Access** |
+   | Permissions (scopes) | **`publicData`**, and nothing else |
+   | Callback URL | `http://localhost:8000/api/v1/auth/callback` |
+
+2. Generate a key to encrypt stored refresh tokens at rest:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(24))"
+   ```
+
+3. Copy `.env.example` to `.env` and set the four values:
+
+   ```
+   COMPTOOL_ESI_ENABLED=true
+   COMPTOOL_ESI_CLIENT_ID=<from the developer portal>
+   COMPTOOL_ESI_CALLBACK_URL=http://localhost:8000/api/v1/auth/callback
+   COMPTOOL_ESI_TOKEN_SECRET=<the generated key>
+   COMPTOOL_ESI_CONTACT=you@example.com
+   ```
+
+4. `docker compose up --build` again.
+
+Four things that catch people out:
+
+- **The callback URL is compared byte for byte** — scheme, host, port, trailing slash. It must
+  be identical in the developer portal and in `COMPTOOL_ESI_CALLBACK_URL`.
+- **There is no client secret.** The flow is PKCE, so the application is a public client. If
+  the portal shows you a secret, you do not need it — and `COMPTOOL_ESI_TOKEN_SECRET` is not
+  it. That key encrypts the refresh token in *your* database, and takes a comma-separated list
+  to rotate (newest first).
+- **`COMPTOOL_ESI_ENABLED=true` is all-or-nothing.** With any of client id, callback URL, or
+  token secret blank, the app refuses to start and the container crash-loops. Set them
+  together, or leave SSO off until you have them.
+- **Over plain HTTP, set `COMPTOOL_SESSION_COOKIE_SECURE=false`** (as `.env.example` does). A
+  browser silently drops a `Secure` cookie over `http://`, which looks exactly like a broken
+  login: the sign-in reports success and every page renders signed-out. Leave it *on*
+  (remove the line) anywhere with TLS.
+
+Sessions live in Postgres with a rolling 30-day expiry that each request pushes out, so an
+active user stays signed in across restarts. The browser holds only an opaque `HttpOnly`
+cookie; no EVE token ever reaches it. **Sign out** ends the current session; **everywhere**
+ends that character's sessions on every device.
+
+---
+
+## Put it on the internet
+
+[**docs/DEPLOYMENT.md**](docs/DEPLOYMENT.md) is the go-live guide: one Railway project running
+the app and its Postgres, at a subdomain of a Cloudflare domain, with SSO working. It assumes
+nothing beyond a pushed repository and requires no code change.
+
+Hosting elsewhere? The shape is the same anywhere that runs a container and a Postgres:
+
+- Build [`deploy/docker/Dockerfile`](deploy/docker/Dockerfile) with the **repository root as
+  the build context** — it copies both `web/` and `comptool/` from there.
+- Give it `DATABASE_URL` and let the platform inject `PORT` (both are read unprefixed).
+- Point the health check at **`/api/health`** — not `/health`, and not under `/api/v1`.
+- Set `COMPTOOL_ENVIRONMENT=production`. This tags logs and bars the development back door.
+- Do **not** set `COMPTOOL_SPA_DIR` (the image already points it at the baked-in bundle) or
+  `VITE_API_BASE` (the SPA calls a relative `/api` on purpose, which is what lets one build
+  serve any origin).
+
+Migrations and the ruleset seed run at container start, so the database arrives populated
+without a manual step. All persistent state is in Postgres — the app keeps nothing on local
+disk, so the database is the entire backup surface. **Turn backups on.**
+
+---
+
+## Configuration
+
+Everything is environment variables. [`.env.example`](.env.example) is a commented template
+for localhost; [`comptool/settings.py`](comptool/settings.py) is the authority on every name
+and default.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `DATABASE_URL` | localhost `comptool` | Plain `postgresql://` is fine; the driver is normalized internally |
+| `PORT` | `8000` | Read unprefixed, so platforms that inject it work as-is |
+| `COMPTOOL_ENVIRONMENT` | `local` | `production` for a deployment |
+| `COMPTOOL_LOG_LEVEL` | `INFO` | Logs are JSON on stdout |
+| `COMPTOOL_SESSION_TTL_SECONDS` | `2592000` | 30 days, rolling |
+| `COMPTOOL_SESSION_COOKIE_SECURE` | `true` | **`false` only for plain-HTTP localhost** |
+| `COMPTOOL_ESI_*` | off | [Sign-in](#turn-on-sign-in-eve-sso) |
+| `COMPTOOL_DEV_AUTH_ENABLED` | `false` | Browser-automation back door; refuses to boot outside a development environment |
+| `COMPTOOL_DEV_RESOLVE_ENABLED` | `false` | Resolves character names offline, same refusal |
+
+The two `DEV_` switches are for driving the app in tests. They are off by default and the app
+**refuses to start** with either on unless `COMPTOOL_ENVIRONMENT` is one of `ci`, `dev`,
+`development`, `docker`, `local` or `test` — that refusal is the feature, so a `.env` carried
+to a deployment fails loudly rather than quietly shipping a back door. `/api/health` reports
+whether each is on, for the operator who needs to know without shell access.
+
+### Rebranding
+
+The visible brand is **compiled into the SPA at build time** from
+[`web/src/brand/brandConfig.ts`](web/src/brand/brandConfig.ts) — the one place brand strings
+and asset pointers live. Edit it, swap the assets under `web/public/`, and rebuild. No
+component changes are needed. Colours are separate, in `web/src/styles/tokens.css`.
+
+`COMPTOOL_BRAND_NAME` does **not** rebrand the UI. It only sets the User-Agent this app sends
+to CCP (`comptool/esi.py`), which CCP asks callers to be identifiable by.
+
+---
+
+## The ruleset
+
+The tournament's rules are codified and ship inside the package, so a fresh deployment arrives
+with them: the entrypoint runs `python -m comptool.ingest seed` after the migrations, and the
+result is served at `/api/v1/rulesets/atxxii/latest`. No sign-in is needed to read it.
+
+**A version is immutable.** When point values change mid-tournament, publish a new label
+rather than editing the one already there.
+
+> **Idempotent means idempotent on `(slug, label)`.** If the *shape* of the bundled payload
+> grows under a label your database already holds, the old row stays and the new payload is
+> never picked up. A fresh deployment is fine; an existing one keeps serving what it was
+> given. Clients degrade rather than break, but to actually pick the change up, drop the
+> stored version and re-seed — or, locally, recreate the volume with `docker compose down -v`.
+
+To cut a new version, re-export the snapshot into `docs/sources/`, then regenerate the bundled
+payload and commit it:
+
+```bash
+python -m comptool.ingest emit-payload --csv docs/sources/points-atxxii-2026-07-23.csv --ships docs/sources/ships-sde-3444265.json --out comptool/data/atxxii-2026-07-23.json
+```
+
+The snapshots under `docs/` are the source of truth and are deliberately not in the image; a
+test pins the bundled payload against them, so the two cannot drift. See
+[docs/sources/README.md](docs/sources/README.md) for where each snapshot comes from.
+`python -m comptool.ingest import-points` imports a snapshot straight into a database without
+bundling it.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Every page is `404 "SPA not built"` but `/api/health` is green | The image was built without the Node stage — no SPA in it | Build `deploy/docker/Dockerfile` explicitly, with the repository root as context |
+| `/api/health` says `"status": "degraded"` | App is up, database is not reachable | Check `DATABASE_URL` |
+| Container crash-loops on boot | `alembic upgrade head` failed, or `COMPTOOL_ESI_ENABLED=true` with a required value blank | Read the log — both failures name themselves |
+| Sign-in reports success, app renders signed-out | The `Secure` cookie was dropped over plain HTTP | Set `COMPTOOL_SESSION_COOKIE_SECURE=false` locally; use TLS in a deployment |
+| EVE returns an invalid `redirect_uri` | Portal registration and `COMPTOOL_ESI_CALLBACK_URL` differ | Compare byte for byte — scheme, host, port, trailing slash |
+| `curl -I` returns `405`, `allow: GET` | `-I` sends `HEAD`; the routes are `GET`-only | Not a problem — the `405` came from your app. Use `curl -s` |
+
+`/api/health` also reports the running commit and branch, which settles "is my change actually
+deployed" without guessing. [docs/DEPLOYMENT.md §8](docs/DEPLOYMENT.md) has a longer table
+covering DNS, TLS and proxy failures.
+
+---
+
+## How it is built
+
+A single service: one **FastAPI** app that serves the built **React/Vite/TypeScript** SPA as
+static files on the same origin as the API, plus one **Postgres**. The legality engine runs
+**client-side** in TypeScript for instant per-tile feedback; the server persists teams, comps,
+and the resolved ruleset. There is no separate frontend service, no CDN to configure, and no
+CORS to get wrong.
 
 ```
 comptool/   FastAPI service (also serves the SPA)
@@ -22,147 +230,63 @@ web/        React + Vite + TypeScript SPA (builds to web/dist)
 alembic/    database migrations (single Postgres schema)
 deploy/     Dockerfile + entrypoint
 tests/      backend tests
-docs/       product requirements, ruleset, UI mockup, plan
+e2e/        end-to-end suite (Playwright)
+docs/       requirements, ruleset, deployment guide
 ```
 
-## Run it (self-host)
+---
 
-Everything comes up with one command:
+## Developing
 
-```bash
-docker compose up --build
-```
-
-Postgres starts, the app applies migrations, publishes the bundled ruleset, then
-serves the SPA and the API at http://localhost:8000. Check health at
-http://localhost:8000/api/health.
-
-All configuration is via environment variables — see [.env.example](.env.example).
-
-### The ruleset
-
-The tournament's rules are codified and ship with the application, so a fresh
-deployment arrives with them: the entrypoint runs `python -m comptool.ingest seed`
-after the migrations, and the ruleset is served at
-`/api/v1/rulesets/atxxii/latest`. Seeding is idempotent, so restarts are a no-op.
-Ruleset reads need no sign-in — it is published tournament data, and the SPA renders
-it before anyone has an identity.
-
-A version is immutable. When point values change mid-tournament, publish a new label
-rather than editing the one already there.
-
-> **Idempotent means idempotent on `(slug, label)`.** If the *shape* of the bundled payload
-> grows — as it did in Phase I, when §8's ban phase was added under the existing
-> `2026-07-23` label — a database that already holds that label keeps the older row, and
-> seeding will not replace it. A fresh deployment is fine; an existing one keeps serving what
-> it was given. Clients are written to degrade rather than break (the rehearsal screen says
-> the ruleset describes no ban phase), but to actually pick the section up, drop the stored
-> version and re-seed, or recreate the volume with `docker compose down -v`.
-
-To cut a new version, re-export the snapshot into `docs/sources/`, then regenerate the
-bundled payload and commit it:
-
-```bash
-python -m comptool.ingest emit-payload --csv docs/sources/points-atxxii-2026-07-23.csv --ships docs/sources/ships-sde-3444265.json --out comptool/data/atxxii-2026-07-23.json
-```
-
-The snapshots under `docs/` stay the source of truth and are deliberately not in the
-image; a test pins the bundled payload against them, so the two cannot drift. See
-[docs/sources/README.md](docs/sources/README.md) for where each snapshot comes from
-and how to re-cut it. `python -m comptool.ingest import-points` remains available for
-importing a snapshot straight into a database without bundling it.
-
-### Sign-in (EVE SSO)
-
-Signing in is optional: without it the app serves ruleset data and offers no teams.
-To enable it, register an application at
-[developers.eveonline.com](https://developers.eveonline.com) and set the four
-`COMPTOOL_ESI_*` values in `.env`:
-
-- **Callback URL** must match `COMPTOOL_ESI_CALLBACK_URL` byte for byte — scheme, host,
-  port and trailing slash included. The default is
-  `http://localhost:8000/api/v1/auth/callback`.
-- Request the **`publicData`** scope and nothing more. The tool needs only a verified
-  character id and name, but a scope has to be requested for the SSO to issue a refresh
-  token at all.
-- The flow is **PKCE**, so the application is a public client and there is no client
-  secret to configure. `COMPTOOL_ESI_TOKEN_SECRET` is unrelated to the exchange — it
-  encrypts the stored refresh token at rest, and can be a comma-separated list to
-  rotate keys (newest first).
-
-Sessions live in Postgres with a rolling 30-day expiry that each request pushes out, so
-an active user stays signed in across restarts. The browser holds only an opaque
-`HttpOnly` cookie; no EVE token ever reaches it. **Sign out** ends the current session
-and **everywhere** ends that character's sessions on every device.
-
-Set `COMPTOOL_SESSION_COOKIE_SECURE=false` for local HTTP development — a browser
-silently drops a `Secure` cookie over plain http, which looks exactly like a broken
-login. When developing against the Vite dev server, also set
-`COMPTOOL_ESI_POST_LOGIN_URL=http://localhost:4173/` so the callback lands back on the
-SPA rather than on the API's own origin.
-
-There is a second way in, for browser automation only: `COMPTOOL_DEV_AUTH_ENABLED` opens
-`POST /api/v1/auth/dev-login`, which mints a session for any character a caller names with
-no EVE involved. It is off by default and the app refuses to start with it on outside a
-development environment — that refusal is the feature, so a `.env` carried to a deployment
-fails loudly rather than quietly shipping a back door. See
-[Driving the front end](#driving-the-front-end) and `comptool/auth/dev.py`.
-
-## Develop
-
-Backend (Python 3.12+):
+Backend (Python 3.12+) — with `docker compose up db` supplying Postgres:
 
 ```bash
 python -m venv .venv && . .venv/Scripts/activate   # Windows; use bin/activate on POSIX
 pip install -e ".[dev]"
-# Point at a local Postgres (or `docker compose up db`):
 export DATABASE_URL=postgresql://comptool:comptool@localhost:5432/comptool
 alembic upgrade head
-python -m comptool.ingest seed     # publish the bundled ruleset
+python -m comptool.ingest seed
 uvicorn comptool.main:app --reload
 ```
 
 Frontend (Node 20+):
 
 ```bash
-cd web
-npm install
-npm run dev        # Vite dev server on :4173, proxies /api to the backend on :8000
+cd web && npm install && npm run dev
 ```
 
-The SPA calls the API at a **relative** `/api` path, so the same build works on any
-origin. In dev, Vite proxies `/api` to the backend; in production the FastAPI service
-serves both from one origin.
+Vite serves on `:4173` and proxies `/api` to the backend on `:8000`, so the browser sees a
+single origin in development too. When signing in against the dev server, also set
+`COMPTOOL_ESI_POST_LOGIN_URL=http://localhost:4173/` so the callback lands back on the SPA
+rather than on the API's own origin.
 
-## Test
+### Tests
 
 ```bash
-pip install -e ".[dev]" && pytest        # backend
-cd web && npm test                        # frontend (Vitest)
-cd e2e && npm test                        # end to end (Playwright, needs the app running)
+pip install -e ".[dev]" && pytest   # backend
+cd web && npm test                  # frontend (Vitest)
+cd e2e && npm test                  # end to end (Playwright, needs the app running)
 ```
 
-The backend tests need a reachable Postgres and give themselves a clean schema per test,
-which **drops every table**. They therefore run against their own database rather than
-`DATABASE_URL` — `COMPTOOL_TEST_DATABASE_URL`, defaulting to `comptool_test` on the
-Postgres `docker compose` publishes. Create it once:
+The backend tests give themselves a clean schema per test, which **drops every table**. They
+therefore run against their own database rather than `DATABASE_URL` —
+`COMPTOOL_TEST_DATABASE_URL`, defaulting to `comptool_test` on the Postgres compose publishes.
+Create it once:
 
 ```bash
 docker exec at-comp-tool-db-1 createdb -U comptool comptool_test
 ```
 
-`tests/conftest.py` refuses to start unless that database's name says it is disposable
-(it must contain `test`, `scratch`, `ci` or `tmp`). This is not belt-and-braces: compose
-publishes the stack's Postgres on the host, `Settings` defaults `DATABASE_URL` to that
-same database, and a `.env` in the repo root usually names it too — so plain `pytest`
-with the stack up used to empty the development database. The guard is what makes the
-obvious invocation safe.
+`tests/conftest.py` refuses to start unless that database's name says it is disposable (it must
+contain `test`, `scratch`, `ci` or `tmp`). This is not belt-and-braces: compose publishes the
+stack's Postgres on the host, `Settings` defaults `DATABASE_URL` to that same database, and a
+`.env` in the repo root usually names it too — so plain `pytest` with the stack up used to
+empty the development database. The guard is what makes the obvious invocation safe.
 
-The same drop leaves `alembic_version` behind, because it is not part of `Base.metadata`.
-A later `alembic upgrade head` against such a database silently does nothing and
-`alembic check` reports total drift; if it happens, drop `alembic_version` and migrate
-again. Run the drift gate against its own scratch database — `alembic/env.py` prefers
-`ALEMBIC_DATABASE_URL`:
+That drop leaves `alembic_version` behind, because it is not part of `Base.metadata`. A later
+`alembic upgrade head` against such a database silently does nothing and `alembic check`
+reports total drift; if it happens, drop `alembic_version` and migrate again. Run the drift
+gate against its own scratch database — `alembic/env.py` prefers `ALEMBIC_DATABASE_URL`:
 
 ```bash
 ALEMBIC_DATABASE_URL=postgresql://comptool:comptool@localhost:5432/comptool_drift alembic check
@@ -170,305 +294,21 @@ ALEMBIC_DATABASE_URL=postgresql://comptool:comptool@localhost:5432/comptool_drif
 
 ### Driving the front end
 
-The SPA is built to be automated: every control carries a role and an accessible name,
-every region a stable `data-testid`, and anything worth waiting for announces itself. See
-`docs/REQUIREMENTS.md` §6.8 for the contract. The end-to-end suite lives in [`e2e/`](e2e/) —
-a standalone npm package driving Playwright against a running stack.
+The SPA is built to be automated: every control carries a role and an accessible name, every
+region a stable `data-testid`, and anything worth waiting for announces itself.
+[**docs/DRIVING-THE-UI.md**](docs/DRIVING-THE-UI.md) is the working guide — signing in without
+EVE, and the shape of every gesture the board supports. The suite itself lives in
+[`e2e/`](e2e/README.md); `docs/REQUIREMENTS.md` §6.8 is the contract it depends on.
 
-```bash
-cd e2e && npm install && npx playwright install chromium && npm test
-```
+---
 
-#### Signing in without EVE
+## Documentation
 
-The real sign-in ends at a consent screen on `login.eveonline.com`, which no headless
-browser can complete. So there is a development-only identity source: `POST
-/api/v1/auth/dev-login` mints a session for any character a caller names.
-
-It is not a mock — the row goes in through the same `sessions.mint` and the cookie out
-through the same `set_session_cookie` as the real callback, so nothing downstream can tell
-the two apart. `comptool/auth/dev.py` sets out at length what it bypasses and what it
-deliberately does not. Two variables switch it on:
-
-```bash
-COMPTOOL_DEV_AUTH_ENABLED=true
-COMPTOOL_DEV_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(24))")
-```
-
-The app **refuses to start** with this on unless `COMPTOOL_ENVIRONMENT` is one of `ci`,
-`dev`, `development`, `docker`, `local` or `test`, and unless that secret clears 32
-characters. Every refusal from the route — switched off, wrong environment, wrong secret —
-is the same 404, so no response says whether a build carries it at all; `/api/health`
-reports `dev_auth` for the operator who needs to know. Over plain http also set
-`COMPTOOL_SESSION_COOKIE_SECURE=false`, or the browser drops the cookie without a word.
-
-Then it is one call, and no token passes through the script:
-
-```javascript
-const ctx = await browser.newContext({ baseURL: 'http://127.0.0.1:8000' })
-// context.request shares the context's cookie jar, so the cookie the server sets here is
-// the one every page opened from this context will send.
-await ctx.request.post('/api/v1/auth/dev-login', {
-  headers: { 'x-comptool-dev-auth': process.env.COMPTOOL_DEV_AUTH_SECRET },
-  data: { characterId: 90000001, characterName: 'Kadir' },
-})
-const page = await ctx.newPage()
-await page.goto('/teams/' + TEAM_ID)
-```
-
-#### Driving it
-
-Note the shape: scope to a region by test id, find things inside it the way a person would,
-and wait on state rather than sleeping. A board holds many comps, so every `comp-*` id
-inside a tile is scoped by the `board-tile` it belongs to.
-
-Reach for `data-comp-id` to tell twenty tiles apart. A tile's *name* is awkward on purpose:
-`aria-label` sits on the `board-tile` element itself, so `filter({ has: … })` — which looks
-at descendants — never matches it, and an editable tile keeps its name in an `<input>`
-value, so `filter({ hasText })` finds nothing either. (That one works on a read-only tile,
-which is the worse failure: green for a viewer, red for an editor.) When only a name is
-available, `and()` the two locators together — `e2e/src/locators.ts` has both forms.
-
-```javascript
-await page.getByTestId('library-rail').getByRole('button', { name: 'Open Angel Shield Kite' }).click()
-const tile = page.locator(`[data-testid="board-tile"][data-comp-id="${compId}"]`)
-
-await tile.getByTestId('comp-row-empty').first().getByRole('button').click()
-await page.getByTestId('ship-search-input').fill('Abaddon')
-await page.getByTestId('ship-search-results').getByRole('button', { name: /^Abaddon/ }).click()
-
-await expect(tile.getByTestId('comp-points-delta')).toHaveText('−160')
-await expect(tile.getByTestId('comp-save-state')).toHaveAttribute('data-save-state', 'idle')
-await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-layout-state', 'idle')
-```
-
-Not every row carries every control. `comp-row-flagship-toggle` is drawn only where a flagship
-is possible — the format allows one and the hull is eligible for it, which in ATXXII is
-battleships minus a short list — plus any row that already holds the designation, so there is
-always a way to take one back. A test that expects it on an arbitrary row will not find it.
-
-Moving hulls out of a comp starts by picking rows out. Clicking a row picks it; ctrl- or
-shift-clicking a second adds to or extends the selection, and dragging any row in the selection
-takes the whole selection with it. Each row also keeps a checkbox named for the hull *and its
-slot* — because a comp legitimately holds three of the same hull — which is visually clipped
-but is what says whether the pick landed.
-
-Where they are put down is what it means. On another tile it is a **copy**: the hulls are
-appended to a comp that already exists, and this one needs a real drag, which Playwright's
-`dragTo` raises and jsdom cannot. On the dashed new-comp tile at the end of the board it is a
-**port**: those rows become a comp of their own. **Ctrl+C then Ctrl+V** is the same port
-without a pointer — one row or several, and the paste lands on whichever board is open.
-
-```javascript
-await tile.getByTestId('comp-row').nth(0).click()
-await tile.getByTestId('comp-row').nth(1).click({ modifiers: ['ControlOrMeta'] })
-await expect(tile.getByTestId('comp-row-select').nth(1)).toBeChecked()
-
-// Out into a comp of their own. One POST to /fork: the server takes those rows out of its own
-// copy, so the new comp keeps this one's ruleset version and records it as its parent. The
-// tile's outstanding edits are written first — the fork asks for rows *by number*, and the
-// server drops numbers it has not been told about rather than refusing them.
-await tile.getByTestId('comp-row').nth(0).dragTo(page.getByTestId('board-new-comp'))
-await expect(page.getByTestId('board-grid')).toHaveAttribute('data-comp-count', '2')
-
-// Or the same thing from the keyboard. Both keystrokes are ignored while the caret is in a
-// field, and the copy is let go of if the rows it names move — row numbers renumber when a row
-// is removed, so a copy held across an edit would paste hulls nobody picked.
-await page.keyboard.press('ControlOrMeta+c')
-await page.keyboard.press('ControlOrMeta+v')
-
-// Or into a comp that already exists. It is priced *in that comp*, against the ruleset version
-// it is pinned to, which may not be the one these hulls were priced under — and reported there
-// on arrival. `tileNamed` matches exactly: porting rows out of a comp makes an
-// "Armor Brawl (partial)" beside it.
-const target = tileNamed(page, 'Armor Brawl')
-await tile.getByTestId('comp-row').nth(0).dragTo(target)
-await expect(target.getByTestId('comp-save-state')).toHaveAttribute('data-save-state', 'idle')
-```
-
-The copy always lands. If it breaks a rule the target says so through its own
-`comp-issue-flag`, and a hull the target's ruleset version never listed arrives as
-`Unknown hull <typeId>` with an `unlisted-hull` violation rather than being refused.
-
-Copying into a comp that already exists is still the drag and only the drag — there is no way
-to say *which* comp without pointing at one.
-
-**Let go of on a hull row rather than on the tile**, a single hull *replaces* the one in that
-slot instead of going on the end. The row it came from keeps its hull either way, and this is
-the one landing that accepts a drag out of the comp it is already in — a slot is named, so
-"put this hull there" means something that "append these to yourself" does not. Only a single
-hull: several arriving at once are the tile's landing and go on the end wherever the pointer
-was.
-
-`data-landing` on `comp-row` says which row a drop would replace; it is written at rest as
-`"false"` on every row, so it can be waited on rather than polled for existence. It is the
-*only* thing a row landing marks — the tile's own `board-tile-receiving` outline stays off,
-because the marked row has already said where the hull is going and carries the name of the one
-it would replace. An **empty** row is not a landing: a hull let go of on one goes on the end of
-the comp, the same as anywhere else on the tile, so the tile takes the outline instead.
-
-Nothing announces what an arriving hull would *cost* before it lands. A drag is a moving thing,
-and a figure that appears, changes and vanishes as the cursor crosses the board is not one
-anybody reads — so the judgement happens on arrival, where the receiving tile's own
-`comp-points-delta` and `comp-issue-flag` report it against the ruleset version that comp is
-pinned to. Assert there, after the drop, rather than mid-gesture.
-
-```javascript
-// Aim at the row, not the tile. The source's centre is its hull name, which is what carries.
-await from.getByTestId('comp-row').nth(0).dragTo(onto.getByTestId('comp-row').nth(1))
-await expect(onto.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Rifter'])
-```
-
-**Rearranging a board** is a drag of the whole tile. A press takes hold of the tile unless it
-lands on something that already answers one — a hull row carries the hull, a button clicks, a
-search box is typed in — with the header as the deliberate exception, so a tile is picked up
-by its title bar and the name field is a handle rather than a control while a press is moving.
-
-Aim for the header, not the middle: `dragTo` presses at an element's centre by default, and a
-tile's centre is a hull row, so a bare `dragTo(tile, tile)` carries a *hull* out of the comp.
-Pass `sourcePosition`/`targetPosition`. Which half of the target the cursor is over decides
-whether the tile lands before it or after it.
-
-Read the arrangement off `data-tile-order` on `board-grid` rather than by walking the tiles.
-While a tile is being carried the two disagree on purpose: the tiles keep their places in the
-DOM and are re-sequenced with CSS `order`, so document order is the arrangement the drag
-*started* from. `data-reordering` says a drag is in flight and `data-lifted` marks the tile in
-hand. Wait for the tiles to have loaded before dragging — `data-comp-count` is satisfied while
-they are still drawing "Loading…" at a fraction of their height, and a board that grows under
-the cursor is a race rather than a gesture.
-
-```javascript
-const grid = page.getByTestId('board-grid')
-await expect(grid).toHaveAttribute('data-comp-count', '3')
-await expect(page.getByTestId('board-tile-loading')).toHaveCount(0)
-
-// By the header, into the left half of the target: "put this one before that one".
-await tileFor(page, gamma.id).dragTo(tileFor(page, alpha.id), {
-  sourcePosition: { x: 60, y: 12 },
-  targetPosition: { x: 60, y: 12 },
-})
-await expect(grid).toHaveAttribute('data-tile-order', `${gamma.id},${alpha.id},${beta.id}`)
-await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-layout-state', 'idle')
-```
-
-The tiles move aside as one is carried over them, and slide back if it is let go of nowhere.
-That animation is 200 ms of `transform` — longer than the tool's hover motion, because this one
-has to be followed rather than merely noticed — and is skipped entirely under
-`prefers-reduced-motion: reduce`, where the tiles still rearrange and simply arrive. It has no
-bearing on any assertion above: `data-tile-order` changes when the arrangement does, not when
-the motion finishes. The tile in hand is hollowed out and wears a dashed amber border in place
-of its own, standing where it would land, which is `data-lifted="true"` and nothing a driver
-needs to read the stylesheet for.
-
-Reordering has no keyboard route and is not owed one — see §6.8's note on the drag
-suppressions. The arrangement is convenience state, and every comp on the board is present and
-editable whatever order it is in.
-
-**Forking a whole comp** is the same mechanism with no rows named. Two ways to ask: the fork
-control in the tile's foot, and carrying the tile onto the new-comp tile at the end of the
-board — the all-rows case of the port that lands there. The new comp keeps the parent's ruleset
-version — a fork exists to be compared against what it came from — and says where it came from,
-whether or not the parent is still there.
-
-Carried to the new-comp tile, the board puts itself back: the tiles it had been shuffling aside
-on the way past return to where they were, `data-tile-order` reads as it did before the drag,
-and the fork lands on the end because that is where an opened comp lands. Nothing is
-rearranged.
-
-```javascript
-// Same grip as a rearrangement, different landing.
-await tileFor(page, gamma.id).dragTo(page.getByTestId('board-new-comp'), {
-  sourcePosition: { x: 60, y: 12 },
-})
-await expect(tileNamed(page, 'Gamma (fork)')).toBeVisible()
-```
-
-```javascript
-await tile.getByRole('button', { name: 'Fork Angel Shield Kite' }).click()
-const fork = page.getByTestId('board-tile').filter({ has: page.getByLabel('Angel Shield Kite (fork)') })
-await expect(fork.getByTestId('comp-lineage')).toContainText('Angel Shield Kite')
-// The parent's version, not whatever has published since.
-await expect(fork.getByTestId('comp-ruleset-version')).toHaveText('v2026-07-23')
-```
-
-**Archetype and tags** fill the chip band the tile has kept open since Phase E. Two boxes,
-because the two namespaces never cross-suggest; typing a value the team has not used yet
-offers to create it, and the value is spelled the way the team already spells it.
-
-```javascript
-await tile.getByRole('button', { name: 'Edit tags on Angel Shield Kite' }).click()
-await tile.getByLabel('Archetype').fill('Kite')
-await tile.getByTestId('comp-tag-create').click()          // "Create archetype “Kite”"
-await expect(tile.getByTestId('comp-archetype-chip')).toHaveText('Kite')
-
-await tile.getByLabel('Tags').fill('shield ')              // wrong case, trailing space
-await tile.getByTestId('comp-tag-create').click()
-await tile.getByRole('button', { name: 'Done' }).click()
-
-// The rail regroups, and the value is now offered to every other comp on the team.
-const rail = page.getByTestId('library-rail')
-await expect(rail.getByRole('button', { name: 'Kite' })).toHaveAttribute('aria-expanded', 'true')
-await rail.getByLabel('Filter by archetype').selectOption('Kite')
-await rail.getByRole('button', { name: 'Filter by Shield' }).click()
-await expect(rail.getByTestId('library-results-status')).toContainText('of')
-```
-
-**Comments** open from the tile's foot and are fetched only when opened, so a board of twenty
-tiles makes no thread requests until one is asked for. A viewer can post; only an author can
-edit their own; an owner can delete anybody's.
-
-```javascript
-await tile.getByRole('button', { name: 'Comments on Angel Shield Kite' }).click()
-const thread = tile.getByTestId('comment-thread')
-await expect(thread.getByTestId('comment-status')).toHaveAttribute('data-thread-state', 'idle')
-
-await thread.getByLabel('New comment').fill('This wants a third logi.')
-await thread.getByTestId('comment-post').click()
-await expect(thread.getByTestId('comment-status')).toHaveText('1 comment')
-
-// Editing says so, and does not move when the comment was said.
-await thread.getByRole('button', { name: 'Edit comment by Kadir' }).click()
-await thread.getByTestId('comment-edit-input').fill('This wants one more logi.')
-await thread.getByTestId('comment-save').click()
-await expect(thread.getByTestId('comment-edited')).toBeVisible()
-```
-
-Rehearsing a ban phase, and sharing a comp:
-
-```ts
-// §8's ban phase, one person driving both sides. A place, so it is a path segment.
-await page.goto('/teams/' + teamId + '/pick-ban')
-await expect(page.getByTestId('pick-ban-turn')).toHaveText(/Red to ban/)
-await page.getByLabel('Search hulls to ban').fill('Machariel')
-await page.getByRole('button', { name: 'Ban Machariel' }).click()
-await expect(page.getByTestId('pick-ban-turn')).toHaveText(/Blue to ban/)
-
-// A share link. The tile control opens the panel; the link itself is selectable text.
-const tile = page.getByTestId('board-tile').and(page.getByLabel('Angel Shield Kite', { exact: true }))
-await tile.getByRole('button', { name: 'Share Angel Shield Kite' }).click()
-await tile.getByRole('button', { name: 'Create a share link for Angel Shield Kite' }).click()
-const link = await tile.getByTestId('comp-share-link').textContent()
-
-// And it opens with no cookie at all — this is the only route in the app that does.
-const visitor = await browser.newContext()
-await visitor.newPage().goto(link)
-```
-
-A share is a **snapshot**: it shows the comp as it was when the link was made. Edit the comp
-afterwards and the tile's control reads `stale` — `comp-share-stale` says so in the panel, and
-*Update link* re-captures it under the same slug, so a link already sent keeps working.
-Withdrawing is permanent for that slug: the row stays so it can never be reissued, and
-re-sharing mints a different one.
-
-Deep links work, so a board is addressable directly: `/teams/:teamId/boards/:boardId`, and
-`/comps/:compId` opens that comp on whichever board was last in front — which is also what a
-fork's lineage link goes to. `/s/:slug` is the share link, and the only route that renders
-without a session. The rail's search box and its two filters are **component state**,
-deliberately not in the URL: a history entry per keystroke, or per chip toggled, is not a
-location anybody wants to navigate back out of.
-
-Over plain http the server must set the cookie without the `Secure` flag, or the browser
-drops it and every page renders the sign-in card while the sign-in itself reports 200 — set
-`COMPTOOL_SESSION_COOKIE_SECURE=false`, and see [Sign-in](#sign-in-eve-sso). **A locator
-that has to reach for a CSS class is a missing test id, not a selector to keep** — class
-names are presentation and change without notice.
+| | |
+|---|---|
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Go-live guide: Railway, Cloudflare, SSO, end to end |
+| [docs/DRIVING-THE-UI.md](docs/DRIVING-THE-UI.md) | Automating the SPA in a browser |
+| [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | Product requirements, including the §6.8 automation contract |
+| [docs/ruleset-atxxii.md](docs/ruleset-atxxii.md) | The codified tournament rules |
+| [docs/sources/README.md](docs/sources/README.md) | Where each data snapshot comes from, and how to re-cut it |
+| [e2e/README.md](e2e/README.md) | Running the end-to-end suite |

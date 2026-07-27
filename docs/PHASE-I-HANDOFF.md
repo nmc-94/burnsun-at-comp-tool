@@ -74,9 +74,8 @@ cd web && npm install && npm run lint && npm test && npm run build
 > `alembic_version` and migrate again. Run the drift gate on its own scratch database;
 > `env.py` prefers `ALEMBIC_DATABASE_URL`. **Head is `0005`.**
 
-`README.md` under "Driving the front end" has the session-cookie one-liner and a worked
-walkthrough of every gesture through Phase H; extend it rather than starting a second
-vocabulary.
+`docs/DRIVING-THE-UI.md` has the session-cookie one-liner and a worked walkthrough of every
+gesture through Phase H; extend it rather than starting a second vocabulary.
 
 ## Design stance (carried forward, non-negotiable)
 

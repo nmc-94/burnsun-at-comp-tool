@@ -76,8 +76,8 @@ cd web && npm install && npm run lint && npm test && npm run build
 there (see `.env.example`; `COMPTOOL_ESI_ENABLED` needs `ESI_CALLBACK_URL` and
 `ESI_TOKEN_SECRET` alongside it or the app refuses to start). To develop signed in without
 an EVE application at all, mint a session directly and set the cookie — there is
-deliberately no dev backdoor route; the one-liner is in `README.md` under "Driving the front
-end", which also shows how to scope a locator to one tile on a board.
+deliberately no dev backdoor route; the one-liner is in `docs/DRIVING-THE-UI.md`, which also
+shows how to scope a locator to one tile on a board.
 
 ## Design stance (carried forward, non-negotiable)
 

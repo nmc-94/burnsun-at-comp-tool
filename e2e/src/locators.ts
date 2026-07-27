@@ -7,8 +7,8 @@ import type { Locator, Page } from '@playwright/test'
  * this. Two reasons not to filter by name: a board legitimately holds "Armor Brawl" and
  * "Armor Brawl (partial)" side by side, and the tile's accessible name is an `aria-label` on
  * the `board-tile` element *itself* — which `filter({ has: getByLabel(name) })` does not
- * match, because `has` looks at descendants. (README.md showed that form; it was wrong, and
- * is fixed there now.)
+ * match, because `has` looks at descendants. (docs/DRIVING-THE-UI.md showed that form; it was
+ * wrong, and is fixed there now.)
  */
 export function tileFor(page: Page, compId: string): Locator {
   return page.locator(`[data-testid="board-tile"][data-comp-id="${compId}"]`)
@@ -18,7 +18,7 @@ export function tileFor(page: Page, compId: string): Locator {
  * The tile showing a comp with this name — for the comps a test does not create itself, like
  * the one a fork produces.
  *
- * `and()` against the tile's own `aria-label`, and it has to be. Neither form the README used
+ * `and()` against the tile's own `aria-label`, and it has to be. Neither of the obvious forms
  * works here:
  *
  * - `filter({ has: getByLabel(name) })` looks at *descendants*, and the label is on the

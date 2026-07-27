@@ -899,8 +899,8 @@ stranger reaches nothing.
 **The end-to-end suite lives in `e2e/`.** A standalone npm package driving
 Playwright against a running stack, deliberately black-box: it imports nothing
 from `web/src`, so the only contract it depends on is the one above plus the REST
-API. `README.md` documents how to run it, and `e2e/README.md` how it stays
-isolated on a shared database.
+API. `docs/DRIVING-THE-UI.md` documents how to drive it, and `e2e/README.md` how
+it stays isolated on a shared database.
 
 ## 7. Proposed architecture (starting point, to refine)
 
