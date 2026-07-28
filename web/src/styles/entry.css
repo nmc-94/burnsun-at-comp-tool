@@ -125,6 +125,109 @@
   color: var(--text-3);
 }
 
+/* The password door. Occupies the same slot as `.signin-go` above, which is why the button
+   inside it drops the 44px top margin the standalone one carries. */
+.signin-form {
+  margin-top: 38px;
+  width: min(320px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+.signin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.signin-field > span {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
+}
+.signin-field > input {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13.5px;
+}
+.signin-field > input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.signin-field > input:disabled {
+  opacity: 0.6;
+}
+.signin-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.signin-form .signin-go {
+  margin-top: 4px;
+  width: 100%;
+}
+.signin-form .signin-go:disabled {
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+}
+.signin-error {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+
+/* The two secrets a team is created with, under local accounts. Sits under whichever create
+   form is on screen — the first-team screen centres its content, the picker left-aligns, so
+   this claims neither and inherits. */
+.create-extras {
+  margin-top: 16px;
+  width: min(320px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+.create-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.create-field > span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.create-field > input {
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+}
+.create-field > input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* The half-sentence saying which secret this is. Both fields are password inputs and both are
+   asked for at once, so without these two lines they are indistinguishable. */
+.create-field > small {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
 /* --- 2 · signed in, no team ---------------------------------------------- */
 
 .first {

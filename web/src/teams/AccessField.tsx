@@ -74,8 +74,10 @@ export default function AccessField({
             onPaste={paste}
             placeholder="Search, or type a name to add…"
             // The name says both jobs, because the control does both. "Character name" alone
-            // would be a lie the moment someone types three letters to find somebody.
-            aria-label="Search names, or type a character name to add"
+            // would be a lie the moment someone types three letters to find somebody — and
+            // "character" would be a second lie on a deployment signing people in by password,
+            // where the name belongs to this instance and no character is involved.
+            aria-label="Search names, or type a name to add"
             maxLength={200}
             autoComplete="off"
             disabled={disabled}

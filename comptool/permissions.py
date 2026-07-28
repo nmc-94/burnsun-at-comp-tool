@@ -17,7 +17,19 @@ from .models import AccessLevel, SubjectKind, Team, TeamGrant
 
 @dataclass(frozen=True)
 class Viewer:
-    """The in-game identity a request is acting as."""
+    """The identity a request is acting as.
+
+    Usually an EVE character, and named for one. On a deployment running password sign-in it
+    is a local principal instead (``comptool/local_accounts.py``), and nothing in this module
+    changes or needs to: resolution matches integers, and a local principal's id is simply a
+    negative one. The fields keep their names rather than becoming ``principal_*`` because
+    renaming them is a hundred edits across two wire contracts for no behavioural difference.
+
+    Corporation and alliance grants are permanently inert under password sign-in, and there is
+    no local equivalent to go looking for. A local principal belongs to no corporation, so
+    ``_subject_id_for`` returns None for it, ``_matches`` refuses that below, and nothing
+    creates such rows in either mode anyway.
+    """
 
     character_id: int
     corporation_id: int | None = None

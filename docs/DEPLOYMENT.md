@@ -6,6 +6,15 @@ at a subdomain of a domain you already hold on Cloudflare, with EVE SSO working.
 It assumes nothing beyond a pushed repository. Follow it top to bottom — the order is
 load-bearing in two places, and both are called out where they matter.
 
+> **Going live on local accounts instead?** The whole guide still applies except the SSO parts,
+> and it gets shorter: **skip §5 entirely** (no EVE application, no callback URL, no hostname
+> decided in advance), and in §3 set `COMPTOOL_LOCAL_AUTH_ENABLED=true` plus
+> `COMPTOOL_TEAM_CREATION_KEY` in place of the four `COMPTOOL_ESI_*` variables. Setting both
+> sign-in modes at once makes the container crash-loop, on purpose. Note that sign-in is
+> **open** in that mode and a claimed name is not a proof — the README's
+> [Local accounts](../README.md#local-accounts) section says exactly what it does and does not
+> promise, and it is worth reading before this is on the internet.
+
 **Nothing in this guide requires a code change.** Every setting is a field in the Railway
 dashboard or a service variable. The repository as it stands deploys as-is.
 
@@ -17,7 +26,8 @@ dashboard or a service variable. The repository as it stands deploys as-is.
 
 This guide is written with a placeholder hostname. Decide yours now — the EVE application
 in [§5](#5-register-the-eve-application) is registered against it, and changing it later
-means re-registering.
+means re-registering. (On local accounts nothing is bound to the hostname, so it can move
+freely — though the join links you have already handed out carry it.)
 
 | Placeholder | Yours |
 |---|---|
@@ -34,7 +44,8 @@ means re-registering.
 - **A domain whose nameservers already point at Cloudflare.** This guide changes DNS records
   inside Cloudflare; it does not cover moving a zone there.
 - **An EVE account** able to register an application at
-  [developers.eveonline.com](https://developers.eveonline.com).
+  [developers.eveonline.com](https://developers.eveonline.com) — **only for the SSO path.**
+  On local accounts there is nothing to register, and §5 does not apply.
 
 ### What you are deploying
 
@@ -111,7 +122,7 @@ production (see the warning below).
 | `RAILWAY_DOCKERFILE_PATH` | `deploy/docker/Dockerfile` | From §2 |
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | A **reference**, not a pasted literal — see below |
 | `COMPTOOL_ENVIRONMENT` | `production` | Tags logs and `/api/health`, and bars the dev back door |
-| `COMPTOOL_ESI_ENABLED` | `true` | Turns on sign-in |
+| `COMPTOOL_ESI_ENABLED` | `true` | Turns on sign-in — **or** the two password variables below, never both |
 | `COMPTOOL_ESI_CLIENT_ID` | *(from §5)* | |
 | `COMPTOOL_ESI_CALLBACK_URL` | `https://comps.example.com/api/v1/auth/callback` | Must match EVE's registration byte for byte |
 | `COMPTOOL_ESI_TOKEN_SECRET` | *(generated, below)* | Encrypts stored refresh tokens at rest |
@@ -120,7 +131,7 @@ production (see the warning below).
 **`DATABASE_URL` must be a reference.** Type `${{Postgres.DATABASE_URL}}` literally —
 Railway resolves it at deploy time to the private-network URL. Pasting the connection string
 instead works until Postgres rotates its credentials, then breaks with no obvious cause.
-The app reads `DATABASE_URL` unprefixed ([`settings.py:47-50`](../comptool/settings.py))
+The app reads `DATABASE_URL` unprefixed ([`settings.py:76-79`](../comptool/settings.py))
 and rewrites the `postgresql://` form to the psycopg driver itself
 ([`db.py:23-35`](../comptool/db.py)), so Railway's URL needs no massaging.
 
@@ -137,20 +148,52 @@ accounts, but it does invalidate stored refresh tokens.
 
 > **`COMPTOOL_ESI_ENABLED=true` is all-or-nothing.** If any of client id, callback URL, or
 > token secret is empty, the app raises at import and the container **crash-loops**
-> ([`settings.py:104-121`](../comptool/settings.py)). Set all four together, or leave
+> ([`settings.py`](../comptool/settings.py)). Set all four together, or leave
 > `COMPTOOL_ESI_ENABLED` off until you have them.
+
+### Or, instead of all of the above: local accounts
+
+Replaces the five `COMPTOOL_ESI_*` rows, the generated token secret, and §5 in its entirety.
+
+| Variable | Value | Why |
+|---|---|---|
+| `COMPTOOL_LOCAL_AUTH_ENABLED` | `true` | Turns on sign-in |
+| `COMPTOOL_TEAM_CREATION_KEY` | *(generated, 24+ characters)* | Who may create a team here |
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+> **The two modes are mutually exclusive and the app enforces it.** With
+> `COMPTOOL_ESI_ENABLED` and `COMPTOOL_LOCAL_AUTH_ENABLED` both set, the container
+> **crash-loops** with an error naming both. So does an empty creation key, or one under 24
+> characters. One principal kind per database is what keeps a team's owner from being half EVE
+> character and half claimed name, and it cannot be undone by a later deploy that forgets.
+
+**The creation key is not a sign-in credential, and this is the thing most worth understanding
+before the first deploy.** Signing in is *open* in this mode: anybody who reaches the URL can
+claim a name and get a session. They see nothing — teams are private — and they cannot make a
+team without this key, which is exactly what it is for. The credentials that matter to a team
+are set by **its owner, inside the app**: each team has a join link and a join password, both
+changeable from team settings at any time, and neither is an environment variable. Rotating a
+team's password stops new joins and evicts nobody.
+
+Which also means there is nothing here whose change signs anybody out. Changing this key only
+stops new *teams* being created; existing sessions, teams and memberships are untouched. The
+README's [Local accounts](../README.md#local-accounts) section has the rest, including the
+limits of a name nobody proves.
 
 ### Deliberately do not set these
 
 | Variable | Why not |
 |---|---|
-| `PORT` | Railway injects it; the app already reads it unprefixed ([`settings.py:56`](../comptool/settings.py)) |
+| `PORT` | Railway injects it; the app already reads it unprefixed ([`settings.py:85`](../comptool/settings.py)) |
 | `COMPTOOL_SESSION_COOKIE_SECURE` | Defaults to `true`, which is correct over TLS. **`.env.example:23` sets it to `false`** for plain-HTTP localhost — copy that here and the browser accepts your login, drops the cookie, and renders every page signed-out while the sign-in itself reports success |
 | `COMPTOOL_SESSION_COOKIE_DOMAIN` | Empty means a host-only cookie, which is what a single origin wants |
 | `COMPTOOL_ESI_POST_LOGIN_URL` | Defaults to `/`, a same-origin relative redirect. Setting an absolute URL is only for the split-origin dev server |
 | `COMPTOOL_SPA_DIR` | The image already sets it to the baked-in bundle ([`Dockerfile:34`](../deploy/docker/Dockerfile)). Overriding it breaks the SPA |
 | `VITE_API_BASE` | Would bake a fixed origin into the JavaScript bundle. The SPA calls a relative `/api` on purpose, which is exactly what lets one build serve both the Railway domain and your custom one |
-| `COMPTOOL_DEV_AUTH_ENABLED` / `_SECRET` | The browser-automation back door. With `COMPTOOL_ENVIRONMENT=production` the app refuses to boot if this is on ([`settings.py:123-147`](../comptool/settings.py)) — that refusal is the safety net, not the plan |
+| `COMPTOOL_DEV_AUTH_ENABLED` / `_SECRET` | The browser-automation back door. With `COMPTOOL_ENVIRONMENT=production` the app refuses to boot if this is on ([`settings.py:212-235`](../comptool/settings.py)) — that refusal is the safety net, not the plan |
 
 **`COMPTOOL_BRAND_NAME` does not rebrand the UI.** It only sets the User-Agent sent to CCP
 ([`comptool/esi.py:39-46`](../comptool/esi.py)). The visible brand is compiled in at build

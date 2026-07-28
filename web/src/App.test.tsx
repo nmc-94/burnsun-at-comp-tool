@@ -31,7 +31,7 @@ const SHARED = {
 function stubSignedOut() {
   const fetchMock = vi.fn(async (url: string) => {
     const body = url.includes('/auth/me')
-      ? { ssoEnabled: true, character: null }
+      ? { signIn: 'sso', character: null }
       : url.includes('/api/health')
         ? { status: 'ok' }
         : url.includes('/api/v1/share/')

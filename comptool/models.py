@@ -11,6 +11,13 @@ nothing here records whether a comp is legal — only what it contains.
 The ``auth_*`` tables are a third concern again: who is asking. They hold no game data,
 only what is needed to recognize a returning browser and to prove which character it is.
 
+``local_account`` is that third concern's other half, and is deliberately *not* ``auth_*``.
+Those tables are credentials and machinery — a token hash, a PKCE verifier, a rejected
+attempt — and every one of them is transient. This is durable identity: nothing in it is a
+secret, it outlives every session opened against it, and it is what a team is owned by on a
+deployment with no EVE application. It exists only in that mode; see ``comptool/settings.py``
+for why the two modes cannot both be on.
+
 ``workspace_layout`` is a fourth: not what a team owns and not who is asking, but how one
 person has arranged the first in front of the second. It holds no game data either, and
 the comp ids inside it are never trusted — see ``comptool/workspace.py``.
@@ -37,6 +44,7 @@ from sqlalchemy import (
     Index,
     Integer,
     MetaData,
+    Sequence,
     SmallInteger,
     String,
     Text,
@@ -46,6 +54,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from . import share_slug
 
 # Explicit constraint names keep migrations and the drift check deterministic; without
 # them the database picks names and a later revision cannot reliably refer to one.
@@ -165,6 +175,38 @@ class Team(Base):
     owner_character_name: Mapped[str | None] = mapped_column(String(200))
     # What someone with no matching grant gets. Teams are private by default.
     base_level: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    # --- Joining, under local accounts. Inert under EVE SSO, where access is granted by name.
+    #
+    # The name a join link is addressed by: a petname slug from ``share_slug.generate()``, the
+    # same generator and the same arithmetic as a shared comp's. Unlike that one it is **not**
+    # the credential — the password below is — so its unguessability is not load-bearing and is
+    # kept anyway, because a guessable one would turn this column into a directory of which
+    # teams exist, which is exactly what ``access.py`` refuses to disclose.
+    #
+    # Re-rollable: it is the only way to kill a link that reached the wrong chat, since a
+    # password change stops new joins but leaves an old link pointing at the same team.
+    #
+    # The default and ``join.mint_join_slug`` are both here on purpose, and they do different
+    # jobs. This makes a ``Team`` impossible to construct without one — no route, no fixture and
+    # no future migration can produce a row that violates the constraint. The minter adds a
+    # uniqueness *check* on the paths that create and re-roll, so the common case never gambles
+    # on a four-billion-to-one collision surfacing as an IntegrityError from team creation.
+    # Python-side, not a server default: this database is drift-checked with
+    # ``compare_server_default=True``, and a function default never reaches the schema at all.
+    join_slug: Mapped[str] = mapped_column(String(64), unique=True, default=share_slug.generate)
+    # What somebody must type to join. **Hashed**, unlike every secret this app reads from the
+    # environment, and the reason is the difference between the two places a secret can live:
+    # this one is in a row, so a leaked backup would otherwise hand over every team's password
+    # at once. See ``auth/crypto.py:hash_password``.
+    #
+    # Null closes the team: no password, no way in by link, and the owner is on their own until
+    # they set one. That is a state an owner chooses, not a half-configured row.
+    access_password_hash: Mapped[str | None] = mapped_column(Text)
+    # What the password grants — ``AccessLevel.VIEWER`` or ``EDITOR``, the owner's choice, and
+    # changeable without changing the password. A column rather than two passwords because an
+    # owner who has to remember which of two secrets they sent to whom is an owner who will get
+    # it wrong.
+    access_password_level: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
     # Put away rather than deleted: a team's comps are other people's work and a season's
     # record. Null means live; the timestamp is when it was archived.
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -526,6 +568,114 @@ class AuthEsiToken(Base):
     )
 
     session: Mapped[AuthSession] = relationship(back_populates="esi_token")
+
+
+#: Where a local principal's id comes from: -1, -2, -3, and so on downward.
+#:
+#: Declared on the metadata so ``create_all`` builds it — the test suite raises its schema from
+#: these models rather than from migrations, and a sequence that existed only in 0009 would
+#: make every claim fail there and nowhere else. Migration 0009 spells the same DDL out for the
+#: deployments that do run migrations.
+#:
+#: Deliberately not attached to the column as a default. This database is drift-checked with
+#: ``compare_server_default=True``, and ``nextval(...)::regclass`` reflects back from Postgres
+#: in a shape the check cannot match — the cost ``CompShare.slug`` and ``comps._canonical``
+#: both record about expression indices, in a second disguise. ``local_accounts.claim`` reads
+#: the sequence itself instead.
+PRINCIPAL_SEQUENCE = Sequence(
+    "local_account_principal_seq",
+    metadata=Base.metadata,
+    data_type=BigInteger,
+    start=-1,
+    increment=-1,
+    # The guarantee, in the schema rather than in a convention somebody has to keep: this
+    # sequence can never emit a number EVE could also emit.
+    maxvalue=-1,
+    nominvalue=True,
+)
+
+
+class LocalAccount(Base):
+    """A person who got in with the instance password, and the name they claimed.
+
+    The whole of identity when ``COMPTOOL_PASSWORD_AUTH_ENABLED`` is on. There is no EVE
+    behind it and nothing to look one up in: the password says the caller belongs here, and
+    the name is what the team calls them.
+
+    **``principal_id`` is negative**, and that is the design rather than a quirk. Every
+    identity column in this schema is a signed ``BigInteger`` holding an EVE id, and EVE's id
+    space is entirely positive — so a local principal fits in the unused half of columns that
+    already exist, and ``team.owner_character_id``, ``team_grant.subject_id``,
+    ``comp.created_by_character_id``, ``comp_comment.author_character_id`` and
+    ``workspace_layout.character_id`` needed no migration to hold one. The sign is also the
+    only discriminator anything needs: ``esi.py`` already refuses a non-positive id from ESI,
+    and the SPA's portrait builder already returns nothing for one, so a local principal shows
+    initials instead of a character portrait without a line of frontend work.
+
+    The ids come from ``local_account_principal_seq``, which counts *down* from -1. Deliberately
+    no server default on the column: this database is checked for drift with
+    ``compare_server_default=True``, and ``nextval(...)::regclass`` is exactly the shape that
+    reflects back from Postgres unmatchable — the cost ``CompShare`` and ``comps._canonical``
+    both record about expression indices. ``local_accounts.claim`` calls the sequence instead.
+
+    One row per *name*, not per person, and the two come apart in a way worth stating: with one
+    shared password there is nothing a second person could fail to present, so whoever types a
+    claimed name signs in as whoever claimed it. The password is the trust boundary; the name
+    is a label inside it.
+    """
+
+    __tablename__ = "local_account"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    #: Negative, unique, and what every other table in this schema stores. See the class
+    #: docstring — this is the load-bearing column, not the primary key.
+    principal_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    #: The spelling claimed first, kept canonical forever after. Re-entering as "sable" shows
+    #: as "Sable", the same way ``esi.py`` returns EVE's spelling rather than what was typed —
+    #: which is what keeps a grant's ``subject_name`` agreeing with what its subject sees.
+    display_name: Mapped[str] = mapped_column(String(200))
+    #: ``display_name`` with internal whitespace collapsed and case folded. The claim lock, and
+    #: the only thing lookups match on.
+    #:
+    #: A stored column rather than a unique index on ``lower(display_name)``, for the reason
+    #: ``CompShare.slug`` and ``teams._refuse_duplicate`` both give: an expression index reflects
+    #: back from Postgres with casts the drift check cannot match. Its uniqueness is also what
+    #: makes ``Resolution.AMBIGUOUS`` unreachable here — a failure mode ESI has to handle and
+    #: this schema simply does not have.
+    name_folded: Mapped[str] = mapped_column(String(200), unique=True)
+    created_at: Mapped[datetime] = _created_at()
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AuthPasswordAttempt(Base):
+    """One rejected password, remembered long enough to slow the next one down.
+
+    Only failures are written. A shared password on a public URL is the entire security of a
+    deployment that uses one, and unlike every other credential in this app there is no
+    per-account lockout anybody would notice and no second factor — so the length floor in
+    ``settings.py`` is the defence and this is the backstop.
+
+    A table rather than a dictionary in the process, for two reasons that are both about being
+    honest under deployment rather than under test: a restart must not hand out a fresh
+    allowance, and a second uvicorn worker must not double it.
+    """
+
+    __tablename__ = "auth_password_attempt"
+    __table_args__ = (
+        # The lookup every attempt makes: how many failures in this bucket since a cutoff.
+        # Leading with scope, because the query is always for one bucket at a time; the
+        # purge scans on failed_at alone and is rare enough not to want its own index.
+        Index("ix_auth_password_attempt_scope_failed", "scope", "failed_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    #: Which bucket. A hash of the caller's address, or the single fixed key every failure
+    #: also lands in — see ``join.py`` for why the global one is the real limit and
+    #: the per-address one is a courtesy.
+    scope: Mapped[str] = mapped_column(String(64))
+    failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class AuthLoginAttempt(Base):

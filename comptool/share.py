@@ -52,7 +52,6 @@ captain tidied up would take the record of a match with it.
 
 from __future__ import annotations
 
-import time
 import uuid
 from datetime import datetime
 
@@ -69,6 +68,7 @@ from .auth.dependencies import current_viewer
 from .db import get_session
 from .models import AccessLevel, Comp, CompShare
 from .permissions import Viewer
+from .ratelimit import FixedWindow, caller_of
 
 comp_router = APIRouter(prefix="/api/v1/comps", tags=["share"])
 router = APIRouter(prefix="/api/v1/share", tags=["share"])
@@ -85,12 +85,14 @@ MINT_ATTEMPTS = 8
 RATE_LIMIT = 30
 RATE_WINDOW_SECONDS = 60
 
-#: A ceiling on the table the limiter keeps, so a spray of forged client addresses cannot grow
-#: it without bound. Past this the window is cleared wholesale: the limiter is a speed bump,
-#: not an accounting system, and forgetting is a safer failure than exhausting memory.
-MAX_TRACKED_CLIENTS = 10_000
-
-_hits: dict[str, tuple[float, int]] = {}
+#: The window itself moved to ``comptool/ratelimit.py`` once a name claim and a join lookup
+#: needed the same shape — this module wrote the first one, and three copies of twenty lines is
+#: how they drift. The budget above stays here, because it is a decision about *shares*.
+_window = FixedWindow(
+    limit=RATE_LIMIT,
+    window_seconds=RATE_WINDOW_SECONDS,
+    detail="Too many share requests; wait a moment and try again",
+)
 
 
 class _Response(BaseModel):
@@ -183,34 +185,13 @@ def _mint(session: Session, comp: Comp) -> CompShare:
 
 
 def rate_limited(request: Request) -> None:
-    """A fixed window per client address, in memory.
-
-    In memory because this deployment is one service (§7) and because a limiter that needed a
-    broker would make the simplest self-host harder for a threat this size. Multi-instance
-    carries the same caveat §7 already records for the realtime channel: this becomes per
-    instance, and the budget multiplies by however many there are.
-    """
-    now = time.monotonic()
-    client = request.client.host if request.client else "unknown"
-
-    if len(_hits) > MAX_TRACKED_CLIENTS:
-        _hits.clear()
-
-    started, count = _hits.get(client, (now, 0))
-    if now - started >= RATE_WINDOW_SECONDS:
-        started, count = now, 0
-    if count >= RATE_LIMIT:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many share requests; wait a moment and try again",
-            headers={"Retry-After": str(RATE_WINDOW_SECONDS)},
-        )
-    _hits[client] = (started, count + 1)
+    """The public read's budget. Load-bearing — see ``RATE_LIMIT``."""
+    _window.check(caller_of(request))
 
 
 def reset_rate_limit() -> None:
     """Tests only. Module state outlives a test, and every test here shares one client host."""
-    _hits.clear()
+    _window.reset()
 
 
 @comp_router.post("/{comp_id}/share", response_model=ShareDetail, status_code=201)

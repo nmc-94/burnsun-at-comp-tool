@@ -30,6 +30,7 @@ import {
 import BulkPaste from './BulkPaste'
 import type { BulkOutcome } from './BulkPaste'
 import GrantRow, { OwnerRow } from './GrantRow'
+import JoinSection from './JoinSection'
 import type { Grant, GrantableLevel, Team } from './types'
 
 /** Below this the dialog is a full-screen sheet and the paste affordance is not drawn at all.
@@ -291,6 +292,10 @@ export default function TeamSettingsDialog({ teamId, onClose }: Props) {
                 </div>
               </section>
             )}
+
+            {/* Renders itself away under EVE SSO — its own load 404s there, because joining
+                does not exist on a deployment where access is granted by character name. */}
+            <JoinSection teamId={teamId} isOwner={editable} />
 
             <section className="dlg-section">
               <h3 className="dlg-legend">Access</h3>

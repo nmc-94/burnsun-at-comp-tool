@@ -21,7 +21,7 @@ import type { Route } from './router/route'
 import type { Session } from './session'
 
 const SIGNED_IN: Session = {
-  ssoEnabled: true,
+  signIn: 'sso',
   character: { characterId: 95465499, characterName: 'Sable Kaneko', expiresAt: '2026-08-01' },
 }
 
@@ -179,12 +179,45 @@ describe('the account menu', () => {
   // character rather than handing them the sign-in screen.
   it('offers a way in when there is no character behind the session', () => {
     renderHeader({ kind: 'share', slug: 'brave-amber-tempest-harbour' }, {
-      ssoEnabled: true,
+      signIn: 'sso',
       character: null,
     })
 
     expect(screen.getByTestId('sign-in-button')).toBeTruthy()
     expect(screen.queryByTestId('user-menu')).toBeNull()
+  })
+
+  // Under local accounts there is no other origin to send anybody to, so the way in from a
+  // share view is a link back into the app, where the form lives.
+  it('links into the app rather than out of it when the door is a claimed name', () => {
+    renderHeader({ kind: 'share', slug: 'brave-amber-tempest-harbour' }, {
+      signIn: 'local',
+      character: null,
+    })
+
+    const control = screen.getByTestId('sign-in-button')
+    expect(control.tagName).toBe('A')
+    expect(control.getAttribute('href')).toBe('/')
+  })
+
+  it('names what vouched for the character, and offers a rename only where it can', () => {
+    renderHeader(WORKSPACE)
+    fireEvent.click(screen.getByTestId('user-menu'))
+
+    // EVE proved this character, and the name is the game's to change, not ours.
+    expect(screen.getByTestId('user-menu-panel').textContent).toContain('EVE SSO')
+    expect(screen.queryByTestId('menu-rename')).toBeNull()
+  })
+
+  it('offers a rename when the name is this instance to change', () => {
+    renderHeader(WORKSPACE, {
+      signIn: 'local',
+      character: { characterId: -3, characterName: 'Sable Kaneko', expiresAt: '2026-08-01' },
+    })
+    fireEvent.click(screen.getByTestId('user-menu'))
+
+    expect(screen.getByTestId('user-menu-panel').textContent).toContain('This instance')
+    expect(screen.getByTestId('menu-rename')).toBeTruthy()
   })
 })
 

@@ -148,12 +148,12 @@ def test_a_later_real_sign_in_revokes_the_development_one(client, dev_auth):
 
 def test_me_reports_a_character_even_though_sso_is_off(client, dev_auth):
     # A combination that could not previously exist: signed in, with no EVE application.
-    # The SPA renders the chip off `character` and hides the sign-in button off `ssoEnabled`.
+    # The SPA renders the chip off `character` and chooses a sign-in screen off `signIn`.
     sign_in_as(client)
 
     body = client.get("/api/v1/auth/me").json()
 
-    assert body["ssoEnabled"] is False
+    assert body["signIn"] == "none"
     assert body["character"]["characterId"] == 90_000_001
     assert body["character"]["characterName"] == "Kadir"
 

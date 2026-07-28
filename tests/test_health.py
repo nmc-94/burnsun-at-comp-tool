@@ -20,6 +20,9 @@ def test_health_ok(client):
     assert isinstance(body["db"]["latency_ms"], (int, float))
     assert body["build"]["service"] == "api"
     assert body["dev_auth"] is False
+    # No EVE application and no password: the default deployment serves ruleset data and
+    # share links, and offers no way in at all.
+    assert body["auth"] == "none"
 
 
 def test_health_reports_whether_the_development_sign_in_is_on(client, configure):
@@ -32,6 +35,20 @@ def test_health_reports_whether_the_development_sign_in_is_on(client, configure)
     )
 
     assert client.get("/api/health").json()["dev_auth"] is True
+
+
+def test_health_reports_which_door_is_open(client, configure):
+    # Same argument as the back-door keys, one step less sensitive: which door a deployment
+    # opens is already public at /me, because the SPA cannot draw a sign-in screen without it.
+    configure(esi_enabled=True)
+    assert client.get("/api/health").json()["auth"] == "sso"
+
+    configure(
+        esi_enabled=False,
+        local_auth_enabled=True,
+        team_creation_key="a-creation-key-long-enough-here",
+    )
+    assert client.get("/api/health").json()["auth"] == "local"
 
 
 def test_unknown_api_path_returns_json_404(client):

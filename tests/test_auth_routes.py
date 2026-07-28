@@ -293,13 +293,21 @@ def test_me_reports_nobody_when_no_cookie_is_sent(client, eve):
 
     # 200 with a null character, not a 401: this is the one route whose job is to answer
     # the question, and an anonymous page load is not a failure.
-    assert body == {"ssoEnabled": True, "character": None}
+    assert body == {"signIn": "sso", "character": None}
 
 
 def test_me_reports_when_signing_in_is_not_even_possible(client, configure):
     configure(esi_enabled=False)
 
-    assert client.get("/api/v1/auth/me").json()["ssoEnabled"] is False
+    # "none", not a false flag: with neither door configured the SPA says so outright rather
+    # than offering a button that could only ever 503.
+    assert client.get("/api/v1/auth/me").json()["signIn"] == "none"
+
+
+def test_me_reports_the_local_door_when_that_is_the_one_configured(client, configure):
+    configure(esi_enabled=False, local_auth_enabled=True, team_creation_key="a" * 24)
+
+    assert client.get("/api/v1/auth/me").json()["signIn"] == "local"
 
 
 def test_me_names_the_signed_in_character(client, sign_in):

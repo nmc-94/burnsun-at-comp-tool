@@ -22,6 +22,12 @@ DEV_AUTH = {
     "dev_auth_secret": "a-development-secret-of-sufficient-length",
 }
 
+LOCAL_AUTH = {
+    "local_auth_enabled": True,
+    # At least TEAM_CREATION_KEY_MIN_LENGTH, for the same reason.
+    "team_creation_key": "a-creation-key-long-enough-here",
+}
+
 
 def test_database_url_accepts_unprefixed_alias(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host:5432/db")
@@ -79,6 +85,47 @@ def test_a_trailing_slash_on_a_base_url_is_dropped():
 
     assert settings.esi_sso_base_url == "https://login.eveonline.com"
     assert settings.esi_api_base_url == "https://esi.evetech.net"
+
+
+def test_two_doors_at_once_are_refused():
+    # The decision that keeps every authorization invariant in this app true without a
+    # discriminator column: one principal kind per database. Enforced here rather than left
+    # to a route, because a deployment that booted with both would already have mixed rows in
+    # it by the time anybody noticed.
+    with pytest.raises(ValidationError, match="COMPTOOL_LOCAL_AUTH_ENABLED"):
+        Settings(**SSO, **LOCAL_AUTH)
+
+
+def test_local_accounts_without_a_creation_key_are_refused():
+    # Not merely unconfigured — unusable. Sign-in would work and then nobody could ever make a
+    # team, so the whole instance would be a sign-in screen leading to an empty room.
+    with pytest.raises(ValidationError, match="COMPTOOL_TEAM_CREATION_KEY"):
+        Settings(local_auth_enabled=True, team_creation_key="")
+
+
+def test_a_short_creation_key_is_refused():
+    # Unlike the development secret's floor, this one is doing real work: the key sits on a
+    # public URL with nothing else in front of it.
+    with pytest.raises(ValidationError, match="COMPTOOL_TEAM_CREATION_KEY"):
+        Settings(local_auth_enabled=True, team_creation_key="hunter2")
+
+
+def test_the_creation_key_is_only_required_once_local_accounts_are_on():
+    assert Settings(local_auth_enabled=False, team_creation_key="").sign_in_mode == "none"
+
+
+def test_the_sign_in_mode_names_whichever_door_is_open():
+    assert Settings(esi_enabled=False).sign_in_mode == "none"
+    assert Settings(**SSO).sign_in_mode == "sso"
+    # "local", not "password": signing in at this door asks for a name and nothing else. The
+    # passwords in this mode belong to teams.
+    assert Settings(**LOCAL_AUTH).sign_in_mode == "local"
+
+
+def test_local_accounts_need_no_development_environment():
+    # The opposite of the two DEV_ switches below: this one is meant for a deployment, so
+    # naming the environment "production" has to be entirely unremarkable.
+    assert Settings(**LOCAL_AUTH, environment="production").local_auth_enabled is True
 
 
 def test_the_development_sign_in_is_refused_outside_a_development_environment():

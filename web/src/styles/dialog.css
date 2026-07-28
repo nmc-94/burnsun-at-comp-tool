@@ -237,6 +237,36 @@ textarea.dlg-input {
   color: var(--text-3);
   margin-bottom: 9px;
 }
+/* Changing your own name, under password sign-in. One field, one sentence about what it does
+   not cost, one button — so it borrows `.dlg-input` and `.btn accent` and adds only the three
+   pieces the grant list had no use for. `display: block` because a bare <label> is inline and
+   would drop the margin below it. */
+.dlg-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 9px;
+}
+.dlg-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.dlg-error {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+.dlg-note + .btn,
+.dlg-error + .btn {
+  margin-top: 14px;
+}
+
 .dlg-namerow {
   display: flex;
   gap: 8px;

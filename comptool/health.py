@@ -36,6 +36,13 @@ def health(
     return {
         "status": "ok" if db_ok else "degraded",
         "db": {"ok": db_ok, "latency_ms": latency_ms},
+        # Which door this deployment opens: "sso", "password" or "none". Reported for the
+        # same reason as the two back-door keys below — an operator, a smoke test or a
+        # reviewer should be able to ask a running instance how people get in without
+        # reading environment variables on a box they may not have. Not a disclosure: /me
+        # already tells every anonymous browser the same thing, because the SPA cannot draw
+        # a sign-in screen without knowing it. The password itself appears nowhere.
+        "auth": str(settings.sign_in_mode),
         # Reported because an operator, a smoke test or a reviewer should be able to ask a
         # running instance whether it has a back door open without reading environment
         # variables on a box they may not have. That this route is unauthenticated is not the
