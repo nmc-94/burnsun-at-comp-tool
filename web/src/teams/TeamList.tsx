@@ -2,14 +2,22 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { messageFor } from '../api'
+import type { SignInMode } from '../session'
 import { createTeam, listTeams } from './api'
+import CreateTeamFields from './CreateTeamFields'
+import type { CreateTeamExtras } from './CreateTeamFields'
 import FirstTeam from './FirstTeam'
 import TeamPicker, { TeamChip } from './TeamPicker'
 import type { Team } from './types'
 
 interface Props {
   characterName: string | null
+  /** Decides whether creating a team asks for an instance key and a join password. Under EVE
+   *  SSO it asks for neither — signing in is already the gate, and access is granted by name. */
+  mode: SignInMode
 }
+
+const NO_EXTRAS: CreateTeamExtras = { creationKey: '', password: '', level: 'viewer' }
 
 /**
  * Where a signed-in character lands, and the owner of everything the three states below read.
@@ -18,12 +26,20 @@ interface Props {
  * a question, and a character with teams is shown a door — so this holds the fetch, the create
  * and the archived switch, and renders one of them.
  */
-export default function TeamList({ characterName }: Props) {
+export default function TeamList({ characterName, mode }: Props) {
   const [teams, setTeams] = useState<Team[] | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
+  const [extras, setExtras] = useState<CreateTeamExtras>(NO_EXTRAS)
   const [error, setError] = useState<string | null>(null)
+
+  // One node, rendered inside whichever create form is on screen. Built here because this is
+  // where the state and the submit live; the two screens differ in layout, not in what they ask.
+  const fields =
+    mode === 'local' ? (
+      <CreateTeamFields value={extras} onChange={setExtras} disabled={false} />
+    ) : null
 
   useEffect(() => {
     let cancelled = false
@@ -48,8 +64,11 @@ export default function TeamList({ characterName }: Props) {
     if (!name.trim()) return
     setError(null)
     try {
-      const team = await createTeam(name.trim())
+      const team = await createTeam(name.trim(), mode === 'local' ? extras : undefined)
       setName('')
+      // The secrets go with it. Leaving them in the boxes would mean the next team created on
+      // this screen silently reuses the last one's join password.
+      setExtras(NO_EXTRAS)
       setCreating(false)
       setTeams((current) => byRecent([...(current ?? []), team]))
     } catch (problem: unknown) {
@@ -83,11 +102,13 @@ export default function TeamList({ characterName }: Props) {
     return (
       <FirstTeam
         characterName={characterName}
+        mode={mode}
         name={name}
         onName={setName}
         onSubmit={submit}
         onShowArchived={() => setShowArchived(true)}
         error={error}
+        fields={fields}
       />
     )
   }
@@ -102,6 +123,7 @@ export default function TeamList({ characterName }: Props) {
       onCreating={setCreating}
       onShowArchived={() => setShowArchived(true)}
       error={error}
+      fields={fields}
     />
   )
 }

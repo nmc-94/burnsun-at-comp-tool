@@ -22,6 +22,15 @@ with COMPTOOL_DEV_AUTH_ENABLED, COMPTOOL_DEV_AUTH_SECRET, COMPTOOL_DEV_RESOLVE_E
 COMPTOOL_SESSION_COOKIE_SECURE=false set. Point the suite elsewhere with E2E_BASE_URL.`
 
 export default async function globalSetup(config: FullConfig): Promise<void> {
+  // The local-accounts project runs against a *different* server — one with no dev-auth back
+  // door, because claiming a name is the front door there and the two are different
+  // configurations of the same app. Probing for dev-auth there would fail on a correctly
+  // configured server, so when the shape of the environment says "local only" — a local URL
+  // given and no ordinary one — there is nothing here to check. That spec's own sign-in is its
+  // preflight.
+  const localOnly = process.env.E2E_LOCAL_BASE_URL ?? process.env.E2E_PASSWORD_BASE_URL
+  if (localOnly && !process.env.E2E_BASE_URL) return
+
   const baseURL = config.projects[0]?.use?.baseURL ?? 'http://127.0.0.1:8000'
   const api = await request.newContext({ baseURL })
   try {

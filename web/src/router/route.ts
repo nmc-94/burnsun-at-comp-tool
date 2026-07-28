@@ -34,8 +34,11 @@ export type Route =
    * somewhere else entirely.
    */
   | { readonly kind: 'pick-ban'; readonly teamId: string }
-  /** One comp, frozen, behind a share slug. The only route a visitor needs no session for. */
+  /** One comp, frozen, behind a share slug. Needs no session. */
   | { readonly kind: 'share'; readonly slug: string }
+  /** An invitation to a team. Also needs no session — the screen mints one, because an
+   *  invitee arriving cold should meet one form rather than a sign-in and then a join. */
+  | { readonly kind: 'join'; readonly slug: string }
   | { readonly kind: 'not-found'; readonly path: string }
 
 const SELECTION_PARAM = 'sel'
@@ -76,6 +79,13 @@ export function parseRoute(url: string): Route {
     return { kind: 'share', slug: first }
   }
 
+  // Spelled out rather than shortened like `/s/`, and for the opposite reason: a share link is
+  // pasted into a channel where brevity helps, while this one is handed to a person alongside
+  // a password, and "join" tells them what it is before they click it.
+  if (head === 'join' && first && parts.length === 2) {
+    return { kind: 'join', slug: first }
+  }
+
   if (head === 'teams' && first) {
     if (parts.length === 2) {
       return { kind: 'workspace', teamId: first, boardId: null, view: 'board', selection }
@@ -108,6 +118,8 @@ export function hrefFor(route: Route): string {
       return `/teams/${encodeURIComponent(route.teamId)}/pick-ban`
     case 'share':
       return `/s/${encodeURIComponent(route.slug)}`
+    case 'join':
+      return `/join/${encodeURIComponent(route.slug)}`
     case 'comp':
       return `/comps/${encodeURIComponent(route.compId)}`
     case 'not-found':
@@ -140,7 +152,11 @@ export function workspaceRoute(teamId: string, boardId: string | null = null): R
  * what stops a future route being made public by forgetting about it.
  */
 export function isPublic(route: Route): boolean {
-  return route.kind === 'share'
+  // Two, and they are public for different reasons. A share needs no session because it shows
+  // a frozen copy that belongs to nobody. A join needs no session because it is where one is
+  // *obtained* — handing an invitee the sign-in screen first would make them claim a name,
+  // come back, and present a password, when the invitation asks for both at once.
+  return route.kind === 'share' || route.kind === 'join'
 }
 
 /**

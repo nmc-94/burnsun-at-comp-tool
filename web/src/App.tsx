@@ -4,11 +4,12 @@ import { ApiError, request } from './api'
 import AppHeader from './AppHeader'
 import { brand } from './brand/brandConfig'
 import CompResolver from './comps/CompResolver'
+import JoinScreen from './join/JoinScreen'
 import PickBanScreen from './pickban/PickBanScreen'
 import { hrefFor, isPublic, isWide, parseRoute, workspaceRoute } from './router/route'
 import type { Route } from './router/route'
 import { navigate, useRoute } from './router/useRoute'
-import type { Character, Session } from './session'
+import type { Character, Session, SignInMode } from './session'
 import { fetchSession } from './session'
 import ShareView from './share/ShareView'
 import SignInScreen from './SignInScreen'
@@ -38,7 +39,7 @@ export default function App() {
   const loadSession = useCallback(() => {
     fetchSession()
       .then(setSession)
-      .catch(() => setSession({ ssoEnabled: false, character: null }))
+      .catch(() => setSession({ signIn: 'none', character: null }))
   }, [])
 
   /**
@@ -62,7 +63,7 @@ export default function App() {
         const here = parseRoute(window.location.pathname + window.location.search)
         if (!isPublic(here)) navigate({ kind: 'teams' }, { replace: true })
       })
-      .catch(() => setSession({ ssoEnabled: false, character: null }))
+      .catch(() => setSession({ signIn: 'none', character: null }))
   }, [])
 
   useEffect(() => {
@@ -91,8 +92,18 @@ export default function App() {
   // depends on no session, so it paints in parallel with the /auth/me probe rather than behind
   // it. Everywhere else, no character means the sign-in screen — which replaces the shell
   // rather than sitting inside it, so there is no chrome around it to explain itself twice.
+  // Before the sign-in gate below and outside the shell, because it is where a session is
+  // *obtained* rather than a place that needs one — an invitee arriving with no cookie should
+  // meet the invitation, not a sign-in screen that forgets what they were sent.
+  if (route.kind === 'join') {
+    return <JoinScreen slug={route.slug} session={session} onJoined={loadSession} />
+  }
+
   if (!isPublic(route) && !session?.character) {
-    return <SignInScreen session={session} />
+    // `loadSession` rather than `onSessionChanged`: signing in is the opposite of signing
+    // out, and the redirect-to-teams that one carries would be wrong here — a deep link that
+    // sent somebody to this screen should land them back on the link.
+    return <SignInScreen session={session} onSignedIn={loadSession} />
   }
 
   return (
@@ -124,7 +135,7 @@ export default function App() {
       )}
 
       <main className={mainClass(route)}>
-        {renderRoute(route, session?.character ?? null)}
+        {renderRoute(route, session?.character ?? null, session?.signIn ?? 'none')}
       </main>
     </div>
   )
@@ -140,10 +151,13 @@ function mainClass(route: Route): string | undefined {
 // teams screen tells someone waiting on an invitation what name to give a captain, because a
 // grant is made against a name — and the workspace needs the *id*, because "is this comp mine"
 // is a question a name cannot answer once anybody can rename themselves.
-function renderRoute(route: Route, character: Character | null) {
+function renderRoute(route: Route, character: Character | null, mode: SignInMode) {
   switch (route.kind) {
     case 'teams':
-      return <TeamList characterName={character?.characterName ?? null} />
+      // `mode` because creating a team asks for different things under each door, and because
+      // what to tell somebody with no team differs too — a name to pass on, or a link to ask
+      // for.
+      return <TeamList characterName={character?.characterName ?? null} mode={mode} />
     case 'workspace':
       // `view` is Phase G's compare screen. Until it exists a compare URL still resolves to
       // a real board rather than to nothing, which is what keeps a shared link from rotting.
@@ -178,6 +192,11 @@ function renderRoute(route: Route, character: Character | null) {
       )
     case 'share':
       return <ShareView slug={route.slug} />
+    // Never reached: an invitation is intercepted above and rendered instead of the shell,
+    // because it is where a session is obtained rather than a place inside one. Listed anyway,
+    // so the switch stays exhaustive and a later reader does not think it was forgotten.
+    case 'join':
+      return null
     case 'comp':
       return <CompResolver compId={route.compId} />
     case 'not-found':

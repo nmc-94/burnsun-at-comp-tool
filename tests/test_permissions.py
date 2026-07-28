@@ -27,8 +27,42 @@ def grant(kind: SubjectKind, subject_id: int | None, level: AccessLevel) -> Team
     )
 
 
+#: A password-mode identity. Negative, because that is the half of the id column EVE never
+#: fills — see ``LocalAccount``. No corporation and no alliance, which a local principal never
+#: has and never will.
+LOCAL = Viewer(character_id=-1)
+LOCAL_OTHER = Viewer(character_id=-2)
+
+
 def test_the_owner_needs_no_grant():
     assert resolve_level(make_team(), [], OWNER) is AccessLevel.OWNER
+
+
+def test_a_negative_principal_resolves_exactly_like_a_character():
+    """The claim the whole password-sign-in design rests on, at the layer that decides.
+
+    Resolution matches integers and has no opinion about where they came from, so a local
+    principal owning a team, holding a grant, and being refused one all behave identically to
+    an EVE character doing the same. If this ever stops being true, everything above it is
+    quietly wrong.
+    """
+    owned = Team(name="Sun Reavers", owner_character_id=LOCAL.character_id, base_level=0)
+    assert resolve_level(owned, [], LOCAL) is AccessLevel.OWNER
+    assert resolve_level(owned, [], LOCAL_OTHER) is AccessLevel.NONE
+
+    granted = [grant(SubjectKind.CHARACTER, LOCAL_OTHER.character_id, AccessLevel.EDITOR)]
+    assert resolve_level(owned, granted, LOCAL_OTHER) is AccessLevel.EDITOR
+    # And a positive id must not be let in by a grant naming a negative one, or the two
+    # populations would leak into each other through arithmetic nobody meant.
+    assert resolve_level(owned, granted, OUTSIDER) is AccessLevel.NONE
+
+
+def test_a_corporation_grant_never_matches_a_local_principal():
+    # Not a gap to be filled later: a local principal belongs to no corporation, so this stays
+    # inert, and `_subject_id_for` returning None is what keeps it from matching everyone.
+    grants = [grant(SubjectKind.CORPORATION, 10, AccessLevel.EDITOR)]
+
+    assert resolve_level(make_team(), grants, LOCAL) is AccessLevel.NONE
 
 
 def test_a_grant_cannot_demote_the_owner():

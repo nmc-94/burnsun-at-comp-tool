@@ -175,6 +175,12 @@ def get_character_resolver(
     ``comptool/dev_resolve.py``. It is chosen here rather than inside ``resolve_character``
     so that the one function which talks to CCP has no idea the alternative exists, and so
     that swapping it is a decision made once, per request, in the open.
+
+    There is deliberately **no local-accounts branch**. One existed briefly, when a grant under
+    that mode was still made by typing a name; it is gone because the mode no longer resolves
+    names at all. ``teams.add_grant`` refuses outright there and points at the team's join link,
+    which needs no lookup — the person joining supplies their own identity. So this function
+    serves EVE deployments and their offline stand-in, and nothing else.
     """
     if settings.dev_resolve_enabled and is_development_environment(settings.environment):
         # Both conditions re-checked here rather than trusted from boot: Settings

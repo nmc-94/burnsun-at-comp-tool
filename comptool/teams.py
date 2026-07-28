@@ -12,6 +12,12 @@ signed-in character, not to the public. That is "public within the tool", a prod
 nobody has asked for. A share link answers the question people actually had, and it does so
 without this switch; see ``comptool/share.py``.
 
+That last argument is weaker under password sign-in than it reads, and the difference is worth
+knowing before anybody quotes it: there, "every signed-in character" means "everyone the
+operator handed the password to", which is a small and already-trusted set rather than the
+whole game. Nothing sets ``base_level`` in either mode, so no code depends on which reading is
+right — but the sentence above was written about one of the two.
+
 **A team you may not see does not exist.** Existence and permission are answered together
 and reported identically, because answering them separately is precisely what turns a 404
 into "wrong team id" and a 403 into "right team id, keep trying".
@@ -25,10 +31,19 @@ and the operator who reads "pending" has been told their teammate is on the way 
 fact nothing is on the way and nothing ever will be. The availability worry it was built
 for is answered without it: the name is still in the box, so trying again is pressing Add
 again. So a grant is either a resolved grant or a 400 with a sentence saying why.
+
+Under password sign-in that rule has a different consequence, and it is the one thing about
+that mode a captain has to learn. The register of who exists is this instance rather than EVE,
+so a name resolves only once its owner has signed in and claimed it — **you cannot add somebody
+who has never opened the tool**. The order of operations inverts: send them the password, they
+claim a name, they tell you the name, you add them. ``_refusal`` says exactly that in place of
+the EVE wording, and ``web/src/teams/FirstTeam.tsx`` already tells the other half of the
+handshake which name to pass on.
 """
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -40,12 +55,15 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from . import join
 from .access import authorize, live
+from .auth import crypto
 from .auth.dependencies import current_viewer
 from .db import get_session
 from .esi import CharacterResolver, Resolution, get_character_resolver
 from .models import AccessLevel, SubjectKind, Team, TeamGrant
 from .permissions import Viewer, resolve_level
+from .settings import Settings, SignInMode, get_settings
 
 router = APIRouter(prefix="/api/v1/teams", tags=["teams"])
 
@@ -104,6 +122,17 @@ class TeamSummary(_Response):
 
 class TeamCreate(_Request):
     name: Name
+    #: Required under local accounts, ignored under EVE SSO. Signing in is open in that mode,
+    #: so without this anybody who reached the site could fill it with teams. Not a guard on
+    #: any team's *data* — that is the join password, which lives on the team and is hashed.
+    creation_key: str = ""
+    #: The team's join password, set at the moment the team is. Required under local accounts,
+    #: because a team with no way in is a team its owner has to go and configure before it is
+    #: useful, and the one thing they certainly know at this moment is who they mean to invite.
+    #: Clearable afterwards from settings — see ``join.clear_join_password``.
+    password: str = ""
+    #: What that password grants: ``viewer`` or ``editor``.
+    password_level: str = "viewer"
 
 
 class TeamRename(_Request):
@@ -201,7 +230,30 @@ def create_team(
     body: TeamCreate,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    settings: Settings = Depends(get_settings),
 ) -> TeamSummary:
+    """Make a team, and — under local accounts — the way into it.
+
+    Two extra things are asked for in that mode, and they guard different things. The creation
+    key says this caller may make a team at all, because signing in is open there and the
+    alternative is a stranger filling the instance. The password says who may *join* this one,
+    and is the credential this whole mode is built around.
+
+    Under EVE SSO neither is asked for: sign-in is already a gate, and access is granted by
+    character name rather than by a shared secret.
+    """
+    local = settings.sign_in_mode is SignInMode.LOCAL
+    if local:
+        _require_creation_key(body.creation_key, settings)
+        if len(body.password) < join.TEAM_PASSWORD_MIN_LENGTH:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Give the team a join password of at least "
+                f"{join.TEAM_PASSWORD_MIN_LENGTH} characters, or a few words.",
+            )
+        if body.password_level not in ("viewer", "editor"):
+            raise HTTPException(status_code=422, detail="Access must be viewer or editor.")
+
     team = Team(
         name=body.name,
         owner_character_id=viewer.character_id,
@@ -213,11 +265,38 @@ def create_team(
         # flushed the attribute is None, and the resolver turns None into an error rather
         # than into a private team.
         base_level=AccessLevel.NONE,
+        # Minted in both modes, because the column is NOT NULL and a team is entitled to a
+        # name for its door whether or not this deployment uses one. Under SSO the password
+        # beside it stays null, which is what makes the link inert.
+        join_slug=join.mint_join_slug(session),
+        access_password_hash=crypto.hash_password(body.password) if local else None,
+        access_password_level=(
+            AccessLevel.EDITOR if body.password_level == "editor" else AccessLevel.VIEWER
+        ),
     )
     session.add(team)
     session.commit()
     # The creator is owner by the column; no self-grant row, so nothing can revoke it.
     return _summary(team, AccessLevel.OWNER)
+
+
+def _require_creation_key(offered: str, settings: Settings) -> None:
+    """403, and not the 404 this module uses for a team you may not see.
+
+    Different question, different answer. That 404 hides *whether a team exists*, which is a
+    secret worth keeping. This hides nothing — the field is on the form, the README explains
+    it, and ``/api/health`` says the deployment is in a mode that has one. Answering 404 would
+    only send somebody hunting a routing bug.
+    """
+    # Constant time, over bytes: compare_digest raises TypeError on a non-ASCII str, and a key
+    # with an accent in it must refuse the caller rather than crash the server.
+    if not secrets.compare_digest(
+        offered.encode("utf-8"), settings.team_creation_key.encode("utf-8")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="That is not the team creation key for this instance.",
+        )
 
 
 @router.get("/{team_id}", response_model=TeamSummary)
@@ -294,6 +373,7 @@ def add_grant(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
     resolve: CharacterResolver = Depends(get_character_resolver),
+    settings: Settings = Depends(get_settings),
 ) -> GrantDetail:
     """Add a character by name, or refuse and say why.
 
@@ -307,6 +387,19 @@ def add_grant(
     ``messageFor`` shows a string detail as the message; anything else surfaces as the raw
     status line, which is the failure ``FirstTeam.tsx`` still carries a comment about.
     """
+    if settings.sign_in_mode is SignInMode.LOCAL:
+        # There is no register of people to look a name up in here. Under EVE SSO a name is
+        # something the game vouches for and can be resolved before its owner has ever opened
+        # this tool; under local accounts a name exists only once somebody has claimed it, so
+        # adding by name could only ever reach people who are already here — and the join link
+        # reaches them without the captain typing anything. 409 rather than 404: the route is
+        # real and the caller may well be the owner; what is wrong is the request.
+        raise HTTPException(
+            status_code=409,
+            detail="This instance adds people by join link. Send them the team's link and "
+            "password from team settings.",
+        )
+
     access = authorize(session, team_id, viewer, AccessLevel.OWNER)
     team = live(access)
     name = body.character_name
@@ -339,6 +432,10 @@ def _refusal(name: str, resolution: Resolution) -> HTTPException:
     one says try again, the other says the request itself was wrong. The SPA leaves the name
     in the box either way, so "try again" means pressing Add again — which is why losing the
     old pending row costs nothing.
+
+    EVE-worded throughout, and now unconditionally so: the caller above refuses local accounts
+    before any lookup happens, so this is only ever reached on a deployment where EVE really
+    is the register of who exists.
     """
     if resolution is Resolution.UNAVAILABLE:
         return HTTPException(

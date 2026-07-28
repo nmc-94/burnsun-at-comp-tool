@@ -639,7 +639,7 @@ input { font: inherit; }
       <table>
         <thead><tr><th>Screen</th><th>Reads</th></tr></thead>
         <tbody>
-          <tr><td>Signed out</td><td><code>Session.ssoEnabled</code></td></tr>
+          <tr><td>Signed out</td><td><code>Session.signIn</code> — <code>"sso"</code>, <code>"local"</code> or <code>"none"</code></td></tr>
           <tr><td>No team</td><td><code>Session.character.characterName</code>; <code>createTeam(name)</code></td></tr>
           <tr><td>On teams</td><td><code>Team.name</code>, <code>.yourLevel</code>, <code>.updatedAt</code>, <code>.archived</code>; <code>Session.character</code></td></tr>
         </tbody>
@@ -690,12 +690,22 @@ input { font: inherit; }
         <thead><tr><th>State</th><th>As built</th></tr></thead>
         <tbody>
           <tr>
-            <td><code>ssoEnabled: false</code></td>
+            <td><code>signIn: "none"</code></td>
             <td>
               <span class="done">Same layout, one muted line.</span> Mark, wordmark and tag stay put;
               the button's slot holds the explanation instead. A button that could only ever 503 is
               worse than no button, and this screen is otherwise nothing but the button — so the
               sentence has to <em>take its place</em> rather than sit beside it.
+            </td>
+          </tr>
+          <tr>
+            <td><code>signIn: "local"</code></td>
+            <td>
+              <span class="done">Same layout, one field in the same slot.</span> A name box and a
+              button where the one button was, plus the sentence warning that a name somebody
+              already holds signs you in <em>as</em> them. The slot grows; nothing above it moves.
+              There is no other origin to send anybody to and no instance password to ask for —
+              the credentials in that mode belong to teams, not to the door.
             </td>
           </tr>
           <tr>

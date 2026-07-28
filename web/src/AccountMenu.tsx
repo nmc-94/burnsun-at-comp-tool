@@ -12,13 +12,16 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 
+import { messageFor } from './api'
 import { GearIcon, PickBanIcon, SignOutIcon, TeamsIcon } from './HeaderIcons'
 import { buildCcpPortraitUrl } from './lib/icons'
+import { hrefFor } from './router/route'
 import { useLinkProps } from './router/useRoute'
 import { readSettings, writeSetting } from './settings'
 import type { Settings } from './settings'
 import type { Session } from './session'
-import { signIn, signOut, signOutEverywhere } from './session'
+import { renameMe, signIn, signOut, signOutEverywhere } from './session'
+import Dialog from './ui/Dialog'
 
 interface Props {
   readonly session: Session
@@ -29,6 +32,7 @@ interface Props {
 export default function AccountMenu({ session, teamId, onChanged }: Props) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   const shell = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const menuId = useId()
@@ -59,11 +63,22 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
   if (!session.character) {
     // Only reachable on a public route — everywhere else a missing character renders the
     // sign-in screen instead of this shell. A share view still gets a way in.
-    if (!session.ssoEnabled) {
+    if (session.signIn === 'none') {
       return (
         <span className="chip-muted" data-testid="sign-in-unavailable">
           sign-in unavailable
         </span>
+      )
+    }
+    if (session.signIn === 'local') {
+      // A link, not a button: there is no other origin to send anybody to, and the form lives
+      // on the sign-in screen — which is what any non-public route renders while there is no
+      // character. So "sign in" means "leave this share view", and an anchor says that
+      // honestly, middle-click and all.
+      return (
+        <a className="header-pill" data-testid="sign-in-button" href={hrefFor({ kind: 'teams' })}>
+          Sign in
+        </a>
       )
     }
     return (
@@ -116,7 +131,12 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
               <span className="character-name" data-testid="user-character-name">
                 {characterName}
               </span>
-              <span className="header-menu-meta">EVE SSO</span>
+              {/* What vouched for this name. Worth saying rather than assuming, because the
+                  two mean different things: EVE proved the character, while a claimed name is
+                  only as good as who else holds the password. */}
+              <span className="header-menu-meta">
+                {session.signIn === 'local' ? 'This instance' : 'EVE SSO'}
+              </span>
             </span>
           </div>
 
@@ -125,6 +145,21 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
           <TeamsItem onNavigate={close} />
           {teamId && <TeamSettingsItem teamId={teamId} onNavigate={close} />}
           {teamId && <PickBanItem teamId={teamId} onNavigate={close} />}
+          {/* Only where a name is this instance's to change. Under EVE SSO the name is the
+              character's and renaming happens in the game, not here. */}
+          {session.signIn === 'local' && (
+            <button
+              className="header-menu-item"
+              data-testid="menu-rename"
+              type="button"
+              onClick={() => {
+                setRenaming(true)
+                setOpen(false)
+              }}
+            >
+              <PencilIcon /> Change your name
+            </button>
+          )}
 
           <div className="header-menu-sep" />
 
@@ -161,7 +196,119 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
           </button>
         </div>
       )}
+
+      {renaming && (
+        <RenameDialog
+          current={characterName}
+          onClose={() => setRenaming(false)}
+          onRenamed={() => {
+            setRenaming(false)
+            onChanged()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * Change the name this instance knows you by.
+ *
+ * Only reachable under password sign-in, and it exists because without it a typo on first
+ * claim is permanent *and* unfixable: the misspelling is what a captain has to be told in
+ * order to add you, and the name you meant is not free to re-claim if the typo was close.
+ *
+ * Nothing but the name moves. Everything you own hangs off an id this cannot touch, which is
+ * why the copy can promise that outright instead of hedging.
+ */
+function RenameDialog({
+  current,
+  onClose,
+  onRenamed,
+}: {
+  readonly current: string
+  readonly onClose: () => void
+  readonly onRenamed: () => void
+}) {
+  const [name, setName] = useState(current)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const field = useRef<HTMLInputElement>(null)
+
+  const trimmed = name.trim()
+  const ready = trimmed.length > 0 && trimmed !== current && !busy
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!ready) return
+    setBusy(true)
+    setError(null)
+    try {
+      await renameMe(trimmed)
+      onRenamed()
+    } catch (problem: unknown) {
+      // The server's sentence, which for the one interesting failure names the person already
+      // using the name. `messageFor` unwraps it; a 422 array would not unwrap, which is why
+      // maxLength below mirrors the server's own bound.
+      setError(messageFor(problem))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog
+      title="Change your name"
+      testId="rename-dialog"
+      initialFocus={field}
+      onClose={() => {
+        if (!busy) onClose()
+      }}
+    >
+      <form data-testid="rename-form" onSubmit={submit}>
+        <label className="dlg-label" htmlFor="rename-field">
+          Your name
+        </label>
+        <input
+          id="rename-field"
+          ref={field}
+          className="dlg-input"
+          data-testid="rename-field"
+          value={name}
+          maxLength={200}
+          // Off, unlike the sign-in field. This is not a credential being entered, and a
+          // password manager offering to overwrite the saved one from here would be wrong.
+          autoComplete="off"
+          disabled={busy}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <p className="dlg-note">
+          Your teams, comps and access all stay with you — only the name changes. Tell your
+          captain the new one, since that is what they add you by.
+        </p>
+        {error && (
+          <p className="dlg-error" data-testid="rename-error" role="alert">
+            {error}
+          </p>
+        )}
+        <button className="btn accent" data-testid="rename-submit" type="submit" disabled={!ready}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </form>
+    </Dialog>
+  )
+}
+
+/** Sized and coloured by `.header-menu-item svg`, like every other glyph in the menu. */
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+      <path
+        d="M11.1 2.9a1.6 1.6 0 0 1 2.3 2.3L5.7 12.9l-3 .7.7-3 7.7-7.7z"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }
 

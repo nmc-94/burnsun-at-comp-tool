@@ -19,12 +19,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from . import __version__
 from .auth.dev import router as dev_auth_router
+from .auth.local import router as local_auth_router
 from .auth.routes import router as auth_router
 from .comments import router as comments_router
 from .comps import router as comps_router
 from .comps import team_router as team_comps_router
 from .db import dispose_db, get_engine, init_db
 from .health import router as health_router
+from .join import router as join_router
 from .logging_config import configure_logging
 from .models import AppMeta
 from .rulesets import router as rulesets_router
@@ -50,6 +52,15 @@ def _write_boot_marker() -> None:
     )
     with get_engine().begin() as conn:
         conn.execute(stmt)
+
+
+# There is deliberately no session eviction at boot any more. An earlier draft kept one: the
+# access password lived in the environment, so changing it was a redeploy, and every session it
+# had minted had to die at the next start or a rotation would not have removed anybody. Nothing
+# here is a sign-in credential now — a team's password is a column its owner edits at runtime,
+# and changing it must *not* evict, because membership is a team_grant row and the whole point
+# of moving the credential was that rotating it stops new joins rather than throwing the team
+# out. Removing one person is deleting their grant.
 
 
 @asynccontextmanager
@@ -93,7 +104,18 @@ app.include_router(auth_router)
 # production image was considered and rejected for the same shape of reason: one artifact,
 # configuration decides, or CI tests a build that is not the one deployed.
 app.include_router(dev_auth_router)
+# The other front door, for a deployment with no EVE application. Registered unconditionally
+# and guarded inside, for the reason given just above: a router chosen at import time is a
+# guard no test can reach, because the suite overrides settings through dependency_overrides
+# long after this module has read them.
+app.include_router(local_auth_router)
 app.include_router(teams_router)
+# Joining a team by link, plus the controls its owner uses to hand one out. Registered after
+# teams because it hangs routes off /teams/{id} as well as its own /join prefix, and read
+# beside share_router above: they are the app's two capability-link features and the one
+# difference between them — that a join link is not on its own the authorization — is the
+# thing most worth noticing when either changes.
+app.include_router(join_router)
 # Comps arrive as two routers because they are addressed two ways: nested under a team to
 # list and create, and on their own id thereafter.
 app.include_router(team_comps_router)

@@ -125,7 +125,7 @@ const rowFor = (name: string) =>
   screen.getAllByTestId('grant-list-item').find((row) => within(row).queryByText(name))!
 
 const field = () =>
-  screen.getByRole('textbox', { name: 'Search names, or type a character name to add' })
+  screen.getByRole('textbox', { name: 'Search names, or type a name to add' })
 
 async function opened() {
   open()
@@ -478,7 +478,7 @@ describe('team settings', () => {
       ['button', 'Close'],
       ['button', 'Done'],
       ['button', 'Paste a list'],
-      ['textbox', 'Search names, or type a character name to add'],
+      ['textbox', 'Search names, or type a name to add'],
       ['textbox', 'Team name'],
       ['button', 'Grant viewer access'],
       ['button', 'Grant editor access'],

@@ -1,12 +1,18 @@
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
+
+import type { SignInMode } from '../session'
 
 interface Props {
   characterName: string | null
+  mode: SignInMode
   name: string
   onName: (name: string) => void
   onSubmit: (event: FormEvent) => void
   onShowArchived: () => void
   error: string | null
+  /** The instance key and join password, under local accounts; null under EVE SSO. Passed in
+   *  rather than built here because the parent owns the state and the submit. */
+  fields: ReactNode
 }
 
 /**
@@ -17,11 +23,13 @@ interface Props {
  */
 export default function FirstTeam({
   characterName,
+  mode,
   name,
   onName,
   onSubmit,
   onShowArchived,
   error,
+  fields,
 }: Props) {
   return (
     <div className="first" data-testid="team-first-screen">
@@ -52,18 +60,29 @@ export default function FirstTeam({
           </button>
         </form>
 
+        {fields}
+
         {error && (
           <p className="first-error" data-testid="team-list-error" role="alert">
             {error}
           </p>
         )}
 
-        {/* Grants are made against a character *name*, so the one thing someone waiting to be
-            added needs is the spelling of their own. */}
-        {characterName && (
-          <p className="first-note">
-            Waiting on a captain instead? They add <b>{characterName}</b> by name.
+        {/* Two different things to tell somebody with no team, because the two modes get them
+            in two different ways. Under EVE SSO a captain adds them by name, so the useful
+            thing is the spelling of their own. Under local accounts nobody can be added by
+            name at all — a captain sends a link and a password — so the useful thing is to go
+            and ask for one. */}
+        {mode === 'local' ? (
+          <p className="first-note" data-testid="first-note">
+            Waiting on a captain instead? Ask them for their team&apos;s join link and password.
           </p>
+        ) : (
+          characterName && (
+            <p className="first-note" data-testid="first-note">
+              Waiting on a captain instead? They add <b>{characterName}</b> by name.
+            </p>
+          )
         )}
 
         {/* Archiving your only team would otherwise strand it: restore lives on the team's own

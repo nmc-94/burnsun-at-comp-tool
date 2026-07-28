@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import AuthEsiToken, AuthSession, SubjectKind, Team, TeamGrant
-from ..settings import Settings, get_settings
+from ..settings import Settings, SignInMode, get_settings
 from . import crypto, sessions
 from .dependencies import current_session, optional_session, sso_client
 from .sso import SsoClient, SsoError, start_login
@@ -48,9 +48,15 @@ class CurrentCharacter(_Response):
 
 
 class SignedIn(_Response):
-    #: False when the server has no EVE application configured, so the SPA can leave the
-    #: sign-in button out rather than offer a button that cannot work.
-    sso_enabled: bool
+    #: Which door this deployment opens: ``sso``, ``password``, or ``none`` when it has
+    #: neither configured. The SPA draws a different screen for each, and cannot find out any
+    #: other way — a sign-in button that could only ever 503 is worse than no button.
+    #:
+    #: One field rather than a flag per mode, because the two cannot both be on: a deployment
+    #: configured for both refuses to boot (``settings._check_password_auth_configuration``),
+    #: and a pair of booleans would still be able to spell the state that cannot exist. The
+    #: same argument ``models.TeamGrant`` makes about ``subject_id``.
+    sign_in: SignInMode
     #: Null when nobody is signed in — which is an answer, not an error.
     character: CurrentCharacter | None
 
@@ -233,8 +239,12 @@ def me(
 
     Answers 200 either way. The SPA calls this once on boot, and "nobody" is a perfectly
     good answer to that question — a 401 would make an anonymous page load look like a
-    failure. It also reports whether signing in is possible at all, which an anonymous
-    client needs and cannot find out any other way.
+    failure. It also reports *how* signing in works here, which an anonymous client needs in
+    order to draw anything at all and cannot find out any other way.
+
+    Answers for both doors, and knows about neither. The character on a password session was
+    minted by ``auth/local.py`` and reads back through the same ``optional_session``; all
+    this route contributes is the mode, which it takes off settings.
     """
     response.headers["Cache-Control"] = "no-store"
     character = (
@@ -246,7 +256,7 @@ def me(
         if record is not None
         else None
     )
-    return SignedIn(sso_enabled=settings.esi_enabled, character=character)
+    return SignedIn(sign_in=settings.sign_in_mode, character=character)
 
 
 @router.post("/logout", status_code=204)

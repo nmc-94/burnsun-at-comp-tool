@@ -2,14 +2,34 @@
 // on the server, and everything here is one line of URL plus a shape.
 
 import { request } from '../api'
+import type { CreateTeamExtras } from './CreateTeamFields'
 import type { Grant, GrantableLevel, Team } from './types'
 
 export function listTeams(archived = false): Promise<Team[]> {
   return request<Team[]>(`/api/v1/teams?archived=${archived}`)
 }
 
-export function createTeam(name: string): Promise<Team> {
-  return request<Team>('/api/v1/teams', { method: 'POST', body: JSON.stringify({ name }) })
+/**
+ * Make a team.
+ *
+ * `extras` is required under local accounts and ignored under EVE SSO — the server decides
+ * which, from its own mode, rather than the SPA guessing. Sent as a spread so the SSO call site
+ * stays exactly what it was.
+ */
+export function createTeam(name: string, extras?: CreateTeamExtras): Promise<Team> {
+  return request<Team>('/api/v1/teams', {
+    method: 'POST',
+    body: JSON.stringify(
+      extras
+        ? {
+            name,
+            creationKey: extras.creationKey,
+            password: extras.password,
+            passwordLevel: extras.level,
+          }
+        : { name },
+    ),
+  })
 }
 
 export function getTeam(teamId: string): Promise<Team> {

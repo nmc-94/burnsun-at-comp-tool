@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 import { ago } from '../lib/ago'
 import { workspaceRoute } from '../router/route'
@@ -15,6 +15,9 @@ interface Props {
   onCreating: (creating: boolean) => void
   onShowArchived: () => void
   error: string | null
+  /** The instance key and join password, under local accounts; null under EVE SSO. Passed in
+   *  rather than built here because the parent owns the state and the submit. */
+  fields: ReactNode
 }
 
 /**
@@ -33,6 +36,7 @@ export default function TeamPicker({
   onCreating,
   onShowArchived,
   error,
+  fields,
 }: Props) {
   const input = useRef<HTMLInputElement>(null)
 
@@ -113,6 +117,8 @@ export default function TeamPicker({
             </button>
           </form>
         )}
+
+        {creating && fields}
 
         {error && (
           <p className="picker-error" data-testid="team-list-error" role="alert">

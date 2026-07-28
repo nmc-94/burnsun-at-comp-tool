@@ -13,6 +13,21 @@ import { defineConfig, devices } from '@playwright/test'
  */
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8000'
 
+/**
+ * A second server, running the *other* door.
+ *
+ * Local accounts and the development back door are different configurations of one app —
+ * `COMPTOOL_LOCAL_AUTH_ENABLED` refuses to boot alongside `COMPTOOL_ESI_ENABLED`, and
+ * `dev-login` mints positive character ids while a local principal's is negative — so the two
+ * cannot be exercised against the same process. Rather than teach every spec about a mode,
+ * the local spec gets its own project and its own URL.
+ *
+ * Unset by default, so the project does not exist, `npx playwright test` is unchanged, and CI
+ * needs no new service. Set it to point at a server started with
+ * `COMPTOOL_LOCAL_AUTH_ENABLED=true COMPTOOL_TEAM_CREATION_KEY=… COMPTOOL_SESSION_COOKIE_SECURE=false`.
+ */
+const localBaseURL = process.env.E2E_LOCAL_BASE_URL ?? process.env.E2E_PASSWORD_BASE_URL
+
 export default defineConfig({
   testDir: './specs',
   outputDir: './test-results',
@@ -49,8 +64,26 @@ export default defineConfig({
   },
 
   projects: [
+    // Registered only when there is a server to run it against — see `passwordBaseURL`. Listed
+    // first so `--project=password` is easy to reach, and excluded from `chromium` below by
+    // that project's testIgnore, so the spec never runs against a dev-auth server where its
+    // sign-in screen does not exist.
+    ...(localBaseURL
+      ? [
+          {
+            name: 'local',
+            testMatch: /local-auth\.spec\.ts/,
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1440, height: 900 },
+              baseURL: localBaseURL,
+            },
+          },
+        ]
+      : []),
     {
       name: 'chromium',
+      testIgnore: /local-auth\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         // AFTER the spread, deliberately: Desktop Chrome carries its own 1280x720, which
