@@ -16,11 +16,12 @@
 // one tile leave the other nineteen alone: the board holds a list of ids, so a keystroke
 // sets state inside one hook instance and React re-renders one subtree.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
 import { messageFor } from '../api'
 import { evaluate } from '../engine'
 import type { LegalityResult } from '../engine'
+import { getSignal, subscribeSignal } from '../live/team-events'
 import { loadRulesetVersion } from '../rulesets/cache'
 import type { RulesetVersionDetail } from '../rulesets/types'
 import { getComp, renameComp, replaceSlots, replaceTags } from './api'
@@ -38,6 +39,19 @@ const SAVE_DEBOUNCE_MS = 600
 /** How far back Ctrl+Z reaches in one tile. Deep enough to cover a session's fumbling over a
  *  ten-hull comp, shallow enough that twenty tiles holding one each is nothing. */
 const UNDO_DEPTH = 50
+
+/**
+ * A change somebody else made that this tile is holding back rather than applying.
+ *
+ * Only ever set when there is unsaved work on screen. A remote change arriving on a tile with
+ * nothing outstanding is simply applied, and the person looking at it sees the new hulls —
+ * that is the whole feature. This is the other case, and it exists because taking somebody's
+ * half-typed comp away from them to show them somebody else's is not an improvement.
+ */
+export interface RemoteChange {
+  /** Who the server said made it, when it knew. Null on a resync, which names nobody. */
+  readonly actor: string | null
+}
 
 export interface CompDocument {
   readonly comp: CompDetail | null
@@ -57,6 +71,10 @@ export interface CompDocument {
   readonly saveTags: (next: CompTagsWrite) => void
   /** Record a share link being minted, updated or withdrawn, without a re-fetch. */
   readonly patchShare: (slug: string | null) => void
+  /** Somebody else's change, waiting because this tile has unsaved work. Null the rest of the time. */
+  readonly remote: RemoteChange | null
+  /** Take the server's version of this comp, discarding whatever is on screen unsaved. */
+  readonly reloadRemote: () => void
   /**
    * Get the server caught up with what is on screen, now, and wait for it.
    *
@@ -133,6 +151,14 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   // about to make the server disagree with it.
   const inFlight = useRef(0)
 
+  // Somebody else's change, and the bookkeeping that keeps it to one flag per change. Declared
+  // up here with the other per-comp state because the load effect below resets all three.
+  const [remote, setRemote] = useState<RemoteChange | null>(null)
+  /** The newest revision this tile has taken the server's answer for. */
+  const adopted = useRef(0)
+  /** The newest revision this tile has raised a flag about. */
+  const flagged = useRef(0)
+
   useEffect(() => {
     let cancelled = false
     setComp(null)
@@ -145,6 +171,14 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     past.current = []
     future.current = []
     onScreen.current = []
+    // This read *is* the newest version of this comp, so nothing the stream has said about it
+    // so far is news. Without this, a tile opening on a comp somebody edited while it was
+    // closed — a board switch away, a comp on another board — would load it and immediately
+    // load it again, and a tile mounting straight into a "changed elsewhere" flag would be
+    // reporting a change it is already showing.
+    adopted.current = getSignal(compId).revision
+    flagged.current = adopted.current
+    setRemote(null)
 
     // Waited on before the read, not after: closing a tile flushes its last edit from a
     // cleanup nobody can await, so a tile opening on the same comp — the same comp on two
@@ -348,6 +382,120 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     )
   }, [])
 
+  /**
+   * What the server has said about this comp since the board opened.
+   *
+   * Subscribed per comp id, so an event about one comp wakes one tile. The board is not in the
+   * path at all — routing this through it would put a state change on the common ancestor of
+   * twenty tiles for every hull anybody swaps, which is §6.7 in reverse.
+   */
+  const signal = useSyncExternalStore(
+    useCallback((notify: () => void) => subscribeSignal(compId, notify), [compId]),
+    useCallback(() => getSignal(compId), [compId]),
+  )
+
+  /**
+   * Whether there is work on screen the server does not have.
+   *
+   * Three ways for that to be true, and they are genuinely different: an edit still inside the
+   * debounce, a write in the air whose answer has not come back, and a write that failed and
+   * left the edit standing (`save` keeps it on purpose — reverting under a cursor loses work
+   * somebody can see).
+   */
+  const outstanding = useCallback(
+    () =>
+      inFlight.current > 0 ||
+      saveState === 'error' ||
+      (pending.current !== null && JSON.stringify(pending.current) !== persisted.current),
+    [saveState],
+  )
+
+  /**
+   * Take the comp as the server now has it.
+   *
+   * Re-reads rather than being handed the new state, because the event carries an
+   * invalidation and not a comp — see `live/team-events.ts`. `whenWritesSettle` first, for
+   * the reason the load effect waits on it: reading while one of our own writes is in the air
+   * loads the comp as it was before that write, which is the one race `in-flight.ts` exists
+   * to close and a push-driven read would otherwise walk straight back into.
+   */
+  const adopt = useCallback(async () => {
+    await whenWritesSettle(compId)
+    const fresh = await getComp(compId)
+    const loaded: PlacedSlot[] = fresh.slots
+      .map((slot) => ({
+        position: slot.position,
+        typeId: slot.typeId,
+        isFlagship: slot.isFlagship,
+      }))
+      .sort((a, b) => a.position - b.position)
+
+    setComp(fresh)
+    noteEmptiness(fresh)
+    setSlots(loaded)
+    onScreen.current = loaded
+    // Both, and in this order. `persisted` is what `save` compares against to decide whether
+    // there is anything to write — left stale, every later save would be skipped as a no-op.
+    // `pending` is cleared because nothing of ours is outstanding any more, which is also what
+    // stops the debounce effect below from scheduling a write of what we just read.
+    persisted.current = JSON.stringify(loaded)
+    pending.current = null
+    // The stacks go. They hold whole-list snapshots of a comp that has since moved under
+    // somebody else's hand, so an undo would not step back through this tile's own history —
+    // it would put the comp back the way it was before an edit this person never made, and
+    // save it.
+    past.current = []
+    future.current = []
+    setSaveState('idle')
+    setError(null)
+    setRemote(null)
+    // One read, both readers. The board needs this for the rail's grouping and its own listing,
+    // and fetching it a second time up there would be the same row twice for one event.
+    changed.current?.(fresh)
+  }, [compId, noteEmptiness])
+
+  useEffect(() => {
+    if (signal.revision === 0 || signal.revision === adopted.current) return
+    if (signal.gone) {
+      // The board takes the tile away; there is nothing to read and nobody to read it for.
+      adopted.current = signal.revision
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      // Checked after the barrier as well as before it: our own write may land while we wait,
+      // and a tile that was busy a moment ago is exactly the one that is now clean.
+      if (!cancelled && outstanding()) {
+        if (flagged.current !== signal.revision) {
+          flagged.current = signal.revision
+          setRemote({ actor: signal.actor })
+        }
+        // Deliberately *not* marked adopted. `saveState` is a dependency here, so when this
+        // tile's own write finishes the effect runs again, finds nothing outstanding, and the
+        // change lands on its own — a flag that clears itself the moment it can.
+        return
+      }
+      adopted.current = signal.revision
+      try {
+        await adopt()
+      } catch (problem: unknown) {
+        if (cancelled) return
+        // Re-armed, so the next event tries again rather than this comp going quiet for good.
+        adopted.current = signal.revision - 1
+        setError(messageFor(problem))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [signal, saveState, outstanding, adopt])
+
+  /** Take the server's version now, discarding what is on screen. The flag's only action. */
+  const reloadRemote = useCallback(() => {
+    adopted.current = signal.revision
+    adopt().catch((problem: unknown) => setError(messageFor(problem)))
+  }, [adopt, signal.revision])
+
   const flush = useCallback(async () => {
     const outstanding = pending.current
     if (outstanding && JSON.stringify(outstanding) !== persisted.current) await save(outstanding)
@@ -370,6 +518,8 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     rename,
     saveTags,
     patchShare,
+    remote,
+    reloadRemote,
     flush,
   }
 }

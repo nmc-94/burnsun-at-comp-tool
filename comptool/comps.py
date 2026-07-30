@@ -42,6 +42,7 @@ from sqlalchemy.orm import Session, selectinload
 from .access import authorize, live, reach_comp
 from .auth.dependencies import current_viewer
 from .db import get_session
+from .live import KIND_CHANGED, KIND_CREATED, KIND_DELETED, origin_client, publish
 from .models import (
     AccessLevel,
     Comp,
@@ -492,6 +493,37 @@ def _apply_tags(session: Session, comp: Comp, body: TagsReplace) -> None:
     for tag in sorted(kept):
         comp.tags.append(CompTag(tag=tag))
 
+    # Touched explicitly, for the reason ``_apply_slots`` gives at length: ``onupdate`` fires
+    # only when the *comp* row is itself in an UPDATE, and a tag change writes ``comp_tag``
+    # rows. The archetype assignment above is a real column, but SQLAlchemy emits nothing for
+    # it when the value has not changed — so re-tagging a comp without touching its archetype
+    # left ``updated_at`` standing still. That also made ``share_stale`` quietly wrong for
+    # exactly that edit, in the direction that says a link is current when it is not.
+    comp.updated_at = func.now()
+
+
+def _announce(comp: Comp, kind: str, viewer: Viewer, origin: str | None) -> None:
+    """Tell the team's open boards, after the write has actually landed.
+
+    Called after ``commit`` in every case, never before: an event is a promise that a re-read
+    will show the change, and a peer that read between a flush and a rollback would be told
+    about something that never happened.
+
+    Reading ``comp.updated_at`` here is a query rather than a field access, and deliberately
+    so. ``_apply_slots`` and ``_apply_tags`` assign ``func.now()``, which SQLAlchemy resolves
+    by expiring the attribute and re-selecting it — the same reason ``_detail`` gets a real
+    timestamp out of it. The value is what the client compares against to decide whether it
+    already has this version.
+    """
+    publish(
+        comp.team_id,
+        kind,
+        comp_id=comp.id,
+        actor=viewer.character_name,
+        origin=origin,
+        updated_at=comp.updated_at,
+    )
+
 
 @team_router.get("/{team_id}/comps", response_model=list[CompDetail])
 def list_comps(
@@ -534,6 +566,7 @@ def create_comp(
     body: CompCreate,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> CompDetail:
     """Start a comp, empty, bound to the ruleset it will be judged by."""
     access = authorize(session, team_id, viewer, AccessLevel.EDITOR)
@@ -549,6 +582,7 @@ def create_comp(
     )
     session.add(comp)
     session.commit()
+    _announce(comp, KIND_CREATED, viewer, origin)
     return _one(session, comp, access.level)
 
 
@@ -568,11 +602,13 @@ def rename_comp(
     body: CompRename,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> CompDetail:
     comp, access = reach_comp(session, comp_id, viewer, AccessLevel.EDITOR)
     live(access)
     comp.name = body.name
     session.commit()
+    _announce(comp, KIND_CHANGED, viewer, origin)
     return _one(session, comp, access.level)
 
 
@@ -582,6 +618,7 @@ def replace_slots(
     body: SlotsReplace,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> CompDetail:
     """Store the comp as it now stands.
 
@@ -593,6 +630,7 @@ def replace_slots(
     live(access)
     _apply_slots(session, comp, body.slots)
     session.commit()
+    _announce(comp, KIND_CHANGED, viewer, origin)
     return _one(session, comp, access.level)
 
 
@@ -602,6 +640,7 @@ def replace_tags(
     body: TagsReplace,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> CompDetail:
     """Say what this comp is: one archetype, any number of tags.
 
@@ -613,6 +652,7 @@ def replace_tags(
     live(access)
     _apply_tags(session, comp, body)
     session.commit()
+    _announce(comp, KIND_CHANGED, viewer, origin)
     return _one(session, comp, access.level)
 
 
@@ -622,6 +662,7 @@ def fork_comp(
     body: CompFork,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> CompDetail:
     """Copy a comp into a new, independent one that remembers where it came from.
 
@@ -701,6 +742,10 @@ def fork_comp(
     # response is: ``fork.ruleset_version`` is otherwise a lazy load of a relationship the new
     # object never had populated.
     made, _ = reach_comp(session, fork.id, viewer, AccessLevel.VIEWER)
+    # The fork only. The parent is untouched by this route — its ``fork_count`` is derived at
+    # read time rather than stored — and announcing a change to it would send every open board
+    # off to re-read a comp that says exactly what it said before.
+    _announce(made, KIND_CREATED, viewer, origin)
     return _one(session, made, access.level)
 
 
@@ -709,6 +754,7 @@ def delete_comp(
     comp_id: uuid.UUID,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> Response:
     """Delete a comp: your own, or anyone's if you own the team.
 
@@ -739,6 +785,16 @@ def delete_comp(
         raise HTTPException(
             status_code=403, detail="Only a comp's creator or the team's owner can delete it"
         )
+    # Read off the row before it goes: after the delete there is no comp left to ask, and
+    # ``_announce`` would be reading an object detached from anything.
+    team_id, gone = comp.team_id, comp.id
     session.delete(comp)
     session.commit()
+    publish(
+        team_id,
+        KIND_DELETED,
+        comp_id=gone,
+        actor=viewer.character_name,
+        origin=origin,
+    )
     return Response(status_code=204)

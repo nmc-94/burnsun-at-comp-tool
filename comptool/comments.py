@@ -41,10 +41,33 @@ from sqlalchemy.orm import Session
 from .access import live, reach_comp
 from .auth.dependencies import current_viewer
 from .db import get_session
-from .models import AccessLevel, CompComment
+from .live import KIND_CHANGED, origin_client, publish
+from .models import AccessLevel, Comp, CompComment
 from .permissions import Viewer
 
 router = APIRouter(prefix="/api/v1/comps", tags=["comments"])
+
+
+def _announce(comp: Comp, viewer: Viewer, origin: str | None) -> None:
+    """Tell the team's open boards that this comp's thread moved.
+
+    ``comp.changed``, the same event a hull swap sends, because it is the same question from
+    a board's point of view: re-read this comp. The count a tile draws lives on the comp
+    payload, so a comment landing changes what a *comp* says — the thread itself is a second
+    read the client makes only where it is showing one.
+
+    ``updated_at`` is deliberately not sent. A comment does not move it — writing to
+    ``comp_comment`` leaves the comp row alone — and passing the unchanged value would tell a
+    client that already holds this version it has nothing to do, which is the one thing that
+    would make this event a no-op.
+    """
+    publish(
+        comp.team_id,
+        KIND_CHANGED,
+        comp_id=comp.id,
+        actor=viewer.character_name,
+        origin=origin,
+    )
 
 
 class _Response(BaseModel):
@@ -145,6 +168,7 @@ def post_comment(
     body: CommentWrite,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> CommentDetail:
     """Add to the thread. Viewer, not editor — see the module docstring."""
     comp, access = reach_comp(session, comp_id, viewer, AccessLevel.VIEWER)
@@ -160,6 +184,7 @@ def post_comment(
     )
     session.add(comment)
     session.commit()
+    _announce(comp, viewer, origin)
     return _detail(comment, viewer)
 
 
@@ -170,6 +195,7 @@ def edit_comment(
     body: CommentWrite,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> CommentDetail:
     """Rewrite your own comment.
 
@@ -186,6 +212,7 @@ def edit_comment(
     comment.body = body.body
     comment.updated_at = datetime.now(tz=UTC)
     session.commit()
+    _announce(comp, viewer, origin)
     return _detail(comment, viewer)
 
 
@@ -195,6 +222,7 @@ def delete_comment(
     comment_id: uuid.UUID,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> Response:
     """Take a comment out of the thread: your own, or anyone's if you own the team.
 
@@ -211,4 +239,5 @@ def delete_comment(
         )
     session.delete(comment)
     session.commit()
+    _announce(comp, viewer, origin)
     return Response(status_code=204)

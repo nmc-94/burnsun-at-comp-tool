@@ -99,6 +99,15 @@ interface Props {
   /** False for a viewer, who sees the same tile without any way to change it. */
   editable: boolean
   saveState: SaveState
+  /**
+   * Who made a change this tile is holding back, when it is holding one back.
+   *
+   * Two props rather than one object so the tile takes no new shape from `useCompDocument`, and
+   * so `onReloadRemote` being set is the whole of the question "is there a notice to draw".
+   */
+  remoteActor?: string | null
+  /** Set only while a remote change is waiting. Takes the server's version, dropping this one. */
+  onReloadRemote?: () => void
   onChange: (slots: PlacedSlot[]) => void
   onRename: (name: string) => void
   /** Put the cursor in the name. Set only for a comp that was just created, so naming it is
@@ -162,6 +171,8 @@ export default function CompTile({
   commentCount,
   editable,
   saveState,
+  remoteActor,
+  onReloadRemote,
   onChange,
   onRename,
   autoFocusName,
@@ -236,6 +247,19 @@ export default function CompTile({
     nameField.current?.focus()
     nameField.current?.select()
   }, [autoFocusName])
+
+  useEffect(() => {
+    // The field is uncontrolled, so a name that changes underneath it — somebody else renaming
+    // the comp — reaches React's prop and never reaches the input. Written in by hand, which is
+    // the small fix; making it controlled would put a round trip between a keystroke and the
+    // letter appearing, which is exactly what the blur guard below exists to avoid.
+    //
+    // Never while it has the cursor. Rewriting a field somebody is typing in takes their words
+    // away mid-sentence, and their blur is about to decide the name anyway.
+    const field = nameField.current
+    if (!field || field === document.activeElement) return
+    if (field.value !== name) field.value = name
+  }, [name])
 
   const picking = selectedRows.rows.length > 0
 
@@ -1058,6 +1082,26 @@ export default function CompTile({
           >
             <ShareGlyph />
             {shared ? (shareStale ? 'stale' : 'on') : ''}
+          </button>
+        )}
+
+        {/* Somebody else changed this comp while there was unsaved work here, so it was not
+            applied. Drawn only in that case — a change landing on a tile with nothing
+            outstanding is simply applied, and announcing every one of those would turn the
+            feature into a footer full of notices about work that is already on screen. */}
+        {onReloadRemote && (
+          <button
+            className="fa fa-act fa-warn"
+            data-testid="comp-remote-change"
+            data-capture-exclude="true"
+            type="button"
+            // The name says what pressing it does, because that is what a name is for; who
+            // made the change is the label beside it. A button called "Bob changed this" reads
+            // as a statement to anyone listening to the page rather than as an action.
+            aria-label={`Reload ${name}, discarding unsaved changes`}
+            onClick={onReloadRemote}
+          >
+            {remoteActor ? `${remoteActor} edited — reload` : 'Changed elsewhere — reload'}
           </button>
         )}
 

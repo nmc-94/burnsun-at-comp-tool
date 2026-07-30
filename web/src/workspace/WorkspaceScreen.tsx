@@ -25,6 +25,16 @@ import type { PendingDelete } from '../comps/pending-delete'
 import { offerUndoOnce, withdrawUndoOnce } from '../comps/undo-keys'
 import { vocabularyOf } from '../comps/tag-model'
 import type { CompDetail } from '../comps/types'
+import { getComp } from '../comps/api'
+import {
+  forgetSignal,
+  hasWatcher,
+  openTeamStream,
+  seedKnown,
+  subscribeTeam,
+} from '../live/team-events'
+import type { TeamSignal } from '../live/team-events'
+import { mergeComps, replaceComp } from '../live/merge'
 import { evaluate } from '../engine'
 import { toEngineComp } from '../comps/tile-model'
 import { loadRulesetVersion } from '../rulesets/cache'
@@ -150,6 +160,9 @@ export default function WorkspaceScreen({
       .then(([found, saved]) => {
         if (cancelled) return
         setComps(found)
+        // What the board is drawing, so the stream's first word about any of these comps is
+        // news rather than a restatement of what is already on screen.
+        seedKnown(found)
         const ids = new Set(found.map((comp) => comp.id))
         if (saved === 'unavailable') {
           // A layout the server cannot serve costs the arrangement, not the workspace.
@@ -649,10 +662,77 @@ export default function WorkspaceScreen({
    * already make.
    */
   const recordChange = useCallback((changed: CompDetail) => {
-    setComps((current) =>
-      (current ?? []).map((comp) => (comp.id === changed.id ? changed : comp)),
-    )
+    setComps((current) => replaceComp(current ?? [], changed))
   }, [])
+
+  /**
+   * Take a comp off the board because the server says it is gone.
+   *
+   * Not `removeComp`, and the difference is the whole reason this exists. That one is *this*
+   * person deleting: it holds the request back, offers an undo, and can put the comp back if
+   * the server refuses. None of that applies to somebody else's deletion — it has already
+   * happened, there is nothing to cancel, and offering an undo would offer to undo a thing this
+   * board never did.
+   */
+  const dropComp = useCallback(
+    (compId: string) => {
+      forgetCard(compId)
+      forgetComp(compId)
+      forgetSignal(compId)
+      setComps((current) => (current ?? []).filter((comp) => comp.id !== compId))
+      setNewCompId((id) => (id === compId ? null : id))
+      const now = latest.current
+      if (now) arrange(withCompForgotten(now, compId))
+    },
+    [arrange],
+  )
+
+  /**
+   * The stream, for as long as this team is open.
+   *
+   * What arrives is an invalidation and never a comp, so everything here ends in a read. The
+   * split on `hasWatcher` is the one thing worth reading twice: a comp with a tile on the
+   * board in front is already being re-read by that tile, which hands the result back up
+   * through `recordChange` — so reading it here as well would be the same row fetched twice
+   * for one event. A comp with no tile mounted has nobody else to do it, and the rail still
+   * draws its name and its dot.
+   *
+   * A `resync` carries the listing it already fetched, which is what makes reconnecting cheap
+   * enough to do every ten minutes: one read answers both "what changed" and "what does it say
+   * now".
+   */
+  useEffect(() => {
+    const close = openTeamStream(teamId)
+    const stop = subscribeTeam((signal: TeamSignal) => {
+      if (signal.kind === 'resync') {
+        setComps((current) => mergeComps(current ?? [], signal.comps))
+        return
+      }
+      if (signal.kind === 'deleted') {
+        dropComp(signal.compId)
+        return
+      }
+      if (signal.kind === 'changed' && hasWatcher(signal.compId)) return
+      // A comp created by somebody else, or changed with no tile of its own open.
+      getComp(signal.compId)
+        .then((fresh) =>
+          setComps((current) => {
+            const held = current ?? []
+            return held.some((comp) => comp.id === fresh.id)
+              ? replaceComp(held, fresh)
+              : [...held, fresh]
+          }),
+        )
+        // Deliberately silent. The comp may have been deleted between the event and this read,
+        // and a board that popped an error every time somebody else changed their mind would be
+        // worse company than one that quietly waits for the next resync.
+        .catch(() => {})
+    })
+    return () => {
+      stop()
+      close()
+    }
+  }, [teamId, dropComp])
 
   /** The team's tag vocabularies, derived once here and shared by every open editor. */
   const vocabulary = useMemo(() => vocabularyOf(comps ?? []), [comps])
