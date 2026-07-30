@@ -204,6 +204,60 @@ Reordering has no keyboard route and is not owed one — see §6.8's note on the
 The arrangement is convenience state, and every comp on the board is present and editable
 whatever order it is in.
 
+## Two people at once
+
+A board keeps itself up to date over a `text/event-stream` held open for about ten minutes at a
+time, so a change one person makes reaches everybody else's board without a reload. Driving that
+needs a second identity, and `asSomeoneElse` is it: a second browser context with its own cookie
+jar, dev-signed-in as a freshly invented character, closed for you at teardown.
+
+```ts
+const friend = await asSomeoneElse('Ayla')
+await api.addGrant(team.id, friend.identity.characterName, 'editor')
+
+await page.goto('/teams/' + team.id + '/boards/' + board.id)
+const tile = tileFor(page, comp.id)
+await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon'])
+
+// Their own context, their own cookie jar. Through the API rather than a second board:
+// what is under test is one person's screen keeping up, not two screens agreeing.
+await friend.api.setSlots(comp.id, [ABADDON, SCIMITAR])
+
+await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Scimitar'], {
+  timeout: 15_000,
+})
+```
+
+Four rules, and the first one is the whole point.
+
+**Never call `page.reload()` in a spec about the stream.** A reload re-reads everything, so every
+assertion passes whether or not a single byte ever crossed. `live-updates.spec.ts` says so at the
+top of the file and has none.
+
+**Assert on one screen, not on two.** Give the other participants an `api` and no page. "Both
+screens agree" is two crossings ANDed together — twice as flaky, and it proves nothing the
+one-sided version does not.
+
+**Budget generously, and only once.** A change crosses a 600 ms debounce, a round trip, the
+fan-out and a re-read, so 15 seconds is the figure the existing spec uses — generous against all
+four and still well short of looking like patience with a hang. Chaining three crossings in one
+test can exceed the 30-second test timeout, so prefer three tests.
+
+**Use contexts, never tabs.** Each open board holds one long-lived connection, and Chrome allows
+six per origin over HTTP/1.1 — so three tabs in one context spend half the budget on streams
+before the tiles start fetching. Separate contexts get separate pools.
+
+What you will see when two people touch the same comp: a change lands silently on a tile with
+nothing unsaved, and on a tile with unsaved work it is **held back** behind a notice naming who
+made it — `comp-remote-change`, whose accessible name is *Reload {name}, discarding unsaved
+changes*. It clears itself the moment that tile's own save settles, so a spec that wants to see it
+has to keep the tile dirty; stall the write with `page.route` rather than racing the debounce.
+
+> Boards are still **private** — everybody arranges their own, and what crosses between them is a
+> comp. A board the whole team works on, with a presence roster, is Phase J
+> (`docs/PHASE-J-HANDOFF.md`); when it lands, its gestures belong in this section and the four
+> rules above are what its specs will be built on.
+
 ## Forking a comp
 
 **Forking a whole comp** is the same mechanism with no rows named. Two ways to ask: the fork

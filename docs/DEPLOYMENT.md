@@ -194,6 +194,7 @@ limits of a name nobody proves.
 | `COMPTOOL_SPA_DIR` | The image already sets it to the baked-in bundle ([`Dockerfile:34`](../deploy/docker/Dockerfile)). Overriding it breaks the SPA |
 | `VITE_API_BASE` | Would bake a fixed origin into the JavaScript bundle. The SPA calls a relative `/api` on purpose, which is exactly what lets one build serve both the Railway domain and your custom one |
 | `COMPTOOL_DEV_AUTH_ENABLED` / `_SECRET` | The browser-automation back door. With `COMPTOOL_ENVIRONMENT=production` the app refuses to boot if this is on ([`settings.py:212-235`](../comptool/settings.py)) — that refusal is the safety net, not the plan |
+| `WEB_CONCURRENCY` | **This one is a trap, and it is the standard advice for every other FastAPI deployment.** Uvicorn reads it *only when no `workers` argument is passed*, which is exactly what [`comptool/__main__.py`](../comptool/__main__.py) does — `Config.__init__` runs `self.workers = workers or 1`, then `if workers is None and "WEB_CONCURRENCY" in os.environ: self.workers = int(...)`. So setting it forks the app, and the live event stream's fan-out is in-process: half the events stop crossing, with no log line and no failure. See §9 |
 
 **`COMPTOOL_BRAND_NAME` does not rebrand the UI.** It only sets the User-Agent sent to CCP
 ([`comptool/esi.py:39-46`](../comptool/esi.py)). The visible brand is compiled in at build
@@ -404,6 +405,8 @@ Six checks. The last one is the interesting one.
 | Deploy times out waiting for healthcheck | Health Check Path is wrong | It is `/api/health` — not `/health`, and not under `/api/v1` |
 | `curl -I` returns `405 Method Not Allowed`, `allow: GET` | `-I` sends `HEAD`; the routes are `GET`-only | Not a deployment problem — the `405` came from your app, so TLS and routing both worked. Use `curl -s` |
 | A `POST` to a bad `/api/…` path returns `405`, not `404` | Known: the SPA catch-all matches on path, not method | Not a deployment problem |
+| Boards update for some people and not others; a teammate's change arrives only after a reload | More than one process is answering. Either the service was scaled past one replica, or `WEB_CONCURRENCY` is set — uvicorn honours it because the entrypoint passes no `workers` | Scale back to one replica and unset `WEB_CONCURRENCY` (§3, §9). Nothing logs this, so rule it out by inspection rather than by looking for an error |
+| Live updates stopped for one person and a reload fixes it | Their stream hit a refused reconnect rather than a dropped one — usually their team access was changed mid-session. `EventSource` retries a dropped connection and gives up on a refused one | Expected for a revoked grant. If the grant is intact, check for an intermediary that turned the `text/event-stream` response into a buffered one (§9) |
 
 **Where to look.** Railway's **Deployments** tab has the build log and the runtime log;
 the app logs JSON to stdout. `/api/health` reports the running commit and branch — Railway
@@ -447,14 +450,28 @@ response held open for about ten minutes at a time ([`comptool/live.py`](../comp
 Nothing about it needs configuring, but two things about this stack are worth knowing before
 they surprise you.
 
-**Do not scale the app service past one replica.** Fan-out is in-process — one dict of queues
-in the running worker — which is what the single-service posture buys and what §4.7 anticipated.
-A second replica does not fail loudly: each one serves half the boards and broadcasts to its own
-half, so changes cross *sometimes*, depending on which instance each person landed on. That is a
-much worse thing to debug than a feature that is plainly off. The fix, if the app ever needs to
-scale, is to put Postgres `LISTEN`/`NOTIFY` behind `publish`/`subscribe`; psycopg is already a
-dependency and no caller changes. [`comptool/ratelimit.py`](../comptool/ratelimit.py) carries the
-same caveat for the same reason.
+**Do not scale the app service past one replica, and do not set `WEB_CONCURRENCY`.** Fan-out is
+in-process — one dict of queues in the running worker — which is what the single-service posture
+buys and what §4.7 anticipated. A second process does not fail loudly: each one serves half the
+boards and broadcasts to its own half, so changes cross *sometimes*, depending on which instance
+each person landed on. That is a much worse thing to debug than a feature that is plainly off.
+
+There are **two** ways to get a second process, and only one of them looks like a decision.
+Scaling the service is the obvious one. The other is `WEB_CONCURRENCY`, which is the standard
+advice for every FastAPI deployment, is set by default on some platforms, and forks the app
+silently — because uvicorn falls back to it precisely when no `workers` argument is passed, which
+is what this app's entrypoint does. There is no log line for it. If changes stop crossing reliably
+and nothing was deployed, check that variable before anything else.
+
+The fix, if the app ever needs to scale, is to put Postgres `LISTEN`/`NOTIFY` behind
+`publish`/`subscribe`; psycopg is already a dependency and no caller changes.
+[`comptool/ratelimit.py`](../comptool/ratelimit.py) carries the same caveat for the same reason.
+
+**This gets stricter, not looser, as the feature grows.** Today a second process means a board
+updates *sometimes* — bad, but eventually recognisable as a bug. Once the board carries a presence
+roster (§4.7, Phase J), a second process means the application shows two of the three people who
+are actually there, and a roster is read as a fact about who is online rather than as a symptom.
+One replica stops being a scaling preference and becomes a correctness requirement.
 
 **Both proxies in this path cut a long response, and the app already accounts for it.**
 Cloudflare drops a proxied response that has produced nothing for ~100 seconds, and Railway ends
@@ -469,6 +486,13 @@ intermediaries that buffer: `no-transform` asks Cloudflare not to repackage the 
 padding pushes past a buffer that fills before it flushes. **If events ever arrive in bursts
 rather than singly**, that is buffering and not the app — raise `PROXY_PADDING_BYTES` in
 `live.py` before looking anywhere else.
+
+**Budget for the held connections if you are self-hosting behind your own proxy.** Every open
+board holds one long-lived response for about ten minutes, so a team of ten with two tabs each is
+twenty connections occupied before any API traffic. That is nothing for Railway or Cloudflare, but
+nginx's default `worker_connections` and Apache's default `MaxRequestWorkers` are both low enough
+to notice, and the symptom is ordinary requests queueing rather than the stream failing. §6.1 makes
+self-hosting a first-class posture, so it is worth a glance at those two numbers.
 
 ### Optional: fix the share-link rate limiter
 

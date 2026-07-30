@@ -294,9 +294,11 @@ comps, sizes).
 > **slots** (the rail's legality dot is computed in the browser and had nothing to
 > compute from — and the listing was already loading them to count ships), and
 > `TeamScreen` became **team settings**, since the rail and the ghost tile now own
-> listing and creating comps. **Sizes are not persisted**: the locked design is a
-> grid, so a tile has no size or position beyond its order, and the stored tile object
-> reserves room for both.
+> listing and creating comps. **Neither size nor position is persisted**: the locked
+> design is a grid, so a tile has no size or position beyond its order, and the stored
+> tile object reserves room for both. *(Position arrived later, outside the phase plan,
+> with the floating canvas — a tile now carries a `place` and a board carries a layout
+> mode. Size is still where the workspace may go rather than what it does.)*
 
 **Phase G — Cross-tile iteration.** **Multi-select rows → new comp** (partial fork)
 and **copy a hull between comps** — the copy always lands and the target flags
@@ -378,12 +380,116 @@ ban phase (4 bans/captain, the Red/Blue sequence, ban caps 3/hull + 2/logi, flag
 immunity). Reimplement the share-slug domain and add human-readable **comp
 export/share** links.
 
+> **Done, with two corrections to the brief and no schema for the rehearsal.** §8's ban
+> phase became **data on the ruleset payload** — the sequence, the caps and the prelims
+> variant live in `atxxii.py` beside the budget and the hull-size caps, because they come
+> from the same article and the spreadsheet carries neither. No migration was needed:
+> `ruleset_version.payload` is JSONB and a section is a section. The prelims variant is
+> stated **per round** rather than as a count of leading ones, because "the last round of
+> each side is excluded" only happens to mean the trailing pair, and a prefix would have
+> encoded the coincidence instead of the rule.
+>
+> **The rehearsal stores nothing** — Trap 3 of the brief was right. A finished ban phase
+> *is* a ruleset, so `banPhaseState`, `banCandidacy` and `applyBans` sit pure beside
+> `evaluate` and the legal pool is the hulls that survived; progress lives in
+> `sessionStorage`. Almost nothing new was needed, because `banned` was already a live
+> field the engine honoured and the `bannedTyphoonRuleset` fixture had already described
+> itself two phases earlier as "the shape a hull knocked out in a ban phase takes".
+>
+> **Two corrections, both the opposite of what the brief assumed.** A flagship-eligible
+> hull is perfectly **bannable**: §8's immunity protects a *designated* flagship when a
+> comp is judged, and flagship types are submitted in advance (§7), so at ban time nobody
+> — no captain and no tool — knows whose hull is immune. Refusing the ban would model a
+> rule that cannot be evaluated, so the rehearsal reports the caveat instead, and there is
+> a test whose whole job is to stop somebody "fixing" it into a refusal. And
+> `RulesetShip.banned` is **not** the ruleset's own exclusion list resolved onto each hull:
+> §5's exclusions work by *omission* from the points table, and `banned` is false for all
+> 278 ships — which is precisely why a captain's ban can use the field.
+>
+> Comp share links landed on migration `0006` (`comp_share`), behind
+> `comptool/share_slug.py`'s petname generator, as a **revocable snapshot** read by a
+> public route that deliberately takes no viewer at all. See `docs/PHASE-I-HANDOFF.md`.
+
+### — Since Phase I (shipped outside the phase plan) —
+
+Forty-two commits landed between Phase H's plan entry and this one, and only Phase I had
+a heading waiting for it. Recorded here so the plan stops contradicting the code.
+
+- **The floating canvas** (no migration). A board carries a **layout mode** — `grid` or
+  `floating` — plus a snap toggle and a one-shot "tidy up", and a tile carries a `place`.
+  Lossless both ways: going back to a grid orders the tiles by where they physically sit.
+  This is what makes Phase F's "a tile has no size or position beyond its order" false;
+  see the correction in that annotation.
+- **Local password accounts and team join links** (`0009`, `0010`). A self-hoster can sign
+  people in without registering an EVE application: `comptool/local_accounts.py` mints
+  principals from a sequence counting *down* from −1, so a local identity fits in the
+  unused half of columns that already existed and needed no migration of its own. Join
+  links (`comptool/join.py`) are "the link identifies, the password authorizes", and a
+  join writes an ordinary `TeamGrant`.
+- **Dev sign-in and the end-to-end suite.** `POST /api/v1/auth/dev-login` mints a real
+  session through the same `sessions.mint` as the SSO callback — it is not a mock — and
+  the app refuses to boot with it enabled outside a development environment. On top of it,
+  the whole `e2e/` Playwright suite, a fourth CI job, and `docs/DRIVING-THE-UI.md`.
+- **Keyboard row editing, hand-arranged rows, fuzzy hull search, and the comp
+  screenshot.** A comp can be walked and edited row by row without a pointer; a hull is
+  found by its initials or a near-miss spelling; a tile can be copied to the clipboard as
+  an image.
+- **Comp delete with undo, UI scale, and resuming the last team.** All client-side except
+  the delete route.
+
+**Phase J — Real-time collaboration on a shared board.** A board that belongs to the
+team rather than to a character: one URL everybody opens, a server-authoritative
+arrangement synced by **discrete tile operations**, and a **presence** roster. Slice 1 is
+the shared board object plus live layout sync, shipped together with `slots_version` +
+`If-Match` + **412** so the feature never exists without that guard; slice 2 is presence.
+See `docs/PHASE-J-HANDOFF.md`.
+
+> **Slice 0 shipped ahead of this entry, in `f11d852`.** A board subscribes to
+> `GET /api/v1/teams/{team_id}/events` and every write that changes what a comp says
+> announces itself, so a teammate's edit reaches your board without a reload.
+>
+> **What crosses the wire is an invalidation, not a delta.** An event names a comp and
+> when it changed; the client re-reads through the routes it already uses. That was forced
+> by the deployment rather than chosen for elegance: Railway ends any request at about
+> fifteen minutes and Cloudflare cuts a stream silent for a hundred seconds, so the
+> connection is *guaranteed* to break and reform. Deltas would need a replay buffer and an
+> answer for what a client missed while it was away; invalidations need neither, and a
+> break stops being a correctness question. It is also why the client resyncs on every
+> open rather than only the first.
+>
+> **The route is this codebase's first `async def`, and it asks for no session.** A
+> synchronous generator would hold one of AnyIO's forty threads for as long as somebody
+> kept a board open, and the fortieth listener would stop the entire API rather than
+> merely failing to stream. A `yield` dependency is not released until the *response*
+> finishes, which for a stream is never, so a session dependency would pin one of thirty
+> pooled connections per open board. `db.session_scope` was added for exactly this.
+>
+> **Fan-out is in-process, and that is a deployment claim with a shelf life.** A second
+> replica would not fail loudly — it would deliver half the events, and a board that
+> updates *sometimes* is harder to diagnose than one that never does. `publish` and
+> `subscribe` are the seam that change goes behind; Postgres `LISTEN`/`NOTIFY` fits
+> underneath with no caller edits.
+>
+> **Two bugs found on the way.** `_apply_tags` never moved `Comp.updated_at`, because
+> `onupdate` only fires when the comp row is itself in an `UPDATE` and a tag write touches
+> `comp_tag` — which had also been making `shareStale` claim a link was current when it
+> was not. And `datetime.isoformat` writes `+00:00` where pydantic writes `Z`: same
+> instant, different strings, and the client's "do I already have this version" test is a
+> string comparison, so every event would have looked like news and every board would have
+> re-read every comp on every keystroke anybody made.
+>
+> No migration; nothing here is stored. **Nothing needed sharing that was not already
+> shared** — a comp belongs to a *team*, and "somebody else's comp on my board" was
+> already just a tile id in a private layout document. Which is exactly why the shared
+> board is still to come: this made a *personal* board live, not a *team* one.
+
 ### — Later (own design passes — kept "aware of," not built) —
 Automated point-data sync worker + change notifications · advanced comparison
 analytics + richer EFT/in-game export · **shared/scrim pick-ban** with two-party
-live sync · **real-time collaboration via a shared tab** (presence, concurrent
-editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
-**fitting-level legality** (where BurnSun's fitting engine is uniquely positioned).
+live sync (sharing Phase J's realtime channel and its swappable pub/sub) ·
+**soft locks and seamless editor hand-off**, then true simultaneous multiplayer
+(§4.7's stages two and three, after Phase J) · **fitting-level legality** (where
+BurnSun's fitting engine is uniquely positioned).
 
 ## Verification approach
 
@@ -461,21 +567,32 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
 - **Library filter state is component state (Phase H).** Filter-by-archetype and
   filter-by-tag live in `LibraryRail`, like the search box. `route.ts` was not touched, so
   `?sel=` and `/compare` remain spoken for by the deferred compare view alone.
-- **Optimistic concurrency on slot writes — designed, not built (Phases G and H).** Deferred
-  a fourth time in Phase H, with `slots_version` deliberately kept out of migration `0005`
-  even though a migration was being written anyway: a column no route reads is dead schema,
-  and this repo's own stance against shipping things "for later" is recorded in
-  `workspace.css`'s head comment. The grounds below are unchanged. the Phase G brief claimed a cross-tile drag writes
+- **Optimistic concurrency on slot writes — deferred four times, and the condition for
+  ending that has now fired (Phases G, H, I, then `f11d852`).** It was kept out of migration
+  `0005` on purpose even though a migration was being written anyway: a column no route reads
+  is dead schema, and this repo's stance against shipping things "for later" is recorded in
+  `workspace.css`'s head comment. The Phase G brief had also claimed a cross-tile drag writes
   two comps, and it does not — the copy leaves the source alone and an extraction writes a
-  comp nobody else holds, so the window is exactly Phase F's. The design is recorded in
-  `docs/PHASE-G-HANDOFF.md` with the two findings that cost the most to rediscover:
-  `Comp.updated_at` cannot be the precondition because a slot write never touches the
-  `comp` row, and the refusal must be **412** because `PUT .../slots` already spends 409 on
-  the archived team and the second flagship. It is a prerequisite for §4.7's operation
-  model rather than a detour, so it is scheduled and not abandoned. What did land is the
-  client half, `web/src/comps/in-flight.ts`, which closes the one race a single user could
-  reproduce: the same comp on two boards, where the unmounting tile's flush raced the
-  mounting tile's read.
+  comp nobody else holds, so the window was exactly Phase F's.
+  **`docs/PHASE-I-HANDOFF.md` set the trigger: "if Phase I builds anything with two writers,
+  this is no longer deferrable."** Phase I built only the solo rehearsal and deferred it
+  correctly — and then `f11d852` made two people editing one comp a supported, visible,
+  expected situation, which is the same condition arriving by a different route. So it ships
+  in **Phase J slice 1**, alongside the shared board rather than after it, because a feature
+  whose purpose is putting more people on the same comps must not exist without it.
+  The design is recorded in `docs/PHASE-G-HANDOFF.md` and the refusal must be **412**,
+  because `PUT .../slots` already spends 409 on the archived team and the second flagship.
+  **One of its two recorded findings has since gone stale and is corrected here**: the reason
+  `Comp.updated_at` cannot be the precondition is no longer "a slot write never touches the
+  `comp` row" — `f11d852` made `_apply_slots` assign it explicitly. The conclusion survives on
+  two better grounds: a timestamp has clock resolution, so two writes inside one tick are
+  indistinguishable, and `updated_at` also moves on a rename and a retag, which would
+  manufacture exactly the conflicts a slots-only counter avoids.
+  What did land early is the client half, `web/src/comps/in-flight.ts`, which closes the one
+  race a single user could reproduce — the same comp on two boards, where the unmounting
+  tile's flush raced the mounting tile's read. Its header predicted that a version column
+  without it would turn that race into a spurious conflict for somebody working alone, so it
+  stops being merely useful and becomes a prerequisite.
 - **§6.8's linter half is real now (Phase G).** The `jsx-a11y` rules that matter run at
   `error` rather than `warn`, measured both ways — a clean tree exits `0`, a probe with
   `autoFocus` and a bare `onClick` on a `<div>` exits `1`. The pass over existing warnings
@@ -483,5 +600,51 @@ editing, sharing a realtime channel + swappable pub/sub with pick-ban) ·
 - **The comp listing carries slots (Phase F).** Legality stays client-only, so the rail's
   dot has to be computed in the browser, and there is nothing to compute it from
   otherwise. `CompSummary` is gone: one comp shape on the wire.
+- **The live channel carries invalidations, not deltas (`f11d852`).** An event names what
+  moved and when; the client re-reads through the routes it already uses. Forced by a
+  deployment where the connection is guaranteed to break — Railway's fifteen-minute request
+  cap and Cloudflare's hundred-second silence cut — so a reconnect that re-reads replaces a
+  replay buffer and an answer for what a client missed. Fan-out is in-process, and `publish`
+  / `subscribe` is the seam a broker drops behind.
+- **A shared board belongs to the team, and there is no capability link (Phase J).** Resolves
+  §9.1's third open question and diverges from §4.7's and §4.1's "shareable link" language,
+  deliberately. A comp is team-scoped and `access.py` collapses missing, foreign and
+  unpermitted into one 404; a link admitting a non-member to a board of team comps would be
+  the first hole in that, and a good one, because it needs no write and leaves no trace.
+  Anyone who ought to open the board already holds a grant, so the board's own URL is the
+  link people paste into a channel and there is nothing new to revoke.
+  `docs/PHASE-J-HANDOFF.md` records what a capability link would cost if one is ever wanted,
+  and that the precedent to copy is `join.py` rather than `share.py`.
+- **A shared board's contents are written by discrete tile operations (Phase J).** Not a
+  versioned whole-document PUT. Each op names one change, returns the whole resulting board,
+  and publishes one invalidation — so two people moving two different tiles are two
+  independent UPDATEs on two rows rather than two writers racing on one document. This is
+  guiding decision 6's "keep comp/tile mutations expressible as discrete operations" being
+  cashed in, five phases after it was written down. It also means the tiles are **rows, not
+  a JSONB document**: a `comp_id` in a real foreign key cannot outlive its comp, which turns
+  the invariant `workspace.py` enforces by hand into a property of the schema.
+- **An arrangement is convenience state; a comp's slots are work (Phase J).** The two get
+  different concurrency answers on purpose. Tile order is last-writer-wins with no
+  precondition, the same call `workspace_layout`'s upsert already makes, and the client
+  reconciles silently because there is no half-typed anything to lose. Slots get
+  `slots_version` + `If-Match` + 412 and wait for the human.
 
 **Still open (do not block the plan):**
+- **Horizontal scaling.** Fan-out and rate limiting are both in-process, so one replica is a
+  correctness requirement rather than a scaling preference — and Phase J's presence roster
+  sharpens that from "changes cross sometimes" into a false statement about which people are
+  in the room. Postgres `LISTEN`/`NOTIFY` fits behind `publish`/`subscribe` with no caller
+  edits, and psycopg is already a dependency. Not needed until the deployment grows.
+- **Soft locks, then true simultaneous multiplayer** (§4.7's stages two and three). Phase J
+  builds presence *hints* and stops there. Whether coarse locks at the row, tile or comp
+  level are wanted is a question the roster is meant to inform rather than pre-empt.
+- **A capability link and read-only spectators.** Decided against for Phase J with reasons
+  recorded above; the question of whether a non-member should ever be admitted to a board of
+  team comps stays open, and it is the same question §4.6's cross-team pick-ban join asks.
+- **The two sides of a shared pick-ban** (§4.6, §9.1's second question): ad-hoc scrim names
+  versus registered teams, and whether a completed ban phase feeds the builder as a filter.
+- **Corporation and alliance grants.** `team_grant.subject_kind` and `Viewer`'s
+  `corporation_id` / `alliance_id` exist and resolve to nothing; adding them is an ESI
+  affiliation lookup and a cache, not a schema change.
+- **Fitting-level legality**, where BurnSun's fitting engine is uniquely positioned and this
+  tool deliberately stops at the hull.
