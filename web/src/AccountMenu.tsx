@@ -21,6 +21,7 @@ import { readSettings, writeSetting } from './settings'
 import type { Settings } from './settings'
 import type { Session } from './session'
 import { renameMe, signIn, signOut, signOutEverywhere } from './session'
+import { listTeams } from './teams/api'
 import Dialog from './ui/Dialog'
 
 interface Props {
@@ -33,6 +34,7 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [teamCount, setTeamCount] = useState(0)
   const shell = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const menuId = useId()
@@ -59,6 +61,36 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [open])
+
+  /**
+   * How many teams there are, which decides one word in one item below.
+   *
+   * It matters because arriving at the app no longer means meeting the picker — a returning
+   * visitor lands in the team they last used, so for anybody on two teams the way to the other
+   * one is this menu. Calling that item "Swap teams" is what makes it findable; calling it that
+   * for somebody with one team would promise a choice they do not have.
+   *
+   * On mount rather than on open, so the wording is settled before the panel is ever drawn
+   * instead of changing under somebody who has already read it. It goes stale in one direction
+   * — create or join a second team and this item catches up on the next load — and the cost of
+   * that is a correct link under a less specific name.
+   */
+  const signedIn = session.character !== null
+  useEffect(() => {
+    if (!signedIn) return
+    let cancelled = false
+    listTeams()
+      .then((teams) => {
+        if (!cancelled) setTeamCount(teams.length)
+      })
+      .catch(() => {
+        // Silent, and the count stays 0. A failure here costs the item its better name, and
+        // the screen it leads to will report the same failure properly.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [signedIn])
 
   if (!session.character) {
     // Only reachable on a public route — everywhere else a missing character renders the
@@ -142,7 +174,7 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
 
           <div className="header-menu-sep" />
 
-          <TeamsItem onNavigate={close} />
+          <TeamsItem swap={teamCount > 1} onNavigate={close} />
           {teamId && <TeamSettingsItem teamId={teamId} onNavigate={close} />}
           {teamId && <PickBanItem teamId={teamId} onNavigate={close} />}
           {/* Only where a name is this instance's to change. Under EVE SSO the name is the
@@ -425,7 +457,22 @@ function CheckIcon({ on }: { readonly on: boolean }) {
 
 // `href` is passed rather than spread throughout: an anchor whose href arrives inside `{...link}`
 // reads as a static element to the a11y lint, and every one of these has a click handler on it.
-function TeamsItem({ onNavigate }: { readonly onNavigate: () => void }) {
+/**
+ * One item, two names, one destination.
+ *
+ * The same link either way — the picker *is* how a team is swapped, and a second item pointing
+ * at it would be two doors into one room. What changes is which job it names: "Swap teams" for
+ * somebody who has another team to go to, and "Your teams" for somebody whose reason to go
+ * there is to make one, find an archived one, or just see what they have. Same `data-testid` in
+ * both, because it is the same item.
+ */
+function TeamsItem({
+  swap,
+  onNavigate,
+}: {
+  readonly swap: boolean
+  readonly onNavigate: () => void
+}) {
   const link = useLinkProps({ kind: 'teams' })
   return (
     <a
@@ -434,7 +481,7 @@ function TeamsItem({ onNavigate }: { readonly onNavigate: () => void }) {
       href={link.href}
       onClick={handle(link.onClick, onNavigate)}
     >
-      <TeamsIcon /> Your teams
+      <TeamsIcon /> {swap ? 'Swap teams' : 'Your teams'}
     </a>
   )
 }

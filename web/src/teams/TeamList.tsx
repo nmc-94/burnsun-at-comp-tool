@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { messageFor } from '../api'
+import { workspaceRoute } from '../router/route'
+import { navigate } from '../router/useRoute'
 import type { SignInMode } from '../session'
+import { readSettings } from '../settings'
 import { createTeam, listTeams } from './api'
 import CreateTeamFields from './CreateTeamFields'
 import type { CreateTeamExtras } from './CreateTeamFields'
@@ -15,6 +18,10 @@ interface Props {
   /** Decides whether creating a team asks for an instance key and a join password. Under EVE
    *  SSO it asks for neither — signing in is already the gate, and access is granted by name. */
   mode: SignInMode
+  /** Whether arriving here may open the last team used rather than draw the picker. Owned by
+   *  `App`, because the answer is about the page load and not about this screen; it is true at
+   *  most once, so swapping teams reaches the picker and stays on it. */
+  claimResume: () => boolean
 }
 
 const NO_EXTRAS: CreateTeamExtras = { creationKey: '', password: '', level: 'viewer' }
@@ -25,8 +32,13 @@ const NO_EXTRAS: CreateTeamExtras = { creationKey: '', password: '', level: 'vie
  * The states are different enough to be different screens — a character with no team is asked
  * a question, and a character with teams is shown a door — so this holds the fetch, the create
  * and the archived switch, and renders one of them.
+ *
+ * There is a fourth state, and it draws nothing: a returning visitor goes straight through to
+ * the team they last had open. That decision lives here rather than in the shell because this
+ * is where the listing arrives, and the listing is the only thing that can say whether a
+ * remembered id is still a team of theirs.
  */
-export default function TeamList({ characterName, mode }: Props) {
+export default function TeamList({ characterName, mode, claimResume }: Props) {
   const [teams, setTeams] = useState<Team[] | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -49,7 +61,22 @@ export default function TeamList({ characterName, mode }: Props) {
     setError(null)
     listTeams(showArchived)
       .then((found) => {
-        if (!cancelled) setTeams(byRecent(found))
+        if (cancelled) return
+        const ordered = byRecent(found)
+        // Claimed whichever list this is, so that toggling to Archived while the first load is
+        // still in flight spends the arrival rather than leaving it to fire on the way back.
+        const arrival = claimResume()
+        const resumeTo = arrival && !showArchived ? readSettings().lastTeamId : null
+        if (resumeTo !== null && ordered.some((team) => team.id === resumeTo)) {
+          // Replaced, not pushed: nobody asked for this screen, so Back should leave the app
+          // rather than land on a picker that would immediately resume again.
+          navigate(workspaceRoute(resumeTo), { replace: true })
+          // Deliberately without `setTeams`: the picker would otherwise paint for one frame
+          // behind a navigation that is already on its way, which is the flicker this whole
+          // arrangement exists to avoid. The loading line holds until the route changes.
+          return
+        }
+        setTeams(ordered)
       })
       .catch((problem: unknown) => {
         if (!cancelled) setError(messageFor(problem))
@@ -57,7 +84,7 @@ export default function TeamList({ characterName, mode }: Props) {
     return () => {
       cancelled = true
     }
-  }, [showArchived])
+  }, [showArchived, claimResume])
 
   async function submit(event: FormEvent) {
     event.preventDefault()

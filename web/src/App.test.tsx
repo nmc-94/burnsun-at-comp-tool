@@ -10,13 +10,19 @@
 //     which rewrote the URL out from under an arriving visitor. That one was already breaking
 //     ordinary deep links — `signIn()` reads `window.location.pathname` back as its `next`,
 //     so the path was destroyed before the sign-in button could be clicked.
+//
+// The second half of the file is the same kind of claim about a signed-in one: arriving at the
+// app opens the team you last had open, and *only* arriving does. Which teams exist and how the
+// picker draws them is TeamList's business and is tested there; what is here is the gate — the
+// page load, spent once — because it lives in the shell and nothing below can see it.
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 import { atxxiiRuleset } from './engine/__fixtures__/atxxii-mini'
 import { resetRulesetCache } from './rulesets/cache'
+import { readSettings, writeSetting } from './settings'
 
 const SHARED = {
   name: 'Angel Shield Kite',
@@ -50,12 +56,79 @@ function stubSignedOut() {
   vi.stubGlobal('fetch', fetchMock)
 }
 
+/**
+ * Signed in, on two teams, with nothing else answering.
+ *
+ * The 404 for everything past the team list is deliberate rather than lazy: these tests are
+ * about which URL the shell settles on, and a workspace that fails to load still renders its
+ * own error inside a header that works — which is exactly the state the menu has to be
+ * reachable from. Stubbing a whole board would prove nothing more and could only rot.
+ */
+function stubSignedIn() {
+  const fetchMock = vi.fn(async (url: string) => {
+    const body = url.includes('/auth/me')
+      ? {
+          signIn: 'sso',
+          character: { characterId: 95_465_499, characterName: 'Sable Kaneko', expiresAt: 'x' },
+        }
+      : url.includes('/api/health')
+        ? { status: 'ok' }
+        : // The query is what tells the listing apart from a single team, and `endsWith` is
+          // what keeps that team apart from everything hanging off it — `/teams/t2/comps` is
+          // the workspace asking a different question and belongs in the 404 below.
+          url.includes('/api/v1/teams?')
+          ? TEAMS
+          : url.endsWith('/api/v1/teams/t2')
+            ? TEAMS[1]
+            : null
+    const status = body === null ? 404 : 200
+    return {
+      ok: body !== null,
+      status,
+      statusText: body === null ? 'Not Found' : 'OK',
+      json: async () => body ?? { detail: 'no' },
+      text: async () => JSON.stringify(body ?? { detail: 'no' }),
+    }
+  })
+  vi.stubGlobal('fetch', fetchMock)
+}
+
+const TEAMS = [
+  {
+    id: 't1',
+    name: 'Aurora Vanguard',
+    ownerCharacterId: 95_465_499,
+    ownerCharacterName: 'Sable Kaneko',
+    yourLevel: 'owner',
+    archived: false,
+    createdAt: '2026-07-01T00:00:00Z',
+    updatedAt: '2026-07-20T00:00:00Z',
+  },
+  {
+    id: 't2',
+    name: 'Sun Reavers',
+    ownerCharacterId: 95_465_499,
+    ownerCharacterName: 'Sable Kaneko',
+    yourLevel: 'owner',
+    archived: false,
+    createdAt: '2026-07-02T00:00:00Z',
+    updatedAt: '2026-07-18T00:00:00Z',
+  },
+]
+
 function goTo(path: string) {
   window.history.replaceState(null, '', path)
 }
 
+/** Open the account menu and follow the item that leads to the teams screen. */
+function swapTeams() {
+  fireEvent.click(screen.getByTestId('user-menu'))
+  fireEvent.click(screen.getByTestId('menu-teams'))
+}
+
 beforeEach(() => {
   resetRulesetCache()
+  localStorage.clear()
   goTo('/')
 })
 
@@ -113,5 +186,69 @@ describe('a visitor with no session', () => {
     // the sign-in control it does have is the only one on it.
     expect(screen.queryByTestId('app-shell')).toBeNull()
     expect(screen.getAllByTestId('sign-in-button')).toHaveLength(1)
+  })
+})
+
+describe('a visitor coming back', () => {
+  it('is taken to the team they last used, without meeting the picker', async () => {
+    writeSetting('lastTeamId', 't2')
+    stubSignedIn()
+
+    render(<App />)
+
+    await waitFor(() => expect(window.location.pathname).toBe('/teams/t2'))
+    expect(screen.queryByTestId('team-list-item')).toBeNull()
+  })
+
+  it('remembers the team a deep link put them in, for next time', async () => {
+    // Recorded from the route rather than from a screen reporting success, so the settings
+    // dialog and the pick/ban rehearsal count as having used a team too.
+    stubSignedIn()
+    goTo('/teams/t2/settings')
+
+    render(<App />)
+
+    await waitFor(() => expect(readSettings().lastTeamId).toBe('t2'))
+  })
+
+  it('does not send them back when they ask for the picker from a board', async () => {
+    // The failure this guards is total: a resume that fires whenever the teams screen is
+    // reached makes the second team unreachable, because every route to it goes through here.
+    writeSetting('lastTeamId', 't2')
+    stubSignedIn()
+    goTo('/teams/t2/boards/b9')
+
+    render(<App />)
+    await waitFor(() => expect(screen.getByTestId('user-menu')).toBeTruthy())
+    swapTeams()
+
+    await waitFor(() => expect(screen.getAllByTestId('team-list-item')).toHaveLength(2))
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('spends the resume once, so the picker can be reached after one', async () => {
+    // The same claim from the other side: arriving *did* resume here, and the way back out of
+    // the team it chose still has to work inside the same page load.
+    writeSetting('lastTeamId', 't2')
+    stubSignedIn()
+
+    render(<App />)
+    await waitFor(() => expect(window.location.pathname).toBe('/teams/t2'))
+    swapTeams()
+
+    await waitFor(() => expect(screen.getAllByTestId('team-list-item')).toHaveLength(2))
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('offers the swap only to somebody with somewhere to swap to', async () => {
+    stubSignedIn()
+
+    render(<App />)
+    await waitFor(() => expect(screen.getByTestId('user-menu')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('user-menu'))
+
+    // Two teams here, so the item names the job. One team and it reads "Your teams" — see
+    // AppHeader.test.tsx, where the menu is exercised on its own.
+    await waitFor(() => expect(screen.getByTestId('menu-teams').textContent).toContain('Swap teams'))
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ApiError, request } from './api'
 import AppHeader from './AppHeader'
@@ -6,11 +6,12 @@ import { brand } from './brand/brandConfig'
 import CompResolver from './comps/CompResolver'
 import JoinScreen from './join/JoinScreen'
 import PickBanScreen from './pickban/PickBanScreen'
-import { hrefFor, isPublic, isWide, parseRoute, workspaceRoute } from './router/route'
+import { hrefFor, isPublic, isWide, parseRoute, teamIdOf, workspaceRoute } from './router/route'
 import type { Route } from './router/route'
 import { navigate, useRoute } from './router/useRoute'
 import type { Character, Session, SignInMode } from './session'
 import { fetchSession } from './session'
+import { writeSetting } from './settings'
 import ShareView from './share/ShareView'
 import SignInScreen from './SignInScreen'
 import TeamList from './teams/TeamList'
@@ -35,6 +36,36 @@ export default function App() {
   useEffect(() => {
     document.title = brand.appName
   }, [])
+
+  /**
+   * Whether this page load may open the last team used without being asked. Answers true once.
+   *
+   * Both halves of that are load-bearing. It has to be *this page load*: arriving at the app is
+   * what resumes, while reaching the picker from a board is somebody asking for the picker, and
+   * bouncing them back to where they just came from would make the swap impossible. And it has
+   * to be the *first* ask, or that same click would resume every later time this screen is
+   * reached inside one session.
+   *
+   * A ref rather than state, because nothing renders differently for it and it is read from
+   * inside a fetch callback rather than during a render. The initial value is the route the
+   * page loaded on — `useRef`'s argument is evaluated on every render but only kept on the
+   * first, which is exactly the reading wanted here.
+   */
+  const arrival = useRef(route.kind === 'teams')
+  const claimResume = useCallback(() => {
+    const may = arrival.current
+    arrival.current = false
+    return may
+  }, [])
+
+  // The breadcrumb that resume follows. From the route rather than from a screen that loaded
+  // successfully, so settings and pick-ban count as having used a team too — and so this stays
+  // one line in the shell instead of a callback threaded through three screens. Nothing here
+  // asks whether the team is real; the resume checks that against the server's own list.
+  const openTeamId = teamIdOf(route)
+  useEffect(() => {
+    if (openTeamId) writeSetting('lastTeamId', openTeamId)
+  }, [openTeamId])
 
   const loadSession = useCallback(() => {
     fetchSession()
@@ -135,7 +166,7 @@ export default function App() {
       )}
 
       <main className={mainClass(route)}>
-        {renderRoute(route, session?.character ?? null, session?.signIn ?? 'none')}
+        {renderRoute(route, session?.character ?? null, session?.signIn ?? 'none', claimResume)}
       </main>
     </div>
   )
@@ -151,13 +182,25 @@ function mainClass(route: Route): string | undefined {
 // teams screen tells someone waiting on an invitation what name to give a captain, because a
 // grant is made against a name — and the workspace needs the *id*, because "is this comp mine"
 // is a question a name cannot answer once anybody can rename themselves.
-function renderRoute(route: Route, character: Character | null, mode: SignInMode) {
+function renderRoute(
+  route: Route,
+  character: Character | null,
+  mode: SignInMode,
+  claimResume: () => boolean,
+) {
   switch (route.kind) {
     case 'teams':
       // `mode` because creating a team asks for different things under each door, and because
       // what to tell somebody with no team differs too — a name to pass on, or a link to ask
-      // for.
-      return <TeamList characterName={character?.characterName ?? null} mode={mode} />
+      // for. `claimResume` because this screen holds the only listing of what is yours, which
+      // is what the last team used has to be checked against before it can be opened.
+      return (
+        <TeamList
+          characterName={character?.characterName ?? null}
+          mode={mode}
+          claimResume={claimResume}
+        />
+      )
     case 'workspace':
       // `view` is Phase G's compare screen. Until it exists a compare URL still resolves to
       // a real board rather than to nothing, which is what keeps a shared link from rotting.

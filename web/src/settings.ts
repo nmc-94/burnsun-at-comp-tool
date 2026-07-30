@@ -48,9 +48,29 @@ export interface Settings {
    * so turning it off changes the drawing and no comp's data at all.
    */
   readonly sortRowsByWeight: boolean
+  /**
+   * The team this browser last had open, or null before one ever has been.
+   *
+   * A breadcrumb rather than a preference, and here anyway: it is comfort, it is per browser,
+   * and this module's own note says that something else wanting storage is a reason to use this
+   * key rather than to grow a second mechanism. What follows it is `TeamList`, which opens this
+   * team instead of drawing the picker — so the ordinary case, one group with one team opened
+   * daily, stops being a screen you click through on the way to work.
+   *
+   * Written from the route, so a team counts as used by having been looked at, and never
+   * checked on the way in. It cannot be: this is a browser, the team may since have been
+   * deleted, archived or taken away, and the id was stored under whoever was signed in at the
+   * time rather than whoever is now. All of that is caught on the way back out instead, by
+   * resuming only to a team the server has just listed as yours.
+   */
+  readonly lastTeamId: string | null
 }
 
-const DEFAULTS: Settings = { confirmCompDelete: true, sortRowsByWeight: true }
+const DEFAULTS: Settings = {
+  confirmCompDelete: true,
+  sortRowsByWeight: true,
+  lastTeamId: null,
+}
 
 /**
  * The stored preferences, with anything missing or malformed falling back to its default.
@@ -69,6 +89,7 @@ export function readSettings(): Settings {
     return {
       confirmCompDelete: boolOr(stored.confirmCompDelete, DEFAULTS.confirmCompDelete),
       sortRowsByWeight: boolOr(stored.sortRowsByWeight, DEFAULTS.sortRowsByWeight),
+      lastTeamId: idOr(stored.lastTeamId, DEFAULTS.lastTeamId),
     }
   } catch {
     // No storage, or something that is not this application's JSON in the key. Either way the
@@ -79,6 +100,11 @@ export function readSettings(): Settings {
 
 function boolOr(stored: unknown, fallback: boolean): boolean {
   return typeof stored === 'boolean' ? stored : fallback
+}
+
+/** An empty string is not an id, and would resume to `/teams/` — which parses as nothing. */
+function idOr(stored: unknown, fallback: string | null): string | null {
+  return typeof stored === 'string' && stored.length > 0 ? stored : fallback
 }
 
 const listeners = new Set<() => void>()
