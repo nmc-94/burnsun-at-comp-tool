@@ -278,16 +278,32 @@
   gap: 8px;
 }
 
+/* Red beside Blue until there is no room for two columns, then one under the other.
+ *
+ * One query per size, because a media query is answered by the window and cannot see the zoom:
+ * the 560 *layout* pixels this is really about are 630 real ones at 1.125 and 700 at 1.25. They
+ * cannot conflict — collapsing is monotonic, so a narrower window never wants *more* columns —
+ * and each carries the same single declaration.
+ *
+ * Three five-line blocks rather than the `@container` `workspace.css` uses for the same problem:
+ * a container query has to be answered by an *ancestor*, and this element's only ancestor is the
+ * whole pick-ban screen. Putting `container-type` there means `contain: layout` over all of it —
+ * the pool, the schedule, the summary — to decide one `grid-template-columns`. Nor
+ * `repeat(auto-fit, …)`, which would be scale-correct for free but puts the optional third
+ * section (`BanLedger.tsx`, bans beyond the schedule) in a third column beside Red and Blue.
+ * Fifteen dull lines is the cheapest of the three. */
 @media (max-width: 560px) {
   .pb-ledger {
     grid-template-columns: 1fr;
   }
 }
-
-/* The same 560 layout pixels, which a Larger UI paints at 700 — a media query is answered by
-   the window and cannot see the zoom. See the longer note in `workspace.css`. */
-@media (max-width: 700px) {
+@media (max-width: 630px) {
   :root[data-ui-scale="large"] .pb-ledger {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  :root[data-ui-scale="larger"] .pb-ledger {
     grid-template-columns: 1fr;
   }
 }

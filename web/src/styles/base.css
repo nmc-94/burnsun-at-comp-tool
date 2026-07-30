@@ -378,6 +378,62 @@ h3 {
   margin: 4px 0;
   background: var(--line-1);
 }
+
+/* A preference that is a choice between three rather than a switch, so it is the only thing in
+   this panel that is not one full-width row. A caption over a segmented control, because three
+   segments and a label do not fit side by side in 232px — which is what the panel's 240px leaves
+   once its padding is taken off.
+
+   The segments follow `.dlg-lvl` in dialog.css: one border round the group, hairlines between,
+   `--accent-soft` under the pressed one. Not literally that class, because it is sized for a
+   dialog's 26px row and belongs to a sheet this panel does not otherwise use; the pattern is
+   shared, the metrics are this panel's. If a third place ever wants it, that is the moment to
+   promote it rather than write it again. */
+.header-menu-block {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px 8px;
+}
+.header-menu-caption {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.header-menu-seg {
+  display: flex;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.header-menu-seg button {
+  /* Each takes an equal third, so the pressed fill reads as a position in a row rather than as a
+     word that happens to be highlighted, and the group does not reflow when the labels change
+     length under a translation. */
+  flex: 1 1 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  background: var(--bg-app);
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.header-menu-seg button + button {
+  border-left: 1px solid var(--line-1);
+}
+.header-menu-seg button:hover:not(.on) {
+  color: var(--text-1);
+}
+.header-menu-seg button.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+.header-menu-seg button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .chip-muted {
   color: var(--text-3);
   font-size: 11px;

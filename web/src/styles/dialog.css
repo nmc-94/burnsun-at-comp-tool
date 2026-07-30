@@ -524,13 +524,14 @@ textarea.dlg-input {
  * has to come from @media, and only what is *inside* the box can come from @container. Same
  * number in both so the two can never disagree about what a phone is.
  *
- * The Larger UI splits them anyway, and deliberately not by much. @container measures the
- * dialog's own layout width and so is already right at any size — which is the half that
- * matters, because it is the half carrying the 40px tap targets. @media is answered by the
- * window and cannot see the zoom, so between 460 and 575 real pixels the box keeps its border
- * and radius when it would otherwise go full bleed. That is cosmetic on a phone nobody runs a
- * larger UI on, and it is not worth a second copy of this block to fix; `workspace.css` has the
- * shape that would take, for the two breakpoints where the difference is not cosmetic.
+ * A larger interface size splits them anyway, and deliberately not by much. @container measures
+ * the dialog's own layout width and so is already right at every size — which is the half that
+ * matters, because it is the half carrying the 40px tap targets. @media is answered by the window
+ * and cannot see the zoom, so between 460 and 575 real pixels (518 at the middle step) the box
+ * keeps its border and radius when it would otherwise go full bleed. That is cosmetic, on a phone
+ * held by somebody who has already asked for more room, and it is not worth a copy of this block
+ * per step to fix. `workspace.css` shows what the alternative costs, and `pick-ban.css` shows
+ * when paying it is still the cheapest option.
  */
 
 @media (max-width: 460px) {

@@ -710,13 +710,17 @@ plumbing:
   Compact application spacing — ~`24px` row heights, `10–12px` padding —
   `0.5px` internal dividers where dense, `1px` borders only on outer containers.
   These are the **default** density, not the only one a person may read at: the
-  *Larger UI* preference draws the whole application at `1.25×`. It multiplies
-  this spec uniformly rather than restating it — every number above keeps its
-  ratio to every other — so a screen that honours the density at `1×` honours it
-  at either. Applied as CSS `zoom` on `#root`, which relays out and re-rasterises
-  rather than magnifying a rendered page, so nothing softens. See
-  `web/src/ui-scale.ts` for why that mechanism and not a type scale, and for the
-  two coordinate spaces it introduces.
+  *Interface size* preference draws the whole application at `1×`, `1.125×` or
+  `1.25×`. It multiplies this spec uniformly rather than restating it — every
+  number above keeps its ratio to every other — so a screen that honours the
+  density at `1×` honours it at all three. Applied as CSS `zoom` on `#root`,
+  which relays out and re-rasterises rather than magnifying a rendered page, so
+  nothing softens. One control, but the choice is remembered separately for a
+  wide window and a narrow one, and nothing in the UI says so: a phone and a
+  desktop want different answers and neither should be a setting the other has
+  to know about. See `web/src/ui-scale.ts` for why that mechanism and not a type
+  scale, for the two coordinate spaces it introduces, and for why the wide/narrow
+  line is drawn on the *unscaled* window.
 - **Component treatment.** Positive `--success`, negative `--danger`, warning
   amber, neutral = secondary text. Progress bars: track/fill per theme, `999px`
   radius, `3/5–6/8–10px` heights. The **fit-tag pill HSL system**

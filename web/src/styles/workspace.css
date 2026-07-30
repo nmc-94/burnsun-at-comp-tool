@@ -494,7 +494,8 @@
   color: var(--accent);
 }
 
-/* Only ever visible on a narrow viewport — see the media query at the foot of this file. */
+/* Only ever visible when the rail overlays the grid — see the `[data-wide="false"]` rules at the
+   foot of this file, and `useWide.ts` for what decides it. */
 .library-toggle {
   display: none;
 }
@@ -819,91 +820,55 @@
   pointer-events: none;
 }
 
-/* Below this the rail costs more width than it earns, so it slides over the grid instead of
- * sitting beside it. A disclosure, not a dialog: nothing is trapped and nothing is modal.
+/* Below a certain width the rail costs more width than it earns, so it slides over the grid
+ * instead of sitting beside it. A disclosure, not a dialog: nothing is trapped and nothing is
+ * modal.
  *
- * The same 860 is also where floating stops being offered — but that half cannot live here,
- * because CSS can hide a control and cannot stop a position being written. `useWide.ts` holds
- * the number for the code, names this block, and is named by it. */
-@media (max-width: 860px) {
-  .lib {
-    position: absolute;
-    inset: 0 auto 0 0;
-    z-index: 2;
-    transform: translateX(-100%);
-    transition: transform 0.14s ease-out;
-  }
-
-  .lib.open {
-    transform: none;
-  }
-
-  .library-toggle {
-    display: grid;
-    place-items: center;
-    position: absolute;
-    left: 100%;
-    top: 8px;
-    width: 20px;
-    height: 30px;
-    background: var(--bg-panel);
-    border: 1px solid var(--line-1);
-    border-left: 0;
-    border-radius: 0 var(--radius-md) var(--radius-md) 0;
-    color: var(--text-3);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  /* One column down here, so a placeholder the height of a comp is most of a screen of
-     nothing between the last one and the bottom of the board. It stays a comfortable target —
-     and the drop it exists for is a drag, which a phone does not have. */
-  .ghost-tile {
-    min-height: 96px;
-  }
+ * **Not a media query.** The width that matters is how much *layout* the board has, and under a
+ * Larger UI that is the window divided by the scale — 860 layout pixels are 1075 real ones at
+ * 1.25 and 968 at 1.125. A media query is answered by the window and cannot see the zoom, so it
+ * would need one copy of this block per step, each with its own threshold, and every one of them
+ * a second place for the number to be wrong.
+ *
+ * `useWide.ts` works it out once, scale and all, and `WorkspaceScreen` puts the answer on `.ws`
+ * as `data-wide`. That is also the number that decides whether floating is *offered*, which
+ * could never have lived in CSS: a media query can hide a control and cannot stop a position
+ * being written. So one answer now drives both halves and they cannot disagree.
+ *
+ * This replaced two @media blocks whose thresholds were 1075 and 1077 — a real one-pixel band
+ * where the rail stayed docked and floating was refused at the same time. */
+.ws[data-wide="false"] .lib {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 2;
+  transform: translateX(-100%);
+  transition: transform 0.14s ease-out;
 }
 
-/* The block above again, for the Larger UI, and it has to be written again rather than folded
- * into the query: a media query is answered by the window, which cannot see the zoom, so the
- * same 860 *layout* pixels the rail needs are 1075 real ones at 1.25. Without this the rail
- * stays docked on a 1000px laptop and leaves the grid a single cramped column — the exact thing
- * the breakpoint exists to prevent.
- *
- * `useWide.ts` scales the same number the same way, and the two must agree or floating is
- * offered for a board that has no room for it. The bodies here must stay identical;
- * `board-float.spec.ts` sets a viewport in the band between 860 and 1075 with the preference on,
- * which is what catches either half being changed alone. */
-@media (max-width: 1075px) {
-  :root[data-ui-scale="large"] .lib {
-    position: absolute;
-    inset: 0 auto 0 0;
-    z-index: 2;
-    transform: translateX(-100%);
-    transition: transform 0.14s ease-out;
-  }
+.ws[data-wide="false"] .lib.open {
+  transform: none;
+}
 
-  :root[data-ui-scale="large"] .lib.open {
-    transform: none;
-  }
+.ws[data-wide="false"] .library-toggle {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  left: 100%;
+  top: 8px;
+  width: 20px;
+  height: 30px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-1);
+  border-left: 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--text-3);
+  font: inherit;
+  cursor: pointer;
+}
 
-  :root[data-ui-scale="large"] .library-toggle {
-    display: grid;
-    place-items: center;
-    position: absolute;
-    left: 100%;
-    top: 8px;
-    width: 20px;
-    height: 30px;
-    background: var(--bg-panel);
-    border: 1px solid var(--line-1);
-    border-left: 0;
-    border-radius: 0 var(--radius-md) var(--radius-md) 0;
-    color: var(--text-3);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  :root[data-ui-scale="large"] .ghost-tile {
-    min-height: 96px;
-  }
+/* One column down here, so a placeholder the height of a comp is most of a screen of nothing
+   between the last one and the bottom of the board. It stays a comfortable target — and the drop
+   it exists for is a drag, which a phone does not have. */
+.ws[data-wide="false"] .ghost-tile {
+  min-height: 96px;
 }

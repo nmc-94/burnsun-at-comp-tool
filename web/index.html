@@ -35,15 +35,17 @@
       })()
     </script>
     <script>
-      // And the size, before first paint for the same reason and a louder one: this draws the
+      // And the size, before first paint for the same reason and a louder one: this can draw the
       // whole application a quarter larger, so arriving at the default size and correcting once
       // the bundle has parsed is not a subtle flash but the entire page reflowing.
       //
       // Its own script element rather than a second function in the one above, so that neither
       // has to end in a semicolon to keep the other from being parsed as a call to it.
       //
-      // Must stay in sync with src/settings.ts (same key, same field, same default) and with
-      // src/ui-scale.ts (the attribute, and the number tokens.css resolves it to).
+      // Three things must stay in sync with the modules, because this runs before either exists:
+      // src/settings.ts (the key, the two field names, the step names, the default), and
+      // src/ui-scale.ts (the attribute, the media query below, and the numbers tokens.css
+      // resolves the attribute to).
       (function () {
         var KEY = '__BRAND_STORAGE_PREFIX__.settings'
         try {
@@ -51,10 +53,23 @@
           // shrug-and-default catch `readSettings` uses. A throw here is before anything has
           // rendered and would take the page down rather than merely arrive at the wrong size.
           var stored = JSON.parse(localStorage.getItem(KEY) || 'null')
-          // Strictly true: absent, malformed and anything non-boolean all mean the default,
-          // which is off, which is no attribute at all.
-          if (stored && stored.largerUi === true) {
-            document.documentElement.dataset.uiScale = 'large'
+          if (stored) {
+            // Two sizes are remembered, one per window shape, and this picks the one belonging to
+            // the window being opened. The *unscaled* window, deliberately — `onMobile` in
+            // src/ui-scale.ts has why asking about the scaled layout width would chase itself.
+            var mobile =
+              window.matchMedia && window.matchMedia('(max-width: 860px)').matches
+            var size = mobile ? stored.uiSizeMobile : stored.uiSizeDesktop
+            // A browser that predates the two fields carried one boolean for both shapes. Same
+            // fallback as `readSettings`, so a cold load and a warm one agree.
+            if (size !== 'large' && size !== 'larger') {
+              size = stored.largerUi === true ? 'larger' : 'normal'
+            }
+            // Anything else — absent, misspelt, a number — means the default, which is no
+            // attribute at all.
+            if (size === 'large' || size === 'larger') {
+              document.documentElement.dataset.uiScale = size
+            }
           }
         } catch (e) {}
       })()

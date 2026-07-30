@@ -13,17 +13,16 @@
 
 import { useSyncExternalStore } from 'react'
 
-import { subscribeSettings } from '../settings'
-import { uiScale } from '../ui-scale'
+import { subscribeUiScale, uiScale } from '../ui-scale'
 
 /**
  * Above the width the library rail collapses at.
  *
- * Mirrored in `styles/workspace.css` (the `@media (max-width: 860px)` block at the foot of
- * the file, and the copy of it directly below for the Larger UI) — a media query cannot be
- * imported, so the number is written twice on purpose and each site names the other.
- * `e2e/specs/board-float.spec.ts` sets the viewport either side of it and is what catches them
- * drifting apart.
+ * Written once, here, and spent twice: `WorkspaceScreen` puts the answer on `.ws` as `data-wide`,
+ * which is what the rules at the foot of `styles/workspace.css` read, and the same answer decides
+ * whether floating is offered at all. It used to be a number in a media query as well, scaled by
+ * hand per step — which is how the two ended up a pixel apart and left a window width where the
+ * rail stayed docked and floating was refused together.
  *
  * Floating is a wide-viewport affordance and nothing else. Hand-placed tiles on a 380px screen
  * are unusable, and a board arranged on a desktop would be worse than unusable — so below this
@@ -38,15 +37,23 @@ const WIDE_FROM = 861
  * beside each other — but a media query is answered by the window, which cannot see the zoom.
  * So the number has to be scaled up to ask the same question: at 1.25, 861 layout pixels of
  * room means 1077 real ones. See `ui-scale.ts`.
+ *
+ * Not to be confused with `onMobile` there, which also compares a width against 860 and does it
+ * for a different reason: that one asks about the **raw** window, because it is choosing which
+ * size to draw at and cannot depend on the answer. This one asks about the **layout** the chosen
+ * size leaves. Same number, two questions.
  */
 function wideQuery(): string {
   return `(min-width: ${Math.ceil(WIDE_FROM * uiScale())}px)`
 }
 
 function subscribe(onChange: () => void): () => void {
-  // Re-armed when the preference changes, not merely re-read: the listener is attached to one
-  // query, and switching size moves where that boundary is. Leaving the old one attached would
-  // mean a window resized after the toggle was still being judged against the old width.
+  // Re-armed when the scale changes, not merely re-read: the listener is attached to one query,
+  // and a different step moves where that boundary is. Leaving the old one attached would mean a
+  // window resized after the change was still being judged against the old width.
+  //
+  // `subscribeUiScale` rather than the settings, because two things move the scale — the
+  // preference, and the window crossing between the two remembered sizes.
   let query: MediaQueryList | undefined
   const arm = () => {
     query?.removeEventListener('change', onChange)
@@ -54,13 +61,13 @@ function subscribe(onChange: () => void): () => void {
     query?.addEventListener('change', onChange)
   }
   arm()
-  const stopListeningToSettings = subscribeSettings(() => {
+  const stopListeningToScale = subscribeUiScale(() => {
     arm()
     onChange()
   })
   return () => {
     query?.removeEventListener('change', onChange)
-    stopListeningToSettings()
+    stopListeningToScale()
   }
 }
 

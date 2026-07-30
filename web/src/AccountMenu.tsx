@@ -17,11 +17,12 @@ import { GearIcon, PickBanIcon, SignOutIcon, TeamsIcon } from './HeaderIcons'
 import { buildCcpPortraitUrl } from './lib/icons'
 import { hrefFor } from './router/route'
 import { useLinkProps } from './router/useRoute'
-import { readSettings, writeSetting } from './settings'
-import type { Settings } from './settings'
+import { UI_SIZES, readSettings, writeSetting } from './settings'
+import type { Settings, UiSize } from './settings'
 import type { Session } from './session'
 import { renameMe, signIn, signOut, signOutEverywhere } from './session'
 import { listTeams } from './teams/api'
+import { setUiSize, uiSize } from './ui-scale'
 import Dialog from './ui/Dialog'
 
 interface Props {
@@ -201,9 +202,7 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
           <ToggleItem setting="confirmCompDelete" testId="menu-confirm-deletes">
             Confirm comp deletes
           </ToggleItem>
-          <ToggleItem setting="largerUi" testId="menu-larger-ui">
-            Larger UI
-          </ToggleItem>
+          <UiSizeItem />
 
           <div className="header-menu-sep" />
 
@@ -424,7 +423,67 @@ function ToggleItem({
   )
 }
 
-/** Every preference is one so far, and the toggle above only knows how to draw one. */
+/**
+ * How large to draw everything — the one preference that is a choice rather than a switch.
+ *
+ * Three buttons rather than one that cycles, for the reason `AppHeader`'s theme control gives at
+ * length and §6.8 requires: a control named "Interface size: Large" cannot say whether it *is*
+ * large or *makes* things large, and a name that moves with its own state cannot be matched by a
+ * driver at all. Each button names the step it sets and carries its own `aria-pressed`; clicking
+ * the pressed one is a no-op rather than a toggle back.
+ *
+ * The caption labels the group rather than the group carrying its own `aria-label`, so the name a
+ * screen reader announces is the words on screen and there is only one of them to keep right.
+ *
+ * There are two sizes stored — one for a wide window, one for a narrow one — and deliberately no
+ * sign of that here. `ui-scale.ts` answers for whichever matches the window this menu is open in;
+ * a person setting a comfortable size on their phone has not been asked to think about their
+ * desktop. Seeded on mount like `ToggleItem`, for the same reason: the menu is unmounted while
+ * shut, so opening it reads what is stored.
+ */
+function UiSizeItem() {
+  const captionId = useId()
+  const [size, setSize] = useState(uiSize)
+  return (
+    <div className="header-menu-block">
+      <span className="header-menu-caption" id={captionId}>
+        Interface size
+      </span>
+      <div
+        className="header-menu-seg"
+        data-testid="menu-ui-size"
+        role="group"
+        aria-labelledby={captionId}
+      >
+        {UI_SIZES.map((step) => (
+          <button
+            key={step}
+            className={step === size ? 'on' : undefined}
+            data-testid={`menu-ui-size-${step}`}
+            type="button"
+            aria-pressed={step === size}
+            onClick={() => {
+              setUiSize(step)
+              setSize(step)
+            }}
+          >
+            {LABELS[step]}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Sentence case, per §6.4, and the plain comparative rather than a percentage: what the steps
+ *  are worth is how they look, not a number somebody has to translate. */
+const LABELS: Record<UiSize, string> = {
+  normal: 'Normal',
+  large: 'Large',
+  larger: 'Larger',
+}
+
+/** Every preference but the size is one, and `ToggleItem` only knows how to draw one. */
 type BooleanSetting = {
   [K in keyof Settings]: Settings[K] extends boolean ? K : never
 }[keyof Settings]

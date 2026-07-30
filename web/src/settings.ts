@@ -21,6 +21,18 @@ import { brand } from './brand/brandConfig'
 
 const STORAGE_KEY = `${brand.storageKeyPrefix}.settings`
 
+/**
+ * The steps the interface can be drawn at.
+ *
+ * Names rather than numbers, because a number in storage is a number somebody has to keep valid:
+ * a browser carrying `1.4` from a build that offered it would go on being honoured forever. The
+ * numbers live in one place, `STEPS` in `ui-scale.ts`, and a name this module does not recognise
+ * falls back to `normal` like any other malformed value.
+ */
+export type UiSize = 'normal' | 'large' | 'larger'
+
+export const UI_SIZES: readonly UiSize[] = ['normal', 'large', 'larger']
+
 export interface Settings {
   /**
    * Whether deleting a comp that has hulls in it asks first.
@@ -34,20 +46,29 @@ export interface Settings {
    */
   readonly confirmCompDelete: boolean
   /**
-   * Whether the whole application is drawn a quarter larger than its usual density.
+   * How large the whole application is drawn, on a wide window and on a narrow one.
    *
-   * Off by default. The compact density everything else is built to — 24px rows, 10–12px
-   * padding — is what lets a comp be read at a glance beside the game, and it is the right
-   * default for the desktop this is used on. It is not the right size for every pair of eyes or
-   * every display, and what people reach for otherwise is the browser's own page zoom, which has
-   * to be set again for every origin and which this app never gets to remember for them.
+   * `normal` for both by default. The compact density everything else is built to — 24px rows,
+   * 10–12px padding — is what lets a comp be read at a glance beside the game, and it is the
+   * right default for the desktop this is mostly used on. It is not the right size for every pair
+   * of eyes or every display, and what people reach for otherwise is the browser's own page
+   * zoom, which has to be set again for every origin and which this app never gets to remember
+   * for them.
    *
-   * One step rather than a scale, because one step is what was asked for and a second costs
-   * nothing to add later: what this turns on is a number, `--ui-scale` in `styles/tokens.css`,
-   * and everything downstream reads the number rather than this flag. `ui-scale.ts` has why the
-   * size is applied as `zoom` rather than by making the type bigger.
+   * **Two fields and one control.** A phone held at arm's length and a monitor at a desk do not
+   * want the same answer, and somebody who sets this on one should not have found a setting for
+   * the other. So there is a single picker in the account menu, and it reads and writes whichever
+   * of these two matches the window it is being used in — see `onMobile` in `ui-scale.ts` for
+   * where that line is drawn and why it is drawn on the *unscaled* window. Nothing in the UI says
+   * "desktop" or "mobile"; the split is meant to be invisible.
+   *
+   * Flat fields rather than one nested object, because the pre-paint script in `index.html` reads
+   * one of them before any module exists and cannot follow a shape it does not know. The step
+   * names are the whole vocabulary: `styles/tokens.css` resolves them to numbers, and everything
+   * downstream reads the number rather than the name.
    */
-  readonly largerUi: boolean
+  readonly uiSizeDesktop: UiSize
+  readonly uiSizeMobile: UiSize
   /**
    * Whether a tile draws its hulls in weight order rather than in the order they were added.
    *
@@ -83,7 +104,8 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
   confirmCompDelete: true,
-  largerUi: false,
+  uiSizeDesktop: 'normal',
+  uiSizeMobile: 'normal',
   sortRowsByWeight: true,
   lastTeamId: null,
 }
@@ -104,7 +126,8 @@ export function readSettings(): Settings {
     const stored = raw as Record<string, unknown>
     return {
       confirmCompDelete: boolOr(stored.confirmCompDelete, DEFAULTS.confirmCompDelete),
-      largerUi: boolOr(stored.largerUi, DEFAULTS.largerUi),
+      uiSizeDesktop: sizeOr(stored.uiSizeDesktop, inherited(stored)),
+      uiSizeMobile: sizeOr(stored.uiSizeMobile, inherited(stored)),
       sortRowsByWeight: boolOr(stored.sortRowsByWeight, DEFAULTS.sortRowsByWeight),
       lastTeamId: idOr(stored.lastTeamId, DEFAULTS.lastTeamId),
     }
@@ -117,6 +140,24 @@ export function readSettings(): Settings {
 
 function boolOr(stored: unknown, fallback: boolean): boolean {
   return typeof stored === 'boolean' ? stored : fallback
+}
+
+function sizeOr(stored: unknown, fallback: UiSize): UiSize {
+  return UI_SIZES.includes(stored as UiSize) ? (stored as UiSize) : fallback
+}
+
+/**
+ * What a browser that predates the two fields should be read as.
+ *
+ * The size shipped first as a single `largerUi` boolean covering both window shapes. Anybody who
+ * had turned it on keeps what they chose, on both, rather than silently reverting to the default
+ * the next time they load — the same courtesy `theme.ts` extends to a stored `system`.
+ *
+ * Deletable once nobody is carrying the old key. Until then it costs one property read, and
+ * removing it early is a preference that quietly un-sets itself.
+ */
+function inherited(stored: Record<string, unknown>): UiSize {
+  return stored.largerUi === true ? 'larger' : 'normal'
 }
 
 /** An empty string is not an id, and would resume to `/teams/` — which parses as nothing. */

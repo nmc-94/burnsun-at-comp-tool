@@ -689,8 +689,12 @@ export default function WorkspaceScreen({
     )
   }
 
+  // `data-wide` is what the stylesheet reads to decide whether the rail sits beside the grid or
+  // slides over it. It is an attribute rather than a media query because the answer depends on the
+  // interface size as well as on the window — see `useWide.ts` — and a media query cannot see the
+  // zoom. One number, answered once, spent in both places.
   return (
-    <div className="ws" data-testid="workspace" data-team-id={teamId}>
+    <div className="ws" data-testid="workspace" data-team-id={teamId} data-wide={wide}>
       <LibraryRail
         comps={comps}
         openCompIds={openCompIds}

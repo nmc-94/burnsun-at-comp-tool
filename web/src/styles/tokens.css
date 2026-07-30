@@ -80,10 +80,18 @@
   --fit-tag-light-adjust: 0%;
 }
 
-/* The one preference here that is not a colour, and its own rule rather than a value inside the
+/* The one preference here that is not a colour, and its own rules rather than values inside the
    palettes below: size and theme are independent, and somebody can want a larger UI in either.
-   Set from `ui-scale.ts`, which is also where the reasoning for `zoom` lives. */
+   Set from `ui-scale.ts`, which is also where the reasoning for `zoom` lives and where these two
+   numbers are written a second time as `STEPS` — a stylesheet cannot be imported, so
+   `larger-ui.spec.ts` measures what is painted against what that says.
+
+   There is no rule for the default step: it is the plain `--ui-scale: 1` above, and no attribute
+   at all. */
 :root[data-ui-scale="large"] {
+  --ui-scale: 1.125;
+}
+:root[data-ui-scale="larger"] {
   --ui-scale: 1.25;
 }
 
