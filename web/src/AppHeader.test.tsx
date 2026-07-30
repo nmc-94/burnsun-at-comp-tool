@@ -33,17 +33,27 @@ const WORKSPACE: Route = {
   selection: [],
 }
 
-/** `getTeam` is the only call the bar makes. Everything else here is props. */
-function stubTeam(name: string | null) {
+/**
+ * The two calls the bar makes: `getTeam` for the name in it, and `listTeams` for the one word
+ * in the menu that depends on how many teams there are. `teams` is a count rather than rows,
+ * because nothing up here reads anything else about them.
+ */
+function stubTeam(name: string | null, teams = 1) {
+  const listed = Array.from({ length: teams }, (_, index) => ({ id: `t${index + 1}` }))
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({
-      ok: name !== null,
-      status: name === null ? 404 : 200,
-      statusText: name === null ? 'Not Found' : 'OK',
-      json: async () => (name === null ? { detail: 'no' } : { id: 't1', name }),
-      text: async () => JSON.stringify(name === null ? { detail: 'no' } : { id: 't1', name }),
-    })),
+    vi.fn(async (url: string) => {
+      const listing = url.includes('/api/v1/teams?')
+      const missing = name === null && !listing
+      const body = listing ? listed : missing ? { detail: 'no' } : { id: 't1', name }
+      return {
+        ok: !missing,
+        status: missing ? 404 : 200,
+        statusText: missing ? 'Not Found' : 'OK',
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+      }
+    }),
   )
 }
 
@@ -144,6 +154,32 @@ describe('the account menu', () => {
 
     expect(screen.getByTestId('menu-teams')).toBeTruthy()
     expect(screen.queryByTestId('menu-team-settings')).toBeNull()
+  })
+
+  // Arriving at the app opens the team you last had open rather than the picker, so for
+  // anybody on two teams this item is how the other one is reached. It is named for that job
+  // only when there is one — offering to swap to somebody with a single team promises a choice
+  // they do not have, and the screen behind it is where they would go to make a second.
+  it('names the teams item for swapping when there is another team to swap to', async () => {
+    stubTeam('Hydra Reloaded', 2)
+    renderHeader(WORKSPACE)
+
+    fireEvent.click(screen.getByTestId('user-menu'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('menu-teams').textContent).toContain('Swap teams'),
+    )
+    expect(screen.getByTestId('menu-teams').getAttribute('href')).toBe('/')
+  })
+
+  it('leaves it as your teams when there is only the one', async () => {
+    stubTeam('Hydra Reloaded', 1)
+    renderHeader(WORKSPACE)
+
+    await waitFor(() => expect(screen.getByTestId('header-team')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('user-menu'))
+
+    expect(screen.getByTestId('menu-teams').textContent).toContain('Your teams')
   })
 
   it('closes on Escape and gives focus back to the control it came from', () => {

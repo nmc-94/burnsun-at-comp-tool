@@ -313,6 +313,14 @@ without a session. The rail's search box and its two filters are **component sta
 deliberately not in the URL: a history entry per keystroke, or per chip toggled, is not a
 location anybody wants to navigate back out of.
 
+`/` is the teams screen but is not reliably the *picker*: a browser profile that has opened a
+team before is taken straight back into it, and the picker is never drawn. The id lives in
+localStorage under `comp-tool.settings`, so a fresh context always meets the picker and a spec
+that opened a board earlier will not — clear the key, use a new context, or drive the swap the
+way a person would, through **Swap teams** in the account menu (`menu-teams`, which reads "Your
+teams" for somebody on one team). Only a page *load* resumes: navigating to `/` from inside the
+app stays there, which is what makes the swap possible at all.
+
 Over plain http the server must set the cookie without the `Secure` flag, or the browser drops
 it and every page renders the sign-in card while the sign-in itself reports 200 — set
 `COMPTOOL_SESSION_COOKIE_SECURE=false`, and see the README's
