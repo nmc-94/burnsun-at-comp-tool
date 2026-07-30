@@ -34,6 +34,21 @@ export interface Settings {
    */
   readonly confirmCompDelete: boolean
   /**
+   * Whether the whole application is drawn a quarter larger than its usual density.
+   *
+   * Off by default. The compact density everything else is built to — 24px rows, 10–12px
+   * padding — is what lets a comp be read at a glance beside the game, and it is the right
+   * default for the desktop this is used on. It is not the right size for every pair of eyes or
+   * every display, and what people reach for otherwise is the browser's own page zoom, which has
+   * to be set again for every origin and which this app never gets to remember for them.
+   *
+   * One step rather than a scale, because one step is what was asked for and a second costs
+   * nothing to add later: what this turns on is a number, `--ui-scale` in `styles/tokens.css`,
+   * and everything downstream reads the number rather than this flag. `ui-scale.ts` has why the
+   * size is applied as `zoom` rather than by making the type bigger.
+   */
+  readonly largerUi: boolean
+  /**
    * Whether a tile draws its hulls in weight order rather than in the order they were added.
    *
    * On by default, because a comp is read from the top down when you are deciding what to cut
@@ -68,6 +83,7 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
   confirmCompDelete: true,
+  largerUi: false,
   sortRowsByWeight: true,
   lastTeamId: null,
 }
@@ -88,6 +104,7 @@ export function readSettings(): Settings {
     const stored = raw as Record<string, unknown>
     return {
       confirmCompDelete: boolOr(stored.confirmCompDelete, DEFAULTS.confirmCompDelete),
+      largerUi: boolOr(stored.largerUi, DEFAULTS.largerUi),
       sortRowsByWeight: boolOr(stored.sortRowsByWeight, DEFAULTS.sortRowsByWeight),
       lastTeamId: idOr(stored.lastTeamId, DEFAULTS.lastTeamId),
     }
@@ -122,8 +139,14 @@ export function writeSetting<K extends keyof Settings>(key: K, value: Settings[K
   return next
 }
 
-/** Module-level and stable, which is what `useSyncExternalStore` needs of a subscribe. */
-function subscribeSettings(listener: () => void): () => void {
+/**
+ * Module-level and stable, which is what `useSyncExternalStore` needs of a subscribe.
+ *
+ * Exported because not every consumer is a component: `main.tsx` subscribes to keep `<html>`'s
+ * size attribute in step with `largerUi`, which is a piece of the document above the tree React
+ * owns and so cannot be a hook.
+ */
+export function subscribeSettings(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }

@@ -19,6 +19,7 @@
 // conversion for no gain. It also means native scrollbars, keyboard paging, two-finger pan and
 // shift-wheel all work without being written.
 
+import { layoutPx } from '../ui-scale'
 import { MAX_COORD, PAD } from './place'
 import type { Bounds, Occupied, Size } from './place'
 import type { Place } from './types'
@@ -66,12 +67,16 @@ export function extentFor(occupied: readonly Occupied[], viewport: Size, tile: S
  * The scroller's own offset rather than the page's: a board is a scroll container inside a
  * layout that does not itself scroll, so the cursor's client position is relative to the
  * board's *visible* corner and the canvas begins wherever that has been scrolled to.
+ *
+ * The distance from that corner is converted before the scroll offset is added to it, because
+ * the two are not in the same units under a Larger UI: a cursor and a client rect are painted,
+ * a scroll offset and the `Place` this returns are layout. See `ui-scale.ts`.
  */
 export function toCanvas(scroller: HTMLElement, clientX: number, clientY: number): Place {
   const box = scroller.getBoundingClientRect()
   return {
-    x: clientX - box.left + scroller.scrollLeft,
-    y: clientY - box.top + scroller.scrollTop,
+    x: layoutPx(clientX - box.left) + scroller.scrollLeft,
+    y: layoutPx(clientY - box.top) + scroller.scrollTop,
   }
 }
 

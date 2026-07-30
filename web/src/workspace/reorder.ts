@@ -29,6 +29,7 @@
 // cancelled first, and every question about the cursor is asked of those instead. Transforms
 // then cannot reach the answer at all.
 
+import { layoutPx } from '../ui-scale'
 import type { Reorder } from './carry'
 import { measure, play as flip } from './flip'
 import type { Box } from './flip'
@@ -198,12 +199,14 @@ export function beginReorder(grid: HTMLElement, compId: string): Reorder | null 
       // there is no fixed answer, and one column means the tiles run down instead of along.
       const stacked =
         window.getComputedStyle(grid).gridTemplateColumns.split(' ').length === 1
+      // `layoutPx` because `slots` came from `measure`, which converts the same way: under a
+      // Larger UI a client coordinate is painted and a slot's box is not. Both sides or neither.
       const to = landing(
         order,
         slots,
         compId,
-        clientX + grid.scrollLeft,
-        clientY + grid.scrollTop,
+        layoutPx(clientX) + grid.scrollLeft,
+        layoutPx(clientY) + grid.scrollTop,
         stacked,
       )
       if (to === null) return false

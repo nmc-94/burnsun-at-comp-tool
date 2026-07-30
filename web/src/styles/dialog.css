@@ -36,8 +36,8 @@
   width: min(100%, var(--dialog-w));
   /* The gutters a wrapper element would otherwise have provided. There is no wrapper: the top
      layer centres this against the viewport by itself. */
-  max-width: calc(100vw - 36px);
-  max-height: calc(100dvh - 52px);
+  max-width: calc(100vw / var(--ui-scale) - 36px);
+  max-height: calc(100dvh / var(--ui-scale) - 52px);
   margin: auto;
 
   /* Zero, and load-bearing. A modal dialog's own padding box is backdrop as far as
@@ -523,6 +523,14 @@ textarea.dlg-input {
  * itself the container for, so everything about the *box* — full bleed, no border, no radius —
  * has to come from @media, and only what is *inside* the box can come from @container. Same
  * number in both so the two can never disagree about what a phone is.
+ *
+ * The Larger UI splits them anyway, and deliberately not by much. @container measures the
+ * dialog's own layout width and so is already right at any size — which is the half that
+ * matters, because it is the half carrying the 40px tap targets. @media is answered by the
+ * window and cannot see the zoom, so between 460 and 575 real pixels the box keeps its border
+ * and radius when it would otherwise go full bleed. That is cosmetic on a phone nobody runs a
+ * larger UI on, and it is not worth a second copy of this block to fix; `workspace.css` has the
+ * shape that would take, for the two breakpoints where the difference is not cosmetic.
  */
 
 @media (max-width: 460px) {

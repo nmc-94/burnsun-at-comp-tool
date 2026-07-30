@@ -43,6 +43,13 @@
   --warn: #c47a1e;
   --warning: #c47a1e;
 
+  /* How large the whole application is drawn. A multiplier rather than a set of sizes because
+     every length in these sheets is already an absolute pixel — `base.css` spends this once, as
+     `zoom` on `#root`, and all ~869 of them scale together. Anything measuring the page from
+     JavaScript needs it too: `ui-scale.ts` carries the same number as `LARGE`, and
+     `ui-scale.test.ts` reads this file to check the two still agree. */
+  --ui-scale: 1;
+
   --radius-sm: 4px;
   --radius-md: 5px;
   --radius-lg: 6px;
@@ -71,6 +78,13 @@
   --fit-tag-hue: 210;
   --fit-tag-sat-adjust: 0%;
   --fit-tag-light-adjust: 0%;
+}
+
+/* The one preference here that is not a colour, and its own rule rather than a value inside the
+   palettes below: size and theme are independent, and somebody can want a larger UI in either.
+   Set from `ui-scale.ts`, which is also where the reasoning for `zoom` lives. */
+:root[data-ui-scale="large"] {
+  --ui-scale: 1.25;
 }
 
 /* The second selector makes the sign-in screen dark whatever is stored.

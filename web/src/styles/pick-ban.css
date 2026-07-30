@@ -283,3 +283,11 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* The same 560 layout pixels, which a Larger UI paints at 700 — a media query is answered by
+   the window and cannot see the zoom. See the longer note in `workspace.css`. */
+@media (max-width: 700px) {
+  :root[data-ui-scale="large"] .pb-ledger {
+    grid-template-columns: 1fr;
+  }
+}

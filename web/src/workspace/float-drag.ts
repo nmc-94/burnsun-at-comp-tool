@@ -19,6 +19,7 @@
 // this writes `z-index` and, on the outline, `transform` — different properties on different
 // elements, so neither can undo the other.
 
+import { layoutPx } from '../ui-scale'
 import { toCanvas } from './canvas-extent'
 import type { Carried, Float } from './carry'
 import { clamped, dropAt, samePlace } from './place'
@@ -152,12 +153,16 @@ export function beginFloat(
  * knowable, and several events before anything asks. Clamped to the tile, so a press on a
  * child that has been dragged outside its parent's box cannot produce a grip that would throw
  * the landing off.
+ *
+ * In layout pixels, because `dropAt` subtracts it from a `toCanvas` result and that is what
+ * those are. The tile's own box needs converting for the same reason — it is the clamp, so a
+ * painted one would let a grip sit a quarter of the way outside the tile it belongs to.
  */
 export function gripOf(tile: HTMLElement, clientX: number, clientY: number): Place {
   const box = tile.getBoundingClientRect()
   return clamped(
-    { x: clientX - box.left, y: clientY - box.top },
+    { x: layoutPx(clientX - box.left), y: layoutPx(clientY - box.top) },
     { width: 0, height: 0 },
-    { minX: 0, minY: 0, maxX: box.width, maxY: box.height },
+    { minX: 0, minY: 0, maxX: layoutPx(box.width), maxY: layoutPx(box.height) },
   )
 }

@@ -77,6 +77,17 @@ export const rasterize: CaptureFn = async (el) => {
   // React, and it should cost nothing to the people who never click the button.
   const { domToBlob } = await import('modern-screenshot')
   return domToBlob(el, {
+    // Said rather than measured, because left to itself the library takes the element's client
+    // rect — and that is a *painted* box, so the Larger UI would multiply the file by 1.25 on
+    // top of the 2× below and export a 1000px image where everyone else exports 640. The layout
+    // box is what the tile *is*, and an exported comp is something people paste at each other;
+    // it should not carry how one of them likes to read their screen.
+    //
+    // It does still follow the tile's width, which the grid decides — so a narrow window
+    // exports a smaller picture than a wide one, at any size, exactly as it always has.
+    // See `ui-scale.ts`; `larger-ui.spec.ts` exports at both sizes and checks the ratio.
+    width: el.offsetWidth,
+    height: el.offsetHeight,
     // A 320px tile becomes a 640px image, which is what makes the 10.5px footer legible when
     // it lands in a chat window.
     scale: 2,

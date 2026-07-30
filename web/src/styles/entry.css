@@ -45,7 +45,7 @@
 .signin-screen {
   position: relative;
   overflow: hidden;
-  min-height: 100dvh;
+  min-height: calc(100dvh / var(--ui-scale));
   display: grid;
   background: var(--bg-app);
 }
@@ -53,7 +53,11 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(60vw 52vw at 50% 34%, var(--halo-far) 0%, transparent 62%);
+  background: radial-gradient(
+    calc(60vw / var(--ui-scale)) calc(52vw / var(--ui-scale)) at 50% 34%,
+    var(--halo-far) 0%,
+    transparent 62%
+  );
 }
 /* Positioned, so it stacks above the wash rather than under it. */
 .signin-mid {
@@ -74,7 +78,7 @@
   margin: 0;
   font-family: var(--font-brand);
   font-weight: 500;
-  font-size: clamp(30px, 4.6vw, 46px);
+  font-size: clamp(30px, calc(4.6vw / var(--ui-scale)), 46px);
   letter-spacing: -0.035em;
   line-height: 1;
 }
@@ -241,14 +245,14 @@
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
-  padding: 0 clamp(18px, 3vw, 32px);
+  padding: 0 clamp(18px, calc(3vw / var(--ui-scale)), 32px);
 }
 .first .tag {
   display: block;
   margin-bottom: 18px;
 }
 .first h1 {
-  font-size: clamp(26px, 3.4vw, 38px);
+  font-size: clamp(26px, calc(3.4vw / var(--ui-scale)), 38px);
   letter-spacing: -0.03em;
 }
 .first-form {
@@ -274,7 +278,7 @@
   background: none;
   color: var(--text-1);
   font-family: var(--font-brand);
-  font-size: clamp(20px, 2.5vw, 27px);
+  font-size: clamp(20px, calc(2.5vw / var(--ui-scale)), 27px);
   letter-spacing: -0.02em;
 }
 .first-form input::placeholder {
@@ -334,7 +338,11 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(52vw 46vw at 50% 36%, var(--halo-far) 0%, transparent 62%);
+  background: radial-gradient(
+    calc(52vw / var(--ui-scale)) calc(46vw / var(--ui-scale)) at 50% 36%,
+    var(--halo-far) 0%,
+    transparent 62%
+  );
 }
 .picker-in {
   position: relative;
@@ -347,7 +355,7 @@
 .picker-name {
   margin: 0;
   font-family: var(--font-brand);
-  font-size: clamp(24px, 3.2vw, 34px);
+  font-size: clamp(24px, calc(3.2vw / var(--ui-scale)), 34px);
   font-weight: 500;
   letter-spacing: -0.03em;
 }

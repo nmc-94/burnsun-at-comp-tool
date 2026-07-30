@@ -12,8 +12,11 @@
 // re-sequence tiles with `order` and the canvas position them with `left`/`top` without either
 // of them fighting the animation.
 
+import { layoutPx } from '../ui-scale'
+
 /** A tile's place, in its container's own content rather than in the viewport — so a scroll
- *  between two readings does not read as every tile moving at once. */
+ *  between two readings does not read as every tile moving at once. In layout pixels; see
+ *  `measure`. */
 export interface Box {
   readonly left: number
   readonly top: number
@@ -54,6 +57,12 @@ export function stopMoving(tile: HTMLElement): void {
  *
  * Offsets are added rather than subtracted because a box is reported relative to the viewport
  * and wanted relative to the container's content.
+ *
+ * Boxes come back in **layout** pixels, which under a Larger UI is not what a client rect
+ * reports — see `ui-scale.ts`. Converting here rather than at each caller is what keeps the two
+ * of them right: `play` turns a difference of these into a CSS `translate`, which is a layout
+ * length, so painted boxes would send every tile a quarter too far; and `reorder` compares them
+ * against a cursor, which it converts the same way.
  */
 export function measure(
   tiles: ReadonlyMap<string, HTMLElement>,
@@ -65,10 +74,10 @@ export function measure(
   for (const [id, tile] of tiles) {
     const box = tile.getBoundingClientRect()
     boxes.set(id, {
-      left: box.left + scroll.left,
-      top: box.top + scroll.top,
-      width: box.width,
-      height: box.height,
+      left: layoutPx(box.left) + scroll.left,
+      top: layoutPx(box.top) + scroll.top,
+      width: layoutPx(box.width),
+      height: layoutPx(box.height),
     })
   }
   return boxes

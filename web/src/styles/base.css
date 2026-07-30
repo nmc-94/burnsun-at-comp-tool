@@ -16,6 +16,22 @@ body,
   min-height: 100%;
 }
 
+/* The Larger UI preference, spent in one place. `zoom` lays the page out again at the new size
+   rather than stretching a rendered one, so text is re-shaped by the font engine and nothing
+   blurs — see `ui-scale.ts` for why this and not a type scale.
+
+   On `#root` rather than `html`, so the page canvas and the overscroll behind it stay at true
+   viewport size.
+
+   That has one consequence, and it applies without exception: a viewport unit inside here still
+   resolves against the *unscaled* viewport and is then painted scaled, so `100dvh` would paint a
+   quarter taller than the window. Every `vw`/`vh`/`dvh` in these sheets therefore divides by
+   `--ui-scale`, which turns "a fraction of the window" back into "a fraction of the space the
+   layout actually has". Grep these sheets for `--ui-scale` to find them all. */
+#root {
+  zoom: var(--ui-scale);
+}
+
 body {
   margin: 0;
   background: var(--bg-app);
@@ -39,7 +55,7 @@ h3 {
    footer's contents had to move somewhere they still exist. */
 .app-shell {
   /* dvh, not vh: mobile browser chrome would otherwise put the fold above the real bottom. */
-  min-height: 100dvh;
+  min-height: calc(100dvh / var(--ui-scale));
   display: flex;
   flex-direction: column;
 }
@@ -275,7 +291,7 @@ h3 {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  width: min(240px, calc(100vw - 24px));
+  width: min(240px, calc(100vw / var(--ui-scale) - 24px));
   padding: 4px;
   border: 1px solid var(--line-1);
   border-radius: var(--radius-md);
@@ -294,7 +310,7 @@ h3 {
   right: auto;
   width: max-content;
   min-width: 140px;
-  max-width: min(240px, calc(100vw - 24px));
+  max-width: min(240px, calc(100vw / var(--ui-scale) - 24px));
 }
 .header-menu-who {
   display: flex;
@@ -584,7 +600,7 @@ h3 {
 .app-health {
   flex: 0 0 auto;
   margin: 0;
-  padding: 9px clamp(18px, 3vw, 32px);
+  padding: 9px clamp(18px, calc(3vw / var(--ui-scale)), 32px);
   background: var(--bg-panel-alt);
   border-bottom: 1px solid var(--line-1);
   color: var(--danger);

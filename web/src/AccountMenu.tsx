@@ -201,6 +201,9 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
           <ToggleItem setting="confirmCompDelete" testId="menu-confirm-deletes">
             Confirm comp deletes
           </ToggleItem>
+          <ToggleItem setting="largerUi" testId="menu-larger-ui">
+            Larger UI
+          </ToggleItem>
 
           <div className="header-menu-sep" />
 

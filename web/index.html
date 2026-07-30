@@ -34,6 +34,31 @@
         document.documentElement.dataset.theme = dark ? 'dark' : 'light'
       })()
     </script>
+    <script>
+      // And the size, before first paint for the same reason and a louder one: this draws the
+      // whole application a quarter larger, so arriving at the default size and correcting once
+      // the bundle has parsed is not a subtle flash but the entire page reflowing.
+      //
+      // Its own script element rather than a second function in the one above, so that neither
+      // has to end in a semicolon to keep the other from being parsed as a call to it.
+      //
+      // Must stay in sync with src/settings.ts (same key, same field, same default) and with
+      // src/ui-scale.ts (the attribute, and the number tokens.css resolves it to).
+      (function () {
+        var KEY = '__BRAND_STORAGE_PREFIX__.settings'
+        try {
+          // A JSON blob, where the theme is a bare string — so this parses, inside the same
+          // shrug-and-default catch `readSettings` uses. A throw here is before anything has
+          // rendered and would take the page down rather than merely arrive at the wrong size.
+          var stored = JSON.parse(localStorage.getItem(KEY) || 'null')
+          // Strictly true: absent, malformed and anything non-boolean all mean the default,
+          // which is off, which is no attribute at all.
+          if (stored && stored.largerUi === true) {
+            document.documentElement.dataset.uiScale = 'large'
+          }
+        } catch (e) {}
+      })()
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

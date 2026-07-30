@@ -10,7 +10,9 @@
 // **Fixed, not absolute.** The rail it opens over is `overflow: auto`, so an absolutely
 // positioned menu would be clipped at the rail's edge and would scroll with the list underneath
 // it. Fixed positioning is relative to the viewport and escapes both. It also means the
-// coordinates are `clientX`/`clientY` unmodified, with no scroll offset to add.
+// coordinates are `clientX`/`clientY` with no scroll offset to add — but they do need converting
+// out of painted pixels under a Larger UI, since `left`/`top` are lengths in the scaled
+// document. See `ui-scale.ts`, and the effect below where every term is put in one space.
 //
 // **A disclosure, not `role="menu"`.** Menu semantics promise arrow-key roving between items,
 // and claiming them without implementing them is worse for a screen reader than an honest list
@@ -18,6 +20,8 @@
 // reason.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+
+import { layoutPx } from '../ui-scale'
 
 export interface MenuItem {
   readonly label: string
@@ -42,7 +46,7 @@ const MARGIN = 8
 
 export default function PointerMenu({ at, items, label, onDismiss, testId }: Props) {
   const shell = useRef<HTMLDivElement>(null)
-  const [box, setBox] = useState(at)
+  const [box, setBox] = useState(() => ({ x: layoutPx(at.x), y: layoutPx(at.y) }))
 
   // Measured and corrected before the browser paints, so a menu opened near an edge is never
   // seen hanging off it and then jumping back. Its size is not knowable until it is in the
@@ -50,13 +54,22 @@ export default function PointerMenu({ at, items, label, onDismiss, testId }: Pro
   useLayoutEffect(() => {
     const element = shell.current
     if (!element) return
-    const { width, height } = element.getBoundingClientRect()
+    const rect = element.getBoundingClientRect()
+    // Everything converted up front, so the comparisons below are one space throughout: the
+    // cursor, the measured box and the window are all painted, while `MARGIN` and what this
+    // writes to `left`/`top` are layout. Mixing them put the menu a quarter of the way down the
+    // screen from the pointer.
+    const x = layoutPx(at.x)
+    const y = layoutPx(at.y)
+    const width = layoutPx(rect.width)
+    const height = layoutPx(rect.height)
+    const view = { width: layoutPx(window.innerWidth), height: layoutPx(window.innerHeight) }
     setBox({
       // Flipped to the other side of the cursor rather than merely pushed inside the viewport:
       // a menu shoved left ends up under the pointer, and the first item is then under whatever
       // the next click is.
-      x: at.x + width + MARGIN > window.innerWidth ? Math.max(MARGIN, at.x - width) : at.x,
-      y: at.y + height + MARGIN > window.innerHeight ? Math.max(MARGIN, at.y - height) : at.y,
+      x: x + width + MARGIN > view.width ? Math.max(MARGIN, x - width) : x,
+      y: y + height + MARGIN > view.height ? Math.max(MARGIN, y - height) : y,
     })
   }, [at])
 
