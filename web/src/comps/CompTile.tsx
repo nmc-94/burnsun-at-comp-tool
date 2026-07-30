@@ -13,6 +13,7 @@ import {
   inTextField,
   isCopy,
   isCopyDrag,
+  isRowExtend,
   isRowFlagship,
   isRowNext,
   isRowOpen,
@@ -542,7 +543,9 @@ export default function CompTile({
 
     const forwards = isRowNext(event)
     if (forwards || isRowPrev(event)) {
-      const moved = stepCursor(row, forwards ? 1 : -1, event.shiftKey)
+      // `isRowExtend`, not `event.shiftKey`: Shift+Tab already spent its shift on saying
+      // "backwards", and reading it twice made that the one motion that could not just move.
+      const moved = stepCursor(row, forwards ? 1 : -1, isRowExtend(event))
       if (moved || event.key !== 'Tab') event.preventDefault()
       return
     }

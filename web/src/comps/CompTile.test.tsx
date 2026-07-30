@@ -807,6 +807,29 @@ describe('moving between the rows from the keyboard', () => {
     expect(cursorRow()).toBe(landing)
   })
 
+  it('moves plainly on Shift+Tab, whose shift is spelling "backwards" and nothing else', () => {
+    // It used to read that shift twice — once as the direction and once as "extend" — so the one
+    // motion whose whole job is stepping back up a row was the one that could not.
+    mount(slots(SHIP.abaddon, SHIP.orthrus, SHIP.rifter))
+
+    fireEvent.keyDown(line(2), { key: 'Tab', shiftKey: true })
+    expect(cursorRow()).toBe('1')
+    expect(pickedRows()).toEqual([1])
+
+    fireEvent.keyDown(line(1), { key: 'Tab', shiftKey: true })
+    expect(cursorRow()).toBe('0')
+    expect(pickedRows()).toEqual([0])
+  })
+
+  it('extends upwards on Shift+ArrowUp, which is where that gesture lives', () => {
+    mount(slots(SHIP.abaddon, SHIP.orthrus, SHIP.rifter))
+
+    fireEvent.keyDown(line(2), { key: 'ArrowUp', shiftKey: true })
+
+    expect(cursorRow()).toBe('1')
+    expect(pickedRows()).toEqual([1, 2])
+  })
+
   it('picks the row it lands on out, exactly as a click on it would', () => {
     // Descending weights, so the rows are drawn in the order they are stored and `pickedRows`,
     // which counts along the screen, says the same numbers this test points at.

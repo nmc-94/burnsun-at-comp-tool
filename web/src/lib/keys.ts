@@ -102,6 +102,22 @@ export function isRowPrev(event: Chord): boolean {
   return event.key === 'ArrowUp' || (event.key === 'Tab' && event.shiftKey)
 }
 
+/**
+ * Whether a motion is dragging the selection along behind the cursor.
+ *
+ * **Shift and an arrow, and only that.** Shift+Tab is a motion in its own right — the shift is
+ * how "backwards" is spelled rather than a modifier on top of it — so a row reached that way is
+ * reached plainly, like any other single step. Reading its shift as "extend" made Shift+Tab the
+ * one motion that could not be used to simply move up a row, which is most of what it is for.
+ *
+ * There is no keyboard spelling of "extend backwards by a Tab", and there does not need to be:
+ * Shift+↑ is that, and it is the same key everywhere else that has a list.
+ */
+export function isRowExtend(event: Chord): boolean {
+  if (!unmodified(event) || !event.shiftKey) return false
+  return event.key === 'ArrowUp' || event.key === 'ArrowDown'
+}
+
 /** Open the row's hull search — the keyboard's spelling of the magnifier. */
 export function isRowOpen(event: Chord): boolean {
   return unmodified(event) && event.key === 'Enter'
