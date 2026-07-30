@@ -29,6 +29,9 @@ const COMP = {
   createdAt: '2026-07-01T00:00:00Z',
   updatedAt: '2026-07-01T00:00:00Z',
   yourLevel: 'owner',
+  // Deliberately not 0, so a request that sent a missing or defaulted version is distinguishable
+  // from one that sent the comp's own.
+  slotsVersion: 3,
   slots: [{ position: 0, typeId: SHIP.abaddon, isFlagship: false }],
 }
 
@@ -109,6 +112,11 @@ const comp = (count: number) =>
   Array.from({ length: count }, (_, position) => ({ ...ABADDON, position }))
 
 const writes = (calls: Recorded[]) => calls.filter((call) => call.init.method === 'PUT')
+
+/** The precondition a recorded write carried. `request` builds a real `Headers`, which has no own
+ *  enumerable properties, so reading it needs `get` rather than an object match. */
+const ifMatch = (call: Recorded | undefined) =>
+  call ? new Headers(call.init.headers).get('If-Match') : null
 
 async function loaded() {
   const view = renderHook(() => useCompDocument('c1'))
@@ -348,6 +356,13 @@ describe('undoing', () => {
     // The guard above compares against what the server has *confirmed*. A write already on its
     // way is about to make the server disagree with that, so skipping here would leave the
     // vindicator stored, the abaddon on screen, and the tile saying it had saved.
+    //
+    // It is written *after* the first write rather than beside it, and that is the version
+    // precondition's doing: a save names the `slotsVersion` it was based on, and the second one
+    // cannot know its own until the first has answered. Issued concurrently it would name a
+    // version its own predecessor had already moved and be refused as somebody else's conflict —
+    // so the abaddon would not be stored either way, and this way it is stored late instead of
+    // not at all. What the test guards is that the undo is *written*, not when.
     const { calls, land } = stubHangingWrites()
     const view = await loaded()
 
@@ -364,8 +379,39 @@ describe('undoing', () => {
       vi.advanceTimersByTime(600)
     })
 
-    expect(writes(calls).length).toBe(2)
+    // Queued, not dropped, and not yet sent.
+    expect(writes(calls).length).toBe(1)
+
+    // The first lands, and the queue releases the second.
+    await act(async () => land())
+    await waitFor(() => expect(writes(calls).length).toBe(2))
     expect(JSON.parse(String(writes(calls)[1]?.init.body)).slots).toEqual([ABADDON])
+    await act(async () => land())
+  })
+
+  it('sends the version the first write returned, not the one it started from', async () => {
+    // The whole reason the queue exists. Two of this tile's own saves in a row must name
+    // consecutive versions, or the second is refused as though a stranger had written.
+    const { calls, land } = stubHangingWrites()
+    const view = await loaded()
+
+    act(() => view.result.current.change([VINDICATOR]))
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    act(() => {
+      view.result.current.undo()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await act(async () => land())
+    await waitFor(() => expect(writes(calls).length).toBe(2))
+
+    // COMP's slotsVersion is what both the load and the stubbed write answer with, so both
+    // requests naming it is the queue having waited rather than having guessed.
+    expect(ifMatch(writes(calls)[0])).toBe(`"${COMP.slotsVersion}"`)
+    expect(ifMatch(writes(calls)[1])).toBe(`"${COMP.slotsVersion}"`)
     await act(async () => land())
   })
 

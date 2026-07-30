@@ -33,7 +33,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic.alias_generators import to_camel
 from sqlalchemy import func, select
@@ -168,6 +168,13 @@ class CompDetail(_Response):
     #: without this the link would silently show last week's comp forever — the mirror of the
     #: surprise a live view would spring. False when there is no share.
     share_stale: bool
+    #: Which version of the hull list this is. Moves on a slot write and on nothing else, so a
+    #: client can send it back as ``If-Match`` and be refused if somebody else has written since.
+    #:
+    #: A field rather than an ``ETag`` header, and that is forced rather than preferred: the
+    #: listing serves every comp on the team in one response, and one response has nowhere to put
+    #: N entity tags. Serving it here and in the header would be two spellings of one fact.
+    slots_version: int
     #: Always present, the listing included. The library rail draws a legality dot and a
     #: point total per comp, legality is the client's to compute, and a comp without its
     #: slots is a comp the client cannot judge. The listing already loads them to count
@@ -320,6 +327,7 @@ def _detail(
         # only meaningful because ``_apply_slots`` now touches ``updated_at`` — before that a
         # hull change left it still, and this would have read false forever.
         share_stale=bool(share and comp.updated_at > share[1]),
+        slots_version=comp.slots_version,
         slots=[
             SlotDetail(position=slot.position, type_id=slot.type_id, is_flagship=slot.is_flagship)
             for slot in comp.slots
@@ -382,6 +390,45 @@ def _positions(slots: list[SlotWrite]) -> list[int]:
     return numbered
 
 
+def expected_slots_version(request: Request) -> int | None:
+    """The ``slotsVersion`` this write says it is based on, if it said.
+
+    A dependency rather than a header parameter on the route, so the parsing and its three
+    answers live in one readable place instead of being spread between a signature and a body.
+
+    Three cases, and they are genuinely different:
+
+    * **Absent** — no precondition. Every caller that is not the SPA is in this case: curl, a
+      script, the test suite's own direct writes. They keep the unconditional behaviour they have
+      always had, which is what makes this header additive rather than a breaking change.
+    * **Present and unparseable** — **400**. A client that sent a precondition it cannot mean has
+      a bug, and naming it is kinder than absorbing it. Note this is *not* 412: 412 says the
+      precondition was well-formed and false, and answering it here would tell a client with a
+      formatting bug to go and reload a comp that has not moved.
+    * **Present and a number** — compared by the route.
+
+    Spelled leniently on purpose. HTTP quotes an entity tag, so ``"3"`` is the correct form and
+    ``W/"3"`` is the weak one, but a hand-written request will send a bare ``3`` and refusing it
+    would be pedantry about a number this application invented. ``*`` is HTTP's "any current
+    version", which for this route means the same thing as sending no header at all.
+    """
+    raw = request.headers.get("if-match")
+    if raw is None:
+        return None
+    value = raw.strip()
+    if value == "*":
+        return None
+    if value.startswith("W/"):
+        value = value[2:].strip()
+    value = value.strip('"')
+    try:
+        return int(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"If-Match must be a slots version; got {raw!r}"
+        ) from None
+
+
 def _apply_slots(session: Session, comp: Comp, slots: list[SlotWrite]) -> None:
     """Replace a comp's slots with ``slots``, on the rows they name or numbered from zero.
 
@@ -421,6 +468,19 @@ def _apply_slots(session: Session, comp: Comp, slots: list[SlotWrite]) -> None:
     # is the one thing that field exists to say. ``func.now()`` rather than a Python clock, so
     # every timestamp in the schema still comes from the database.
     comp.updated_at = func.now()
+
+    # The precondition counter, bumped here and in no other function. Two things depend on that
+    # being literally true. A rename and a hull change commute, so if ``rename_comp`` bumped it
+    # too, one person renaming a comp would refuse another person's hull edit — a conflict that
+    # does not exist, and whose only remedy is to discard real work. And ``_apply_tags`` leaves
+    # it alone for the same reason, even though it sits right beside this and touches
+    # ``updated_at`` exactly as this does.
+    #
+    # Read off the row rather than assigned as ``slots_version + 1`` in SQL, because the caller
+    # holds a row lock (see ``replace_slots``) and needs the new value to serve back in the same
+    # response. An expression would expire the attribute and cost a re-select for a number we
+    # already know.
+    comp.slots_version = comp.slots_version + 1
 
 
 def _canonical(value: str, in_use: Iterable[str]) -> str:
@@ -619,15 +679,52 @@ def replace_slots(
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
     origin: str | None = Depends(origin_client),
+    expected: int | None = Depends(expected_slots_version),
 ) -> CompDetail:
     """Store the comp as it now stands.
 
     Nothing here asks whether the result is legal. An eleven-ship comp fifty points over
     budget saves exactly like a legal one; the builder is already showing its owner what
     is wrong with it.
+
+    It does ask, when the caller says so, whether the comp is still the one they were editing.
+    ``If-Match`` carries the ``slotsVersion`` this edit was based on; if the stored version has
+    moved since, the write is refused with **412** and the body carries the comp as it now
+    stands. Without that header the write is unconditional, which is what it always was.
     """
     comp, access = reach_comp(session, comp_id, viewer, AccessLevel.EDITOR)
     live(access)
+
+    if expected is not None:
+        # Re-selected `FOR UPDATE` *after* the gate, and deliberately not inside ``reach_comp``:
+        # that function serves six callers and none of the other five wants a row lock. Without
+        # the lock the compare and the write are two statements with a gap between them, and two
+        # simultaneous saves both read the current version, both match, and both apply — which is
+        # the exact overwrite this exists to refuse, merely made narrower.
+        #
+        # The lock is taken only when a precondition was offered. A caller that sent no
+        # ``If-Match`` is asking for the old unconditional behaviour and should not pay for, or
+        # contend on, a lock protecting a comparison nobody made.
+        current = session.scalar(
+            select(Comp.slots_version).where(Comp.id == comp.id).with_for_update()
+        )
+        if current != expected:
+            # 412, not 409, and the difference is load-bearing rather than pedantic: this route
+            # already answers 409 for an archived team (``access.live``) and for a second flagship
+            # (``_apply_slots``), so a third meaning on that status would be one the client cannot
+            # branch on. 412 says "the precondition you named is not true", which is a different
+            # sentence and the one HTTP has for it.
+            #
+            # A sentence and nothing else. Carrying the current comp in the body was the obvious
+            # next thought and does not survive reading the client: the answer to this refusal is
+            # a person deciding to take the server's version, and the click that says so already
+            # re-reads through ``GET /comps/{id}`` — the same path every other remote change takes.
+            # A comp here would be a payload nothing consumes and a second way into that path.
+            raise HTTPException(
+                status_code=412,
+                detail="This comp changed while you were editing it. Reload to see it.",
+            )
+
     _apply_slots(session, comp, body.slots)
     session.commit()
     _announce(comp, KIND_CHANGED, viewer, origin)

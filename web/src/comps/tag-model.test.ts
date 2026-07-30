@@ -23,6 +23,7 @@ function comp(name: string, archetype: string | null, tags: string[]): CompDetai
     createdAt: '2026-07-25T10:00:00Z',
     updatedAt: '2026-07-25T10:00:00Z',
     yourLevel: 'owner',
+    slotsVersion: 0,
     archetype,
     tags,
     forkedFromCompId: null,

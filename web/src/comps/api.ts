@@ -32,11 +32,24 @@ export function renameComp(compId: string, name: string): Promise<CompDetail> {
   })
 }
 
-/** Store the comp's slots as they now stand. The list is the comp, in order. */
-export function replaceSlots(compId: string, slots: CompSlotWrite[]): Promise<CompDetail> {
+/**
+ * Store the comp's slots as they now stand. The list is the comp, in order.
+ *
+ * `basedOn` is the `slotsVersion` this edit was built on. Sent as `If-Match`, it makes the write
+ * conditional: the server answers **412** rather than overwriting a hull list somebody else has
+ * changed since. Optional, and omitting it is the unconditional write this route has always been —
+ * which is what every caller outside the tile still wants, because a fork or a port is writing a
+ * comp nobody else is holding.
+ */
+export function replaceSlots(
+  compId: string,
+  slots: CompSlotWrite[],
+  basedOn?: number,
+): Promise<CompDetail> {
   return request<CompDetail>(`/api/v1/comps/${compId}/slots`, {
     method: 'PUT',
     body: JSON.stringify({ slots }),
+    headers: basedOn === undefined ? undefined : { 'If-Match': `"${basedOn}"` },
   })
 }
 

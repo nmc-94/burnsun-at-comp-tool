@@ -293,6 +293,11 @@ class Comp(Base):
     # its rows. Null when this comp is not a fork at all. A plain scalar with the vocabulary
     # in Python, like ``SubjectKind``.
     fork_kind: Mapped[str | None] = mapped_column(String(16))
+    # Bumped by a slot write and by nothing else, so a caller can say which version of the hull
+    # list its edit was based on and be refused when that is no longer the current one. A rename
+    # and a hull change commute, so neither may invalidate the other — which is why this is not
+    # ``updated_at``, and why ``_apply_tags`` leaves it alone. See ``comps._apply_slots``.
+    slots_version: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

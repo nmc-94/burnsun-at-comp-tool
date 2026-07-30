@@ -42,6 +42,7 @@ function comp(
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: '2026-07-01T00:00:00Z',
     yourLevel: 'owner',
+    slotsVersion: 0,
     archetype,
     tags,
     forkedFromCompId: null,

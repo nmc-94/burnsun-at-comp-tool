@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
-import { messageFor } from '../api'
+import { ApiError, messageFor } from '../api'
 import { evaluate } from '../engine'
 import type { LegalityResult } from '../engine'
 import { getSignal, subscribeSignal } from '../live/team-events'
@@ -151,6 +151,23 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
   // about to make the server disagree with it.
   const inFlight = useRef(0)
 
+  // The `slotsVersion` this tile's edits are built on — the last one the server told us about.
+  // Sent as the precondition on every save, so a write that would land on top of somebody else's
+  // is refused instead. Null while we do not know one, which means the load has not finished (or
+  // failed): the save then goes out unconditional, which is what it has always been.
+  const version = useRef<number | null>(null)
+
+  // This tile's own writes, chained. A save names the version its edit was based on, and that
+  // number only becomes knowable once the previous save has answered — so two overlapping saves
+  // would have the second naming a version its own predecessor had already moved, and the server
+  // would refuse this tile's work as though a stranger had done it. `in-flight.ts` predicted
+  // exactly this: "a version column would turn the silent overwrite above into a spurious
+  // 'changed elsewhere' for somebody working alone."
+  //
+  // Reachable rather than theoretical. The debounce fires 600 ms after the last edit, so any save
+  // slower than that plus one more keystroke produces the overlap.
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+
   // Somebody else's change, and the bookkeeping that keeps it to one flag per change. Declared
   // up here with the other per-comp state because the load effect below resets all three.
   const [remote, setRemote] = useState<RemoteChange | null>(null)
@@ -171,6 +188,17 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
     past.current = []
     future.current = []
     onScreen.current = []
+    // Forgotten with the rest of this comp's state, because a version belongs to the comp that
+    // issued it: carrying the last one across a load would send another comp's number, and the
+    // server would either refuse a first edit for no reason or accept it for the wrong one.
+    version.current = null
+    // And so is the queue, because what it orders is *one comp's* writes against each other. A
+    // hook instance is reused across comps, so leaving it would make a save to the comp arriving
+    // wait on a save to the comp leaving — two writes with no reason to be ordered, one of them
+    // held up by a request to a different row. Safe to drop: the outgoing write is already
+    // registered with `trackWrite` under its own comp id, which is what holds back a read of
+    // *that* comp, and nothing here was ever what kept it alive.
+    queue.current = Promise.resolve()
     // This read *is* the newest version of this comp, so nothing the stream has said about it
     // so far is news. Without this, a tile opening on a comp somebody edited while it was
     // closed — a board switch away, a comp on another board — would load it and immediately
@@ -189,6 +217,7 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
       .then(async (found) => {
         if (cancelled || !found) return
         setComp(found)
+        version.current = found.slotsVersion
         // Seeds the comparison rather than announcing anything — see `noteEmptiness`. Without
         // this, the first save after opening a tile would read a crossing that had not happened.
         noteEmptiness(found)
@@ -234,8 +263,24 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
       }
       setSaveState('saving')
       inFlight.current += 1
+      // Queued behind this tile's previous save, and handed to `trackWrite` as the one promise
+      // covering the whole queue rather than one per link — registering each separately would
+      // leave a gap between them for exactly the read `whenWritesSettle` exists to hold back.
+      const write = queue.current.then(() =>
+        replaceSlots(compId, next.map(toWire), version.current ?? undefined),
+      )
+      queue.current = trackWrite(
+        compId,
+        // Settled, never the write itself, for the reason `trackWrite` stores a settled promise:
+        // one refused save must not break the chain for every save after it.
+        write.then(
+          () => undefined,
+          () => undefined,
+        ),
+      )
       try {
-        const updated = await trackWrite(compId, replaceSlots(compId, next.map(toWire)))
+        const updated = await write
+        version.current = updated.slotsVersion
         persisted.current = JSON.stringify(next)
         setComp(updated)
         noteEmptiness(updated)
@@ -246,6 +291,19 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
         // on screen, and the failure is nearly always the connection rather than the edit.
         setSaveState('error')
         setError(messageFor(problem))
+        if (problem instanceof ApiError && problem.status === 412) {
+          // Not a failed request — somebody else's change, discovered by trying to write over it.
+          // The notice is the one that already exists for that, because from this side "a change
+          // arrived while you had unsaved work" and "your write lost a race" are the same
+          // sentence, and the action is the same too: take the server's version or keep editing.
+          //
+          // Marked flagged at the current revision so the effect below does not raise a second
+          // notice for the same news, and named from the signal so that if the event has already
+          // arrived the notice says who — falling back to "changed elsewhere" when it has not.
+          const signal = getSignal(compId)
+          flagged.current = signal.revision
+          setRemote({ actor: signal.actor })
+        }
       } finally {
         inFlight.current -= 1
       }
@@ -431,6 +489,10 @@ export function useCompDocument(compId: string, onChanged?: OnChanged): CompDocu
       .sort((a, b) => a.position - b.position)
 
     setComp(fresh)
+    // The line that would otherwise be forgotten, and the failure it causes is total rather than
+    // partial: without it every save after taking somebody else's version names the version this
+    // tile held *before* they wrote, so the server refuses it, so the notice comes back, forever.
+    version.current = fresh.slotsVersion
     noteEmptiness(fresh)
     setSlots(loaded)
     onScreen.current = loaded

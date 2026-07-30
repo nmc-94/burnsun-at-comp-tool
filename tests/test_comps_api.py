@@ -296,6 +296,222 @@ def test_a_second_flagship_is_refused_and_changes_nothing(client, sign_in, publi
     assert [slot["isFlagship"] for slot in after["slots"]] == [True, False]
 
 
+def test_a_comps_slots_version_moves_when_its_hulls_do(client, sign_in, publish):
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+    assert comp["slotsVersion"] == 0
+
+    once = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON)).json()
+    twice = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON, RIFTER)).json()
+
+    assert once["slotsVersion"] == 1
+    assert twice["slotsVersion"] == 2
+
+
+def test_renaming_or_retagging_a_comp_leaves_its_slots_version_where_it_was(
+    client, sign_in, publish
+):
+    """The reason this counter is not ``updated_at``, stated as a test.
+
+    A rename and a hull change commute. If either bumped this, one person renaming a comp would
+    refuse another person's hull edit — a conflict that does not exist, and whose only remedy is
+    to throw away real work. Both of those routes *do* move ``updated_at``, which is exactly why
+    that field could not be the precondition.
+    """
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+    based_on = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON)).json()
+
+    renamed = client.patch(f"/api/v1/comps/{comp['id']}", json={"name": "Shield Kite"}).json()
+    retagged = client.put(
+        f"/api/v1/comps/{comp['id']}/tags", json={"archetype": "Kiter", "tags": ["angel"]}
+    ).json()
+
+    assert renamed["slotsVersion"] == based_on["slotsVersion"]
+    assert retagged["slotsVersion"] == based_on["slotsVersion"]
+    # Both moved the comp, though — so the two fields are saying different things rather than
+    # one of them being broken.
+    assert retagged["updatedAt"] > based_on["updatedAt"]
+
+
+def test_a_save_based_on_the_current_version_is_accepted(client, sign_in, publish):
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+    current = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON)).json()
+
+    response = client.put(
+        f"/api/v1/comps/{comp['id']}/slots",
+        json=slots(ABADDON, RIFTER),
+        headers={"If-Match": f'"{current["slotsVersion"]}"'},
+    )
+
+    assert response.status_code == 200
+    assert [slot["typeId"] for slot in response.json()["slots"]] == [ABADDON, RIFTER]
+
+
+def test_a_save_that_would_overwrite_somebody_elses_is_refused_and_changes_nothing(
+    client, sign_in, publish, resolver
+):
+    """The whole point of the column, and the loss it exists to stop.
+
+    412 rather than 409, and that is not cosmetic: this route already spends 409 on the archived
+    team and on a second flagship, so a third meaning would be one no client could branch on.
+    """
+    publish()
+    resolver.knows("Ayla", EDITOR)
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+    grant_to(client, team, "Ayla", "editor")
+    stale = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON)).json()
+
+    # Somebody else saves in the meantime. Same route, no precondition — they had no reason to
+    # think anything was in flight.
+    sign_in(EDITOR, "Ayla")
+    client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON, VINDICATOR))
+
+    # And the first editor's debounce finally fires, based on the version they last saw.
+    sign_in(OWNER)
+    refused = client.put(
+        f"/api/v1/comps/{comp['id']}/slots",
+        json=slots(ABADDON, RIFTER),
+        headers={"If-Match": f'"{stale["slotsVersion"]}"'},
+    )
+
+    assert refused.status_code == 412
+    after = client.get(f"/api/v1/comps/{comp['id']}").json()
+    assert [slot["typeId"] for slot in after["slots"]] == [ABADDON, VINDICATOR]
+    assert after["slotsVersion"] == stale["slotsVersion"] + 1
+
+
+def test_a_refusal_says_something_a_person_can_read(client, sign_in, publish, resolver):
+    """``messageFor`` renders a string ``detail`` and nothing else, so this has to be one.
+
+    The refusal deliberately carries no comp: the answer to it is somebody deciding to take the
+    server's version, and the click that says so re-reads the comp anyway.
+    """
+    publish()
+    resolver.knows("Ayla", EDITOR)
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+    grant_to(client, team, "Ayla", "editor")
+    stale = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON)).json()
+
+    sign_in(EDITOR, "Ayla")
+    client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(VINDICATOR))
+
+    sign_in(OWNER)
+    refused = client.put(
+        f"/api/v1/comps/{comp['id']}/slots",
+        json=slots(RIFTER),
+        headers={"If-Match": f'"{stale["slotsVersion"]}"'},
+    )
+
+    assert isinstance(refused.json()["detail"], str)
+    assert "Reload" in refused.json()["detail"]
+
+
+def test_a_save_that_names_no_version_is_still_unconditional(
+    client, sign_in, publish, resolver
+):
+    """Every caller that is not the SPA is in this case, and keeps what it always had."""
+    publish()
+    resolver.knows("Ayla", EDITOR)
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+    grant_to(client, team, "Ayla", "editor")
+    client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON))
+
+    sign_in(EDITOR, "Ayla")
+    client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON, VINDICATOR))
+
+    sign_in(OWNER)
+    response = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(RIFTER))
+
+    assert response.status_code == 200
+    assert [slot["typeId"] for slot in response.json()["slots"]] == [RIFTER]
+
+
+def test_a_star_means_any_version_the_way_http_says_it_does(client, sign_in, publish):
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+    client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON))
+
+    response = client.put(
+        f"/api/v1/comps/{comp['id']}/slots", json=slots(RIFTER), headers={"If-Match": "*"}
+    )
+
+    assert response.status_code == 200
+
+
+def test_a_version_may_be_spelled_quoted_weak_or_bare(client, sign_in, publish):
+    """Lenient on purpose: HTTP quotes an entity tag, and a hand-written request will not."""
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+    path = f"/api/v1/comps/{comp['id']}/slots"
+
+    # Ascending, because each accepted save bumps the version — so a spelling that failed to
+    # parse would be read as a mismatch against the next number and answer 412 rather than 200.
+    # That is what makes three 200s evidence about the parsing rather than about the numbers.
+    for spelling in ('"0"', 'W/"1"', "2"):
+        response = client.put(path, json=slots(ABADDON), headers={"If-Match": spelling})
+        assert response.status_code == 200, spelling
+
+
+def test_a_precondition_that_is_not_a_version_is_named_rather_than_absorbed(
+    client, sign_in, publish
+):
+    """400, and deliberately not 412.
+
+    412 says the precondition was well formed and false, which would send a client with a
+    formatting bug off to reload a comp that has not moved.
+    """
+    publish()
+    sign_in(OWNER)
+    comp = make_comp(client, make_team(client))
+
+    refused = client.put(
+        f"/api/v1/comps/{comp['id']}/slots",
+        json=slots(ABADDON),
+        headers={"If-Match": '"deadbeef"'},
+    )
+
+    assert refused.status_code == 400
+    assert client.get(f"/api/v1/comps/{comp['id']}").json()["slots"] == []
+
+
+def test_the_two_meanings_409_already_carries_on_this_route_are_untouched(
+    client, sign_in, publish
+):
+    """The reason the refusal above is 412. If either of these ever becomes 412, that broke."""
+    publish()
+    sign_in(OWNER)
+    team = make_team(client)
+    comp = make_comp(client, team)
+
+    two_flagships = client.put(
+        f"/api/v1/comps/{comp['id']}/slots",
+        json={
+            "slots": [
+                {"typeId": ABADDON, "isFlagship": True},
+                {"typeId": VINDICATOR, "isFlagship": True},
+            ]
+        },
+    )
+    assert two_flagships.status_code == 409
+
+    client.post(f"/api/v1/teams/{team['id']}/archive")
+    archived = client.put(f"/api/v1/comps/{comp['id']}/slots", json=slots(ABADDON))
+    assert archived.status_code == 409
+
+
 def test_a_comp_may_not_carry_more_slots_than_one_request_allows(client, sign_in, publish):
     """A request-size bound, not a rule: the field size is the ruleset's business."""
     publish()
