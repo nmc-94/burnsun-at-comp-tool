@@ -66,6 +66,7 @@ from . import share_slug
 from .access import live, reach_comp
 from .auth.dependencies import current_viewer
 from .db import get_session
+from .live import KIND_CHANGED, origin_client, publish
 from .models import AccessLevel, Comp, CompShare
 from .permissions import Viewer
 from .ratelimit import FixedWindow, caller_of
@@ -194,12 +195,30 @@ def reset_rate_limit() -> None:
     _window.reset()
 
 
+def _announce(comp: Comp, viewer: Viewer, origin: str | None) -> None:
+    """Tell the team's open boards that this comp's share state moved.
+
+    ``shareSlug`` and ``shareStale`` are fields on the comp payload, so minting, re-capturing
+    or withdrawing a link changes what a tile would draw — even though the comp itself is
+    untouched. No ``updated_at``: none of these writes move it, and sending the value a client
+    already holds would tell it there is nothing to do.
+    """
+    publish(
+        comp.team_id,
+        KIND_CHANGED,
+        comp_id=comp.id,
+        actor=viewer.character_name,
+        origin=origin,
+    )
+
+
 @comp_router.post("/{comp_id}/share", response_model=ShareDetail, status_code=201)
 def mint_share(
     comp_id: uuid.UUID,
     response: Response,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> ShareDetail:
     """Share this comp, or hand back the link it already has.
 
@@ -218,6 +237,7 @@ def mint_share(
     record = _mint(session, comp)
     session.commit()
     session.refresh(record)
+    _announce(comp, viewer, origin)
     return _detail(record)
 
 
@@ -226,6 +246,7 @@ def update_share(
     comp_id: uuid.UUID,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> ShareDetail:
     """Re-capture the comp under the **same** slug.
 
@@ -244,6 +265,7 @@ def update_share(
     existing.captured_at = func.now()
     session.commit()
     session.refresh(existing)
+    _announce(comp, viewer, origin)
     return _detail(existing)
 
 
@@ -252,6 +274,7 @@ def revoke_share(
     comp_id: uuid.UUID,
     session: Session = Depends(get_session),
     viewer: Viewer = Depends(current_viewer),
+    origin: str | None = Depends(origin_client),
 ) -> Response:
     """Withdraw the link. The row stays — see ``CompShare`` — so the slug is never reissued.
 
@@ -268,6 +291,7 @@ def revoke_share(
 
     existing.revoked_at = func.now()
     session.commit()
+    _announce(comp, viewer, origin)
     return Response(status_code=204)
 
 

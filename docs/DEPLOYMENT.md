@@ -440,6 +440,36 @@ rule that caches HTML: Vite fingerprints everything under `/assets/`, so those a
 cache indefinitely, but `index.html` is served with `Cache-Control: no-cache` on purpose and
 caching it will pin users to a stale build.
 
+### The live event stream, and the one setting that would break it
+
+Boards keep themselves up to date over `GET /api/v1/teams/{id}/events`, a `text/event-stream`
+response held open for about ten minutes at a time ([`comptool/live.py`](../comptool/live.py)).
+Nothing about it needs configuring, but two things about this stack are worth knowing before
+they surprise you.
+
+**Do not scale the app service past one replica.** Fan-out is in-process — one dict of queues
+in the running worker — which is what the single-service posture buys and what §4.7 anticipated.
+A second replica does not fail loudly: each one serves half the boards and broadcasts to its own
+half, so changes cross *sometimes*, depending on which instance each person landed on. That is a
+much worse thing to debug than a feature that is plainly off. The fix, if the app ever needs to
+scale, is to put Postgres `LISTEN`/`NOTIFY` behind `publish`/`subscribe`; psycopg is already a
+dependency and no caller changes. [`comptool/ratelimit.py`](../comptool/ratelimit.py) carries the
+same caveat for the same reason.
+
+**Both proxies in this path cut a long response, and the app already accounts for it.**
+Cloudflare drops a proxied response that has produced nothing for ~100 seconds, and Railway ends
+any request at ~15 minutes. So the stream sends a `: keepalive` comment every 20 seconds and
+hangs up on itself at ~10 minutes with jitter — a clean close the browser reconnects from, whose
+first act is to re-read the comp listing. A break is ordinary here by design; you do not need to
+tune anything for it.
+
+The response carries `Cache-Control: no-cache, no-store, no-transform` and
+`X-Accel-Buffering: no`, and opens with 2 KB of comment padding. All three are aimed at
+intermediaries that buffer: `no-transform` asks Cloudflare not to repackage the body, and the
+padding pushes past a buffer that fills before it flushes. **If events ever arrive in bursts
+rather than singly**, that is buffering and not the app — raise `PROXY_PADDING_BYTES` in
+`live.py` before looking anywhere else.
+
 ### Optional: fix the share-link rate limiter
 
 The public share view is rate-limited to 30 requests per 60 seconds **per client address**

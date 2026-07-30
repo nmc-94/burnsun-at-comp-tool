@@ -11,6 +11,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SHIP, atxxiiRuleset } from '../engine/__fixtures__/atxxii-mini'
+import { resetTeamEvents } from '../live/team-events'
 import { resetRulesetCache } from '../rulesets/cache'
 import { resetInFlightWrites, trackWrite } from './in-flight'
 import { resetUndoTargets } from './undo-keys'
@@ -126,6 +127,8 @@ afterEach(() => {
   resetRulesetCache()
   resetInFlightWrites()
   resetUndoTargets()
+  resetTeamEvents()
+  delete (globalThis as Record<string, unknown>).EventSource
 })
 
 describe('loading', () => {

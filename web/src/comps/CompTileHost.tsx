@@ -160,6 +160,8 @@ export default function CompTileHost({
     rename,
     saveTags,
     patchShare,
+    remote,
+    reloadRemote,
     flush,
   } = useCompDocument(compId, onCompChanged)
   const [commentsOpen, setCommentsOpen] = useState(false)
@@ -587,6 +589,10 @@ export default function CompTileHost({
             commentCount={threadCount ?? comp.commentCount}
             editable={editable}
             saveState={saveState}
+            // Both absent unless a change is actually being held back, so the tile's own test
+            // for whether to draw the notice is whether it was given a way to act on it.
+            remoteActor={remote?.actor ?? null}
+            onReloadRemote={remote ? reloadRemote : undefined}
             onChange={edit}
             onRename={rename}
             autoFocusName={autoFocusName}

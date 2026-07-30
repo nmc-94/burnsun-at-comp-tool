@@ -1,6 +1,8 @@
 // A small typed fetch helper. The SPA is served by the API, so the base is empty
 // (relative /api) by default; an explicit base is only for a split-origin deploy.
 
+import { CLIENT_HEADER, clientId } from './live/client-id'
+
 export const apiBase = import.meta.env.VITE_API_BASE?.trim() || ''
 
 export class ApiError extends Error {
@@ -54,6 +56,11 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
+  // Which tab is asking. The server stamps it onto whatever this write broadcasts, so this tab
+  // can ignore its own event instead of re-reading work it is holding. Sent on every request
+  // rather than only on writes: telling reads apart from writes here means a second list of
+  // which methods mutate, and the header costs nothing on a GET.
+  headers.set(CLIENT_HEADER, clientId())
   const response = await fetch(`${apiBase}${path}`, { ...init, credentials: 'include', headers })
   if (!response.ok) {
     const bodyText = await response.text()

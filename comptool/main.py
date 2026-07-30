@@ -27,6 +27,7 @@ from .comps import team_router as team_comps_router
 from .db import dispose_db, get_engine, init_db
 from .health import router as health_router
 from .join import router as join_router
+from .live import router as live_router
 from .logging_config import configure_logging
 from .models import AppMeta
 from .rulesets import router as rulesets_router
@@ -132,6 +133,10 @@ app.include_router(share_comp_router)
 # view onto one team's comps — but it belongs to the character rather than to the team,
 # which is why it is in neither teams.py nor comps.py.
 app.include_router(workspace_router)
+# The one long-lived response in the application: a board's stream of "that comp moved".
+# Registered beside the workspace because it serves the same screen — and last among the
+# team routers because it is the only one that does not answer and return.
+app.include_router(live_router)
 
 # Hashed, immutable bundles. Mounted only when a build is present (backend-only dev/CI
 # runs without a web/dist); the catch-all handles the index and other root files.

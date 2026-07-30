@@ -131,6 +131,18 @@ export class Api {
     return this.json(this.http.get(`/api/v1/comps/${compId}`))
   }
 
+  renameComp(compId: string, name: string): Promise<Comp> {
+    return this.json(this.http.patch(`/api/v1/comps/${compId}`, { data: { name } }))
+  }
+
+  /** Really delete it. Allowed for the comp's creator, or the team's owner. */
+  async deleteComp(compId: string): Promise<void> {
+    const response = await this.http.delete(`/api/v1/comps/${compId}`)
+    if (response.status() !== 204) {
+      throw new Error(`DELETE /comps/${compId} → ${response.status()} ${await response.text()}`)
+    }
+  }
+
   /** Archetype and tags together, because the route replaces both wholesale. */
   setTags(compId: string, archetype: string | null, tags: readonly string[]): Promise<Comp> {
     return this.json(this.http.put(`/api/v1/comps/${compId}/tags`, { data: { archetype, tags } }))
