@@ -462,8 +462,17 @@ def test_deleting_a_board_leaves_its_comps_alone(client, sign_in, publish, sessi
     assert client.delete(f"/api/v1/boards/{board['id']}").status_code == 204
 
     assert client.get(f"/api/v1/comps/{comp['id']}").status_code == 200
-    assert session.scalars(select(SharedBoardTile)).all() == []
-    assert session.scalars(select(SharedBoard)).all() == []
+    # Scoped to the board under test rather than counting the table: every team is born with a
+    # default board (``shared_boards.seed_default_board``), so an empty table would now be
+    # evidence that the seed had gone missing rather than that this delete had worked.
+    doomed = uuid.UUID(board["id"])
+    assert session.get(SharedBoard, doomed) is None
+    assert (
+        session.scalars(
+            select(SharedBoardTile).where(SharedBoardTile.board_id == doomed)
+        ).all()
+        == []
+    )
 
 
 def test_a_board_belongs_to_its_team_and_goes_with_it(client, sign_in, publish, session):
@@ -556,6 +565,30 @@ def test_a_board_carries_who_made_it_and_what_it_holds(client, sign_in, publish)
     assert board["snap"] is True
 
 
+def test_the_board_a_team_is_born_with_is_an_ordinary_board(client, sign_in, publish):
+    """"By default" means at creation, not for ever.
+
+    No route knows this board from any other, and none should. There is no column marking it, so
+    the only thing a protection could key on is the name — which the rename control sitting on
+    the same tab would defeat in one keystroke, leaving either a board called anything that
+    cannot be deleted or a "Team board" that a rename re-armed. The rule this does not get is
+    the personal strip's "the last board never closes", and that rule exists because a workspace
+    with no board has nowhere to put a comp; a team with no *shared* board still has every
+    personal one.
+    """
+    publish()
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    default = client.get(f"/api/v1/teams/{team['id']}/boards").json()[0]
+
+    renamed = client.patch(f"/api/v1/boards/{default['id']}", json={"name": "Round one"})
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "Round one"
+
+    assert client.delete(f"/api/v1/boards/{default['id']}").status_code == 204
+    assert client.get(f"/api/v1/teams/{team['id']}/boards").json() == []
+
+
 def test_a_tile_says_only_which_comp_it_is(client, sign_in, publish):
     """§6.7's shape rule, at the wire.
 
@@ -576,7 +609,7 @@ def test_boards_are_listed_per_team_and_only_your_own(client, sign_in, publish):
     publish()
     sign_in(STRANGER, "Nobody")
     elsewhere = make_team(client, "Somebody else")
-    make_board(client, elsewhere, "Not yours")
+    theirs = make_board(client, elsewhere, "Not yours")
 
     sign_in(OWNER, "Kadir")
     team = make_team(client)
@@ -585,7 +618,13 @@ def test_boards_are_listed_per_team_and_only_your_own(client, sign_in, publish):
     listed = client.get(f"/api/v1/teams/{team['id']}/boards")
 
     assert listed.status_code == 200
-    assert [board["id"] for board in listed.json()] == [mine["id"]]
+    # Two, because the team was born with one: the default board, then the one just made. The
+    # order is the route's — ``created_at, id`` — and ``now()`` is the transaction's clock, so
+    # the seed sorts ahead of anything a later request adds.
+    assert [board["name"] for board in listed.json()] == ["Team board", "Round one"]
+    ids = [board["id"] for board in listed.json()]
+    assert ids[1] == mine["id"]
+    assert theirs["id"] not in ids
 
 
 def test_an_editor_may_make_and_work_a_board(client, sign_in, publish, resolver):

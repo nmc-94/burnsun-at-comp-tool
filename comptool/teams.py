@@ -64,6 +64,7 @@ from .esi import CharacterResolver, Resolution, get_character_resolver
 from .models import AccessLevel, SubjectKind, Team, TeamGrant
 from .permissions import Viewer, resolve_level
 from .settings import Settings, SignInMode, get_settings
+from .shared_boards import seed_default_board
 
 router = APIRouter(prefix="/api/v1/teams", tags=["teams"])
 
@@ -275,6 +276,14 @@ def create_team(
         ),
     )
     session.add(team)
+    # Every team has one board the whole team is on, from the moment it has anything at all.
+    # Adoption: before this, a shared board existed only where somebody already knew the feature
+    # was there and promoted a personal one, so the thing meant to be found by using the app
+    # could only be found by having been told about it.
+    #
+    # In this transaction rather than after it. A second commit is a second thing that can fail,
+    # and what it would leave behind is exactly the state this line exists to remove.
+    seed_default_board(session, team, viewer)
     session.commit()
     # The creator is owner by the column; no self-grant row, so nothing can revoke it.
     return _summary(team, AccessLevel.OWNER)

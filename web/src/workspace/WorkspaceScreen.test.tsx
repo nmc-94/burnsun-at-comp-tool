@@ -476,7 +476,9 @@ describe('arranging', () => {
     })
     await open()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rename board Angel' }))
+    // Double-click rather than the menu: this test is about what a rename does to the save
+    // debounce, and the gesture that starts it is not the subject.
+    fireEvent.doubleClick(screen.getByTestId('board-tab'))
     fireEvent.blur(screen.getByTestId('board-tab-name'))
     await vi.advanceTimersByTimeAsync(900)
 
