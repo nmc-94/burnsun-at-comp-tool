@@ -86,6 +86,17 @@ test('a tile shows who is looking at it', async ({ page, api, team, asSomeoneEls
   })
   await expect(tileFor(page, first.id).getByTestId('tile-watcher')).toHaveCount(0)
 
+  // **A watched tile is exactly as tall as an unwatched one.** The footer writes its own height
+  // down (`.tfoot`'s `min-height`) rather than taking it from its tallest child, and this is the
+  // whole of what that buys: without it a 15px mark is taller than the 10.5px line box beside it,
+  // so every tile would grow as somebody's cursor arrived and shrink as it left — a board that
+  // breathes as people move around it, and on a canvas board, one that repacks. These two tiles
+  // are the same format and the same one filled row, so at this moment the mark is the only
+  // difference between them.
+  const watched = await tileFor(page, second.id).getByTestId('comp-tile').boundingBox()
+  const bare = await tileFor(page, first.id).getByTestId('comp-tile').boundingBox()
+  expect(watched?.height).toBe(bare?.height)
+
   // Letting go of a tile is not going somewhere else. The new-comp tile is board space that is
   // not a comp tile, so this is the pointer resting on nothing — and the mark must stay.
   await theirs.getByTestId('board-new-comp').hover()

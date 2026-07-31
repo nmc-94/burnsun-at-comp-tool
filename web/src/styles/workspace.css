@@ -749,15 +749,15 @@
   color: var(--text-3);
   /* A comp tile at rest, so the placeholder is the shape of the thing it stands for rather
      than a strip after the last one — and so the drop it now takes has somewhere generous to
-     land. 350px is a tile with this format's ten 24px rows and its header, tag band and foot,
-     none of them wrapped.
+     land. 356px is a tile with this format's ten 24px rows and its header, tag band and foot,
+     none of them wrapped — measured, and re-measured when the foot was given a written height.
    *
    * Deliberately a number and deliberately not the grid row's height. `align-self: stretch`
    * would match whatever tile shares the row exactly, at any field size — but it would match
    * the *tallest* one, and a tile is taller than it should be only when something in it has
    * wrapped. Following that is following a bug. A format with a bigger field is the case this
    * gets wrong, and it gets it wrong by a knowable amount. */
-  min-height: 350px;
+  min-height: 356px;
   font: inherit;
   font-size: 12px;
   cursor: pointer;

@@ -36,6 +36,24 @@ interface Props {
   readonly className?: string
 }
 
+/**
+ * The hue's circle, drawn over the face.
+ *
+ * SVG rather than a CSS border because a 1px rounded border rasterizes as a staircase at 1 device
+ * pixel per CSS pixel, which is what people were seeing; `.actor-ring` in base.css carries the
+ * reasoning and the colour. The viewBox is the mark's own pixels, so a `stroke-width` of 1 is one
+ * CSS pixel and `r` puts its outer edge exactly on the mark's edge, where the border used to be.
+ *
+ * Decorative, and the mark above is already `aria-hidden`.
+ */
+function Ring({ size }: { readonly size: number }) {
+  return (
+    <svg className="actor-ring" viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={size / 2 - 0.5} />
+    </svg>
+  )
+}
+
 export default function ActorMark({ characterId, characterName, size, className }: Props) {
   const [failed, setFailed] = useState(() => unportraited.has(characterId))
   const url = buildCcpPortraitUrl(characterId, size * 2)
@@ -60,6 +78,9 @@ export default function ActorMark({ characterId, characterName, size, className 
       ) : (
         initialsOf(characterName)
       )}
+      {/* Only on the ringed mark. A caller with a class of its own is the account menu, which has
+          its own plain border and no hue — see the note at the top. */}
+      {className ? null : <Ring size={size} />}
     </span>
   )
 }
