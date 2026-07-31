@@ -1,4 +1,4 @@
-"""Reaching a team or a comp from a request, and refusing to when the caller may not.
+"""Reaching a team, a comp or a shared board from a request, and refusing when the caller may not.
 
 ``permissions.py`` decides what a level *is*, given a team and its grants; this is the
 layer above it that goes to the database, applies the decision, and turns a refusal into
@@ -15,6 +15,11 @@ a second chance to leak which teams exist.
 ``authorize`` does: two modules now reach comps — the comp routes and the comment thread —
 and a copy of the gate in each is a copy that can drift. Reaching a comp anywhere in this
 application goes through the one function below.
+
+:func:`reach_shared_board` is that rule again for the one object in this application whose
+address is *meant* to be pasted somewhere. It answers identically for a board that never
+existed and a board belonging to a team the caller cannot see, which is what keeps a link
+from becoming a way to find out which teams are real.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from .models import AccessLevel, Comp, Team
+from .models import AccessLevel, Comp, SharedBoard, Team
 from .permissions import Viewer, resolve_level
 
 
@@ -112,3 +117,34 @@ def reach_comp(
     except HTTPException:
         raise comp_not_found(comp_id) from None
     return comp, access
+
+
+def shared_board_not_found(board_id: uuid.UUID) -> HTTPException:
+    # As with a comp: one answer for "no such board", "its team is not yours" and "that id
+    # belongs to another team". A shared board's whole point is that its URL gets pasted
+    # around, so this is the id most likely to be tried by somebody who should not have it.
+    return HTTPException(status_code=404, detail=f"No board {str(board_id)!r}")
+
+
+def reach_shared_board(
+    session: Session, board_id: uuid.UUID, viewer: Viewer, required: AccessLevel
+) -> tuple[SharedBoard, Access]:
+    """The only way a route reaches a shared board.
+
+    ``reach_comp`` one table along, and deliberately the same shape: the board is loaded
+    first because its team is what decides, then the team gate runs, and its refusal is
+    swallowed and re-raised board-shaped — letting ``authorize``'s "No team <id>" escape
+    would confirm the team is real to somebody holding nothing but a pasted link.
+
+    **Tiles are not eager-loaded**, unlike a comp's slots. Every write route re-reads them
+    after changing them, and the read route fetches them joined against the team's comps, so
+    loading them here would be a query every caller throws away.
+    """
+    board = session.scalar(select(SharedBoard).where(SharedBoard.id == board_id))
+    if board is None:
+        raise shared_board_not_found(board_id)
+    try:
+        access = authorize(session, board.team_id, viewer, required)
+    except HTTPException:
+        raise shared_board_not_found(board_id) from None
+    return board, access

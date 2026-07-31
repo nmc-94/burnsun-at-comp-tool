@@ -277,10 +277,15 @@ comp editor. Within a tab the user can:
 
 **Tabs come in two kinds:**
 
-- **Personal tab (default)** — a private board only you see.
-- **Shared tab** — a collaborative board with a **shareable link** that is the
-  entry point for other users to join and edit together in real time. Scoped as a
-  later phase — see §4.7.
+- **Personal tab (default)** — a private board only you see. One saved arrangement
+  per character per team; last-writer-wins, because it has exactly one writer.
+- **Shared tab** — a collaborative board that **belongs to the team**: every member
+  sees it in their own tab strip, and its ordinary URL is the entry point other
+  people follow to work on it together in real time. **Not a capability link** — see
+  §4.7 for why that diverges from an earlier draft of this bullet, and for what a
+  link would cost if one is ever wanted. Arrangement is server-authoritative and
+  written by discrete tile operations, so it has many writers. Grid-only in its first
+  slice; the floating canvas is a personal-board affordance for now.
 
 Because many tiles sit on screen together, **comparison is largely inherent** in
 the layout; the explicit compare view (below) builds on top of it rather than
@@ -538,24 +543,64 @@ open — the exact flow "will take some consideration"):
 Because of these, shared/scrim pick-ban is tracked as a **distinct feature with
 its own design pass**, not folded into the comp-builder MVP.
 
-### 4.7 Real-time collaboration — the shared tab (later / "day two")
+### 4.7 Real-time collaboration — the shared tab (built in Phase J; stage one)
 
 A shared space where **two or more team members edit and collaborate live** —
 seeing each other's changes as they happen — is an explicit aspiration. It is
 **scoped as a later phase**, not MVP, but the MVP data model and architecture
 should stay aware of it so it lands as an addition, not a rewrite.
 
-- **Entry point = a shared tab with a shareable link.** Collaboration is bounded
-  to a **shared tab** (§4.1): a board of comp tiles that a user promotes to
-  shared, which then exposes a **shareable link**. Opening that link is how other
-  users enter the live session, so the whole tab — its set of comp tiles —
-  becomes a multiplayer room the participants build and compare in together. This
-  reuses BurnSun's existing tab UX and its **ported share-slug domain** (§7) —
-  human-readable petname-style link slugs with pre-allocation/preview and stable
-  resolution.
+> **Stage one is built, and one part of this section was decided differently.** What
+> exists: the realtime channel (SSE, team-scoped, `comptool/live.py`); the
+> operation-broadcast model, **as invalidations rather than deltas**, for the deployment
+> reasons in that module's docstring — the connection is guaranteed to break and reform,
+> so a reconnect that re-reads replaces a replay buffer; in-process fan-out with
+> `publish`/`subscribe` as the seam a broker drops behind; live edits persisting to the
+> same comp store (all `f11d852`); and, from Phase J, **the shared board itself**
+> (`comptool/shared_boards.py`, migration `0012`) and **presence** — who is on the board
+> and which tile each of them is looking at, drawn in the strip below the tabs and in
+> each tile's footer.
+>
+> **What does not exist yet: the activity trail**, and the two later stages named at the
+> foot of this section — soft locks with seamless hand-off, then true simultaneous
+> editing. **And the entry point is the team, not a link**; the bullet below has been
+> rewritten to say so.
+
+- **Entry point = a shared board that belongs to the team.** Collaboration is bounded
+  to a **shared tab** (§4.1): a board of comp tiles that a member promotes to shared,
+  after which **every member of the team sees it in their own tab strip** and opens it
+  at its ordinary `/teams/:teamId/boards/:boardId` address. That URL is what gets
+  pasted into a voice channel, so the whole tab — its set of comp tiles — becomes a
+  room the participants build and compare in together. This reuses BurnSun's existing
+  tab UX.
+  - **Why not a capability link, which is what this bullet used to ask for.** A comp
+    belongs to a *team*, and `comptool/access.py` collapses "no such team", "not yours"
+    and "not permitted" into one 404 — identical down to the message — so that a request
+    cannot be used to discover whether something exists. A link admitting a non-member
+    to a board of team comps would be the first hole in that discipline, and a
+    particularly good one: it needs no write and leaves no trace. Meanwhile everybody
+    who ought to open the board already holds a grant, so the link is just the board's
+    address and there is nothing new to revoke or expire.
+  - **What a link would cost, if one is ever wanted.** A slug row (the petname
+    generator and lexicon already exist from §4.3's comp export); a read path
+    deliberately outside `authorize`/`reach_comp` and as visibly separate from it as the
+    ruleset routes are; a rung below `viewer` on the access ladder for a read-only
+    spectator; a decision about whether a link-admitted actor appears in the presence
+    roster at all, since a roster is a claim about people; and revoke plus expiry. **The
+    precedent to copy would be the team join link, not the comp share link** — "the link
+    identifies, the password authorizes", two things that fail independently, and a join
+    writes an ordinary grant so nothing downstream can tell a joined member from a named
+    one. That adds a door rather than a second access model.
 - **Presence.** Show who is in the shared tab and what they're touching — a live
   participant list (by character identity) and lightweight indicators of which
-  tile/row/selection each collaborator is on. Presence is ephemeral, not stored.
+  tile/row/selection each collaborator is on. **Presence is ephemeral, not stored**,
+  and that is binding rather than aspirational: a roster entry's life is its stream's
+  life, with no table, no migration and no heartbeat write. A heartbeat table would
+  otherwise be the busiest write path in the application by a wide margin, persisting
+  information whose useful life is one second. The displayed identity comes from the
+  session and never from anything the client supplies; a client-minted id may label a
+  *tab*, so two tabs of one person are two entries, but a name is a claim about a
+  person.
 - **Concurrency model.** Comp edits are **small and structured** (add/remove/swap
   a hull, assign a pilot, tag, move a tile), which makes this far more tractable
   than document collaboration:
@@ -563,40 +608,65 @@ should stay aware of it so it lands as an addition, not a rewrite.
     applied to canonical server state, validated for *shape* (§4.1 keeps legality
     out of the server entirely), then broadcast to peers — over a full CRDT/OT
     stack, unless fine-grained simultaneous conflicts prove common.
-  - Consider **coarse soft-locks / presence hints** at the row, tile, or comp
-    level ("someone is editing this") to avoid clobbering, reusing the lock +
-    edit-clone + version/ETag machinery already proven in BurnSun's shared
-    library. A natural progression: (1) lock-based seamless hand-off (one active
-    editor, instant transfer), then (2) true simultaneous multiplayer.
-  - Never silently drop an edit — surface and reconcile conflicts.
-- **Access & identity via the link.** The link is the *entry point*, but who may
-  act through it needs the same decision as the shared pick-ban (§4.6):
-  authenticated team members (EVE-SSO + team grant, §5) vs. an unguessable
-  capability link for anyone with the URL. Likely: the link admits, but actions
-  are **attributable to an authenticated character**, with link lifecycle
-  controls (unguessable token, revoke/expire, read-only spectators). Intra-team
-  collaboration is simpler than the cross-team pick-ban join, and the two can
-  share this design.
-- **Transport.** Needs a realtime channel (WebSocket or SSE) — the **same channel
-  the shared/scrim pick-ban (§4.6) needs** — so the two features share
-  infrastructure. This is the one place the otherwise stateless API grows a live,
-  stateful surface.
-- **Persistence & attribution.** Live edits persist to the same comp store; an
-  activity trail (who changed what, when) is a natural companion, building on
-  creator tracking (§4.1a), comments (§4.1b), and an audit-style reader.
-- **Deployment implication.** In-process fan-out suffices for a single-service
-  deploy; **horizontal scaling needs a shared pub/sub** (e.g. Postgres
-  LISTEN/NOTIFY or a small broker) so instances see each other's operations —
-  compatible with the self-hostable/Railway posture (§6.1) as long as the broker
-  stays a standard, swappable dependency.
-- **MVP awareness (cheap to do now):** keep comp/tile/tab mutations expressible
-  as discrete operations, keep the validation engine pure and reusable
-  server-side, model tabs (personal vs. shareable) in the data model from the
-  start, and avoid baking single-editor assumptions into the store — so the
-  realtime layer is *added*, not retrofitted.
+  - **An arrangement and a comp get different answers, on purpose.** Moving a tile is
+    convenience state: the operations name a comp rather than a position, so two people
+    moving two different tiles never conflict, and where they do the last write wins and
+    the client reconciles silently — there is no half-typed anything to lose. **A comp's
+    slots are work**, so they get a precondition: a monotonic version on the comp, sent
+    as `If-Match`, answered with **412** — not 409, which that route already spends on
+    the archived team and on a second flagship. Not an `ETag`: the comp listing serves
+    many comps in one response and has nowhere to put many headers. This replaces an
+    earlier draft of this bullet that pointed at BurnSun's lock + edit-clone +
+    version/ETag machinery; there is no lock here.
+  - Presence hints at the tile level ("someone is editing this") come first, and the
+    progression stays as recorded: (1) hints, (2) lock-based seamless hand-off with one
+    active editor and instant transfer, (3) true simultaneous multiplayer. Only (1) is
+    scheduled.
+  - Never silently drop an edit — surface and reconcile conflicts. Note the distinction
+    this cuts: a refused write is surfaced and waits for the person, while a superseded
+    *view* of an arrangement is replaced without asking. Dropping a stale view is not
+    dropping an edit.
+- **Access & identity.** Settled: **a team grant is the only way in**, so every action
+  is attributable to an authenticated character because there is no other kind of actor.
+  The question of admitting a non-member — the same question §4.6's cross-team pick-ban
+  join asks — stays open and is answered above under the entry point.
+- **Transport.** *Built (`f11d852`)* — **SSE**, team-scoped, one stream per team rather
+  than per tile, because browsers cap concurrent connections per origin low enough that a
+  stream per tile would starve the requests those tiles have to make. It is still the
+  **same channel the shared/scrim pick-ban (§4.6) needs**, so the two features share
+  infrastructure. This remains the one place the otherwise stateless API grows a live,
+  stateful surface — and the stream route is the one handler that must stay asynchronous
+  and must never acquire a database session, for reasons its own docstring gives.
+- **Persistence & attribution.** Live edits persist to the same comp store — *built*: an
+  event names a comp and the client re-reads it through the ordinary routes, so there is
+  no second write path and nothing to reconcile between them. Every event already carries
+  the acting character's name, which is what a tile uses to say who changed something. An
+  **activity trail** (who changed what, when) is still a natural companion and is not
+  built, building on creator tracking (§4.1a), comments (§4.1b), and an audit-style
+  reader.
+- **Deployment implication.** In-process fan-out suffices for a single-service deploy —
+  and with presence it stops being a scaling preference and becomes a **correctness
+  requirement**. A second process today delivers half the events, so a board updates
+  *sometimes*, which is a bug an operator eventually recognises. A second process with
+  presence publishes a **false statement about which people are in the room**, and nobody
+  debugs a fact. **Horizontal scaling therefore needs a shared pub/sub** (e.g. Postgres
+  LISTEN/NOTIFY or a small broker) so instances see each other's operations — compatible
+  with the self-hostable/Railway posture (§6.1) as long as the broker stays a standard,
+  swappable dependency. Until then the deployment guide is where an operator meets this,
+  including the one environment variable that forks the process without saying so.
+- **MVP awareness (this bought what it was meant to):** keeping comp/tile/tab mutations
+  expressible as discrete operations is what let the shared board arrive as a set of tile
+  operations rather than a rewrite; modelling tabs as personal-vs-shareable from the start
+  is what made "promote a board" a new object rather than a schema change; and keeping no
+  comp's editing state above its own tile (§6.7) is what let a live channel wake one tile
+  out of twenty. One item did **not** pay off as written — "keep the validation engine
+  pure and reusable server-side" was aimed at server-side op validation, and legality
+  stayed client-only (§6.5), so the realtime layer trusts client-computed legality
+  exactly as the rest of the application does.
 
 Like shared pick-ban, real-time collaboration is a **distinct feature with its
-own design pass**, not part of the comp-builder MVP.
+own design pass**, not part of the comp-builder MVP. That pass is
+`docs/PHASE-J-HANDOFF.md`.
 
 ## 5. Authentication & authorization
 
@@ -823,7 +893,7 @@ Rules for the ids themselves:
 | | |
 |---|---|
 | Format | `<area>-<thing>` or `<area>-<thing>-<part>`, kebab-case, lowercase |
-| Areas | `app`, `user`, `team`, `grant`, `comp`, `comment`, `ship-search`, `ruleset`, `workspace`, `board`, `library`, `pick-ban`, `share` |
+| Areas | `app`, `user`, `team`, `grant`, `comp`, `comment`, `ship-search`, `ruleset`, `workspace`, `board`, `library`, `pick-ban`, `share`, `presence` |
 | Repeated items | every item in a list shares one id; disambiguate by position within the scope, or by accessible content |
 | Variants | a distinct kind gets a distinct id (`comp-row` vs `comp-row-empty`), so selecting by position is never ambiguous across kinds |
 | Values | the element wrapping the value, not its container — `comp-row-cost`, not the row |
@@ -1011,11 +1081,18 @@ owner. What remains open are design calls, not facts.
    link — EVE SSO (attributable) vs. capability link (anyone with the URL) — and
    whether shared mode reproduces the full official sequence incl. Avalanche +
    unique bans. Deferred to the pick-ban design pass (§4.6).
-3. **Real-time collaboration design pass (§4.7):** concurrency model (op-broadcast
-   + soft-locks vs. CRDT), shared-tab scope (one comp vs. a whole board), link
-   access/attribution, and the realtime transport + pub/sub. Deferred to its own
-   day-two design pass; the MVP only needs to stay "aware" of it (op-shaped
-   mutations, pure server-side engine, tabs modeled as personal/shareable).
+3. ~~**Real-time collaboration design pass (§4.7)**~~ — *Resolved (Phase J);
+   substance moved to §9.3.* Concurrency model: **discrete, server-authoritative
+   tile operations**, each publishing an invalidation — no CRDT, no OT, no soft
+   locks. Scope: **a whole board of tiles**, not one comp. Access and attribution:
+   **team-visible, no capability link**, so every action is attributable because a
+   grant is the only way in. Transport: **SSE**, shipped in `f11d852`. Pub/sub:
+   **in-process**, with `publish`/`subscribe` as the seam a broker drops behind.
+   Three things stay open and are recorded in §4.7 rather than here: **soft locks and
+   true simultaneous multiplayer** (its stages two and three, of which only presence
+   hints are scheduled), **whether a non-member should ever be admitted** — the same
+   question 2 above asks about pick-ban — and **horizontal scaling**, which
+   needs the shared pub/sub that seam exists for.
 
 ### 9.2 Resolved from the sources
 
@@ -1035,8 +1112,26 @@ owner. What remains open are design calls, not facts.
   in `workspace_layout`, so switching teams switches workspaces; the rail is headed
   with the team's comps and every grant is team-scoped, so a board is a view onto
   exactly one team. The per-team **shared** board is not this: it is the shared tab
-  of §4.7, a different object with a different writer model, and it arrives with
-  real-time collaboration.
+  of §4.7, a different object with a different writer model, and it arrives in
+  Phase J. *(Note that real-time collaboration partly arrived first, in `f11d852`,
+  without it — a live channel made everybody's own private board update, which is a
+  different thing from sharing one.)*
+- **The shared board's writer model:** *Resolved (Phase J)* — one row per
+  team-visible board, **owned by the team**, with **many writers** and a
+  server-authoritative arrangement mutated by discrete operations. Its tiles are
+  **rows, not a document**: two people moving two different tiles are two
+  independent updates, and a comp id in a real foreign key cannot outlive its comp,
+  which turns an invariant `workspace_layout` enforces by hand into a property of
+  the schema. An arrangement is convenience state, so its order is last-writer-wins
+  and needs no precondition — the same call `workspace_layout`'s upsert already
+  makes. A **comp's slots are work**, so they get a monotonic version, `If-Match`
+  and **412**. The two are answered differently on purpose.
+  A shared board is deliberately **not** a member of anybody's `workspace_layout`
+  document. That module rebuilds every board field by field and its read and write
+  models are asserted to carry identical fields, so a shared board in that payload
+  would force a choice between failing that assertion and letting a client *claim* a
+  board is shared — and every participant would end up storing their own divergent
+  private copy of one shared object.
 - **Copy/port carry-over rules:** *Resolved (Phase H)*, and the two gestures differ
   because they are different things.
   - **Porting rows into a new comp** is a fork (§4.1c), so the hull **and its flagship

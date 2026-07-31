@@ -34,6 +34,8 @@ from .rulesets import router as rulesets_router
 from .settings import Settings, get_settings
 from .share import comp_router as share_comp_router
 from .share import router as share_router
+from .shared_boards import router as shared_boards_router
+from .shared_boards import team_router as team_shared_boards_router
 from .teams import router as teams_router
 from .workspace import router as workspace_router
 
@@ -133,6 +135,12 @@ app.include_router(share_comp_router)
 # view onto one team's comps — but it belongs to the character rather than to the team,
 # which is why it is in neither teams.py nor comps.py.
 app.include_router(workspace_router)
+# The other kind of board, and the first object in this application that belongs to a team
+# rather than to a person. Two routers for the reason comps have two: nested under a team to
+# list and create, and on the board's own id thereafter — which is what makes the id in the
+# URL enough to open one, and the URL the thing people paste to each other.
+app.include_router(team_shared_boards_router)
+app.include_router(shared_boards_router)
 # The one long-lived response in the application: a board's stream of "that comp moved".
 # Registered beside the workspace because it serves the same screen — and last among the
 # team routers because it is the only one that does not answer and return.

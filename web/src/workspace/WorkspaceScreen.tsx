@@ -8,7 +8,7 @@
 // Every callback it hands down takes the id it acts on rather than closing over one, so a
 // tile's props stay referentially stable across a board-level re-render.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
 import { messageFor } from '../api'
 import { readSettings } from '../settings'
@@ -73,6 +73,24 @@ import {
   withTilePlaced,
   withTilesPlaced,
 } from './layout'
+import { resolveBoard, resumeTargetFor } from './board-target'
+import { createSharedBoard } from './shared-board-api'
+import {
+  closeOnBoard,
+  closeSharedBoard,
+  openOnBoard,
+  renameSharedBoard,
+} from './shared-board-ops'
+import {
+  bumpBoard,
+  forgetBoard,
+  getBoards,
+  invalidateBoards,
+  seedBoards,
+  subscribeBoards,
+} from './shared-boards'
+import { tilesToPromote } from './shared-doc'
+import SharedBoardPane from './SharedBoardPane'
 import { reveal } from './canvas-extent'
 import { FALLBACK_H, packed, readingOrder, trackCount, trackWidth } from './place'
 import type { BoardMode, Place, WorkspaceLayout } from './types'
@@ -183,6 +201,18 @@ export default function WorkspaceScreen({
     }
   }, [teamId])
 
+  /**
+   * The shape each comp was last judged at, so it is judged again only when that shape moves.
+   *
+   * The effect below depends on `comps`, and `mergeComps` hands back a new array whenever
+   * *anything* about any comp moved — a rename, a comment, a tag, a share link. Without this,
+   * one remote hull swap re-ran `evaluate` for every comp on the team. That was occasional
+   * while the only writers were teammates on their own boards; with three people on one shared
+   * board it fires per keystroke-batch per participant, which is §6.7's promise breaking at
+   * board level rather than at tile level.
+   */
+  const judged = useRef(new Map<string, string>())
+
   // Judge every comp on the team once, so the rail can draw a dot and a total before any
   // tile has been opened. Only the summary is kept — not two hundred LegalityResults.
   useEffect(() => {
@@ -212,6 +242,11 @@ export default function WorkspaceScreen({
           const detail = payloads.get(`${comp.rulesetSlug} ${comp.rulesetVersionLabel}`)
           // No payload means no judgement, and the leaf says "unknown" rather than guessing.
           if (!detail) return []
+          // Judged at this shape already. The engine is the expensive part of this loop and a
+          // comp whose hulls have not moved has the same answer as last time.
+          const shape = shapeOf(comp)
+          if (judged.current.get(comp.id) === shape) return []
+          judged.current.set(comp.id, shape)
           // The wire shape already is what `toEngineComp` wants, rows and all — the rail only
           // needs the total and the lead hull, and neither depends on where anything sits.
           const slots = comp.slots
@@ -305,21 +340,82 @@ export default function WorkspaceScreen({
     }
   }, [save])
 
-  const board = useMemo(
-    () => (layout ? activeBoard(layout.boards, boardId ?? layout.activeBoardId) : null),
-    [layout, boardId],
+  /**
+   * The team's shared boards, read through the store rather than held here.
+   *
+   * `useSyncExternalStore` over a module store, the way `comp-cards.ts` and `team-events.ts` are
+   * already read: a board somebody else rearranges wakes whatever is drawing it, and nothing
+   * anywhere sets state on a keystroke. Both arguments are memoized because an unstable
+   * subscribe or getSnapshot re-subscribes on every render.
+   */
+  const subscribeShared = useCallback(
+    (listener: () => void) => subscribeBoards(teamId, listener),
+    [teamId],
+  )
+  const readShared = useCallback(() => getBoards(teamId), [teamId])
+  const sharedBoards = useSyncExternalStore(subscribeShared, readShared, readShared)
+  const [sharedLoaded, setSharedLoaded] = useState(false)
+
+  useEffect(() => {
+    setSharedLoaded(false)
+    let cancelled = false
+    void invalidateBoards(teamId).finally(() => {
+      if (!cancelled) setSharedLoaded(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [teamId])
+
+  /**
+   * Which board the URL is asking for, out of the two kinds there now are.
+   *
+   * The three resolvers that used to fall back to the first personal board are what made pasting
+   * a board link land a teammate somewhere else with no explanation. `resolveBoard` answers with
+   * a *named* outcome instead, including for an id that is neither.
+   */
+  const target = useMemo(
+    () => resolveBoard(boardId ?? null, layout?.boards ?? [], sharedBoards, sharedLoaded),
+    [boardId, layout, sharedBoards, sharedLoaded],
   )
 
+  const sharedBoard = useMemo(
+    () => (target.kind === 'shared' ? sharedBoards.find((b) => b.id === target.boardId) : undefined),
+    [target, sharedBoards],
+  )
+
+  const board = useMemo(
+    () =>
+      layout
+        ? target.kind === 'personal'
+          ? target.board
+          : activeBoard(layout.boards, layout.activeBoardId)
+        : null,
+    [layout, target],
+  )
+
+  /** True while a shared board is the one on screen — every gesture below branches on it. */
+  const onShared = target.kind === 'shared' && sharedBoard !== undefined
+
   const openCompIds = useMemo(
-    () => new Set((board?.tiles ?? []).map((tile) => tile.compId)),
-    [board],
+    () =>
+      new Set(
+        sharedBoard
+          ? sharedBoard.tiles.map((tile) => tile.compId)
+          : (board?.tiles ?? []).map((tile) => tile.compId),
+      ),
+    [board, sharedBoard],
   )
 
   /** Every comp open on any board, not just the one being looked at. The rail lists an empty
    *  comp only while it is open somewhere — see `listable` in LibraryRail. */
   const openAnywhere = useMemo(
-    () => new Set((layout?.boards ?? []).flatMap((each) => each.tiles.map((tile) => tile.compId))),
-    [layout],
+    () =>
+      new Set([
+        ...(layout?.boards ?? []).flatMap((each) => each.tiles.map((tile) => tile.compId)),
+        ...sharedBoards.flatMap((each) => each.tiles.map((tile) => tile.compId)),
+      ]),
+    [layout, sharedBoards],
   )
 
   /**
@@ -439,9 +535,19 @@ export default function WorkspaceScreen({
   useEffect(() => {
     // The URL is authoritative for which board is on screen; the layout records it so a
     // later bare team URL lands where the person left off rather than on the first board.
-    if (!layout || !board || layout.activeBoardId === board.id) return
-    arrange(withActiveBoard(layout, board.id))
-  }, [layout, board, arrange])
+    //
+    // **Only a personal board**, and the guard is load-bearing rather than tidy. `withActiveBoard`
+    // refuses an id the layout does not hold and the server's `_active` resolves it away, so
+    // writing a shared id here is a silent no-op — but one that re-arms `layoutState` on every
+    // render, which the e2e suite's two-phase layout wait would see as a save that never settles.
+    //
+    // The consequence is a deliberate slice cut: a bare `/teams/:id` lands on a personal board.
+    // Remembering a shared board as your resume target needs a field on `WorkspaceSave`, and
+    // adding one is exactly what would drag `comptool/workspace.py` into this change.
+    const resume = resumeTargetFor(target)
+    if (!layout || !resume || layout.activeBoardId === resume) return
+    arrange(withActiveBoard(layout, resume))
+  }, [layout, target, arrange])
 
   /**
    * Open a comp on this board — or, if it is already open, go and find it.
@@ -453,7 +559,6 @@ export default function WorkspaceScreen({
    */
   const openComp = useCallback(
     (compId: string) => {
-      if (!layout || !board) return
       if (openCompIds.has(compId)) {
         const place = places.get(compId)
         if (mode === 'floating' && place && boardRef.current) {
@@ -461,17 +566,28 @@ export default function WorkspaceScreen({
         }
         return
       }
+      // On a shared board the rail's click is an op, not an arrangement: what it opens, it opens
+      // for everybody. One request, no debounce.
+      if (sharedBoard) {
+        void openOnBoard(sharedBoard.id, compId)
+        return
+      }
+      if (!layout || !board) return
       arrange(withCompOpened(layout, board.id, compId))
     },
-    [layout, board, openCompIds, arrange, places, mode],
+    [layout, board, sharedBoard, openCompIds, arrange, places, mode],
   )
 
   const closeComp = useCallback(
     (compId: string) => {
+      if (sharedBoard) {
+        void closeOnBoard(sharedBoard.id, compId)
+        return
+      }
       if (!layout || !board) return
       arrange(withCompClosed(layout, board.id, compId))
     },
-    [layout, board, arrange],
+    [layout, board, sharedBoard, arrange],
   )
 
   /**
@@ -706,6 +822,25 @@ export default function WorkspaceScreen({
     const stop = subscribeTeam((signal: TeamSignal) => {
       if (signal.kind === 'resync') {
         setComps((current) => mergeComps(current ?? [], signal.comps))
+        // The handler widens, not the frame. `_RESYNC_FRAME` carries an empty payload precisely
+        // so its meaning can grow with no wire change — and it has to grow, because board frames
+        // discarded by the server's overflow flush are *not* subsumed by a comp listing, so an
+        // overflow would otherwise lose board convergence silently.
+        void invalidateBoards(teamId)
+        return
+      }
+      if (signal.kind === 'board.deleted') {
+        forgetBoard(signal.boardId)
+        return
+      }
+      if (signal.kind === 'board.created') {
+        void invalidateBoards(teamId)
+        return
+      }
+      if (signal.kind === 'board.changed') {
+        // The store decides whether this is news; an integer compare against what it has heard
+        // is cheaper than a read, and twenty of these cost two reads rather than twenty.
+        bumpBoard(signal.boardId, signal.revision)
         return
       }
       if (signal.kind === 'deleted') {
@@ -734,25 +869,67 @@ export default function WorkspaceScreen({
     }
   }, [teamId, dropComp])
 
+  /**
+   * A comp deleted while it is a tile on a shared board.
+   *
+   * Nothing to do, and that is the point. The cascade takes the tile off every board it was on,
+   * so the client's board handler **reads and never writes** — the alternative is every
+   * participant who happens to be looking issuing the same removal at the same instant, N
+   * writers racing to remove one tile for a change the server already knows about. What the
+   * personal board does here (`dropComp` → `withCompForgotten`) is a write, and it stays a write
+   * only because a personal layout has exactly one writer.
+   */
+
   /** The team's tag vocabularies, derived once here and shared by every open editor. */
   const vocabulary = useMemo(() => vocabularyOf(comps ?? []), [comps])
 
   const create = useCallback(async () => {
-    if (!layout || !board || creating) return
+    if (creating) return
+    if (!sharedBoard && (!layout || !board)) return
     setCreating(true)
     try {
       const slug = await chooseRulesetSlug(comps ?? [])
       const made = await createComp(teamId, 'Untitled comp', slug)
       setComps((current) => [...(current ?? []), made])
       setNewCompId(made.id)
-      arrange(withCompOpened(layout, board.id, made.id))
+      // The comp is the team's either way; which board it lands on is what differs.
+      if (sharedBoard) await openOnBoard(sharedBoard.id, made.id)
+      else if (layout && board) arrange(withCompOpened(layout, board.id, made.id))
       setError(null)
     } catch (problem: unknown) {
       setError(messageFor(problem))
     } finally {
       setCreating(false)
     }
-  }, [layout, board, creating, comps, teamId, arrange])
+  }, [layout, board, sharedBoard, creating, comps, teamId, arrange])
+
+  /**
+   * Copy a personal board to the team.
+   *
+   * The personal board is **left exactly as it was**, not converted. Three reasons: a half-failed
+   * conversion costs the arrangement; a board flipping in place would turn `Open board X` into
+   * `Open shared board X` for the same object, which §6.8 forbids by name; and the two diverge
+   * from that moment anyway.
+   *
+   * What is sent is what is *on screen*, because the private layout is written 800 ms behind it
+   * — a promote taken right after a drag would otherwise copy the board as it was before.
+   */
+  const shareBoard = useCallback(
+    async (id: string) => {
+      const source = (layout?.boards ?? []).find((each) => each.id === id)
+      if (!source) return
+      try {
+        const made = await createSharedBoard(teamId, source.name, tilesToPromote(source))
+        if (!made) return
+        seedBoards(teamId, [...sharedBoards, made])
+        navigate(boardRoute(teamId, made.id))
+        setError(null)
+      } catch (problem: unknown) {
+        setError(messageFor(problem))
+      }
+    },
+    [layout, teamId, sharedBoards],
+  )
 
   if (error && !comps) {
     return (
@@ -791,7 +968,9 @@ export default function WorkspaceScreen({
       <div className="ws-main">
         <BoardTabs
           boards={layout.boards}
-          activeBoardId={board.id}
+          // Whichever strip the URL is pointing at, so `aria-current` lands on the tab that is
+          // actually open rather than always on a personal one.
+          activeBoardId={target.kind === 'shared' ? target.boardId : board.id}
           teamId={teamId}
           canAddBoard={layout.boards.length < MAX_BOARDS}
           onAdd={() => {
@@ -808,42 +987,77 @@ export default function WorkspaceScreen({
               navigate(boardRoute(teamId, next.activeBoardId), { replace: true })
             }
           }}
+          sharedBoards={sharedBoards}
+          onShare={(id) => void shareBoard(id)}
+          onRenameShared={(id, name) => void renameSharedBoard(id, name)}
+          onCloseShared={(id) => {
+            void closeSharedBoard(id).then(() => {
+              if (id === boardId) navigate(boardRoute(teamId, board.id), { replace: true })
+            })
+          }}
         />
 
-        <BoardGrid
-          boardId={board.id}
-          boardName={board.name}
-          compIds={board.tiles.map((tile) => tile.compId)}
-          creating={creating}
-          newCompId={newCompId}
-          onClose={closeComp}
-          onCreate={() => void create()}
-          onPort={(compId, positions) => void fork(compId, positions)}
-          onFork={(compId) => void fork(compId)}
-          onDelete={askRemoveComp}
-          deletableCompIds={deletableCompIds}
-          onReorder={moveTile}
-          vocabulary={vocabulary}
-          onCompChanged={recordChange}
-          mode={mode}
-          places={places}
-          boardRef={boardRef}
-          snap={board ? boardSnap(board) : true}
-          // Only while the board is actually being drawn as a canvas. A narrow viewport
-          // therefore *cannot* write a position — the same idiom as a board given no
-          // `onReorder`, which simply cannot be rearranged, rather than a guard somewhere
-          // downstream that has to remember to ask.
-          onPlaceMany={mode === 'floating' ? placeTiles : undefined}
-          onPlace={mode === 'floating' ? placeTile : undefined}
-        />
+        {target.kind === 'unknown' ? (
+          /* A board id that is neither yours nor the team's, said out loud rather than
+             answered with somebody else's first board. This is the pasted-link journey
+             failing, and it used to fail by redrawing — the URL saying one thing and the
+             screen another, with nothing anywhere to notice. */
+          <p className="board-empty" data-testid="board-not-found" role="status">
+            That board is not on this team — it may have been closed, or the link may belong to
+            a team you are not on.
+          </p>
+        ) : sharedBoard ? (
+          <SharedBoardPane
+            board={sharedBoard}
+            creating={creating}
+            newCompId={newCompId}
+            onCreate={() => void create()}
+            onPort={(compId, positions) => void fork(compId, positions)}
+            onFork={(compId) => void fork(compId)}
+            onDelete={askRemoveComp}
+            deletableCompIds={deletableCompIds}
+            vocabulary={vocabulary}
+            onCompChanged={recordChange}
+            editable
+          />
+        ) : (
+          <BoardGrid
+            boardId={board.id}
+            boardName={board.name}
+            compIds={board.tiles.map((tile) => tile.compId)}
+            creating={creating}
+            newCompId={newCompId}
+            onClose={closeComp}
+            onCreate={() => void create()}
+            onPort={(compId, positions) => void fork(compId, positions)}
+            onFork={(compId) => void fork(compId)}
+            onDelete={askRemoveComp}
+            deletableCompIds={deletableCompIds}
+            onReorder={moveTile}
+            vocabulary={vocabulary}
+            onCompChanged={recordChange}
+            mode={mode}
+            places={places}
+            boardRef={boardRef}
+            snap={board ? boardSnap(board) : true}
+            // Only while the board is actually being drawn as a canvas. A narrow viewport
+            // therefore *cannot* write a position — the same idiom as a board given no
+            // `onReorder`, which simply cannot be rearranged, rather than a guard somewhere
+            // downstream that has to remember to ask.
+            onPlaceMany={mode === 'floating' ? placeTiles : undefined}
+            onPlace={mode === 'floating' ? placeTile : undefined}
+          />
+        )}
 
         {/* The strip under the board: how it draws itself on the left, whether that has been
             saved on the right. No vertical room of its own — the status line was already here
             — and the two belong together, since one reports on the other. */}
         <div className="ws-footer">
           {/* Below the breakpoint there is nothing here to offer: every board draws as the
-              grid, and a toggle that could not change that would be a control that lies. */}
-          {wide && (
+              grid, and a toggle that could not change that would be a control that lies.
+              Nothing here for a shared board either: it is a grid in this slice, so a mode
+              toggle would be a control that cannot do what it says. */}
+          {wide && !onShared && (
             <BoardControls
               mode={mode}
               snap={board ? boardSnap(board) : true}
@@ -894,6 +1108,20 @@ export default function WorkspaceScreen({
       )}
     </div>
   )
+}
+
+/**
+ * Everything about a comp that could change what the engine says about it.
+ *
+ * The hulls, their rows, the flagship, and the version it is judged against. Deliberately *not*
+ * its name, tags, comments or share link: those move `updatedAt` and rebuild the comp listing,
+ * and none of them can change a legality answer.
+ */
+function shapeOf(comp: CompDetail): string {
+  const slots = comp.slots
+    .map((slot) => `${slot.position}.${slot.typeId}${slot.isFlagship ? '!' : ''}`)
+    .join(',')
+  return `${comp.rulesetSlug} ${comp.rulesetVersionLabel} ${slots}`
 }
 
 function boardRoute(teamId: string, boardId: string) {

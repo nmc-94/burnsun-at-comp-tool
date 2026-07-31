@@ -69,6 +69,13 @@
   --fit-tag-dot-sat: 55%;
   --fit-tag-dot-light: 45%;
 
+  /* The ring around a person's mark. Its own pair rather than borrowing --fit-tag-border-*,
+     because a person is not a tag: a chip's border sits under text and wants to stay quiet,
+     while this *is* the identifier — it is the only thing distinguishing two 13px portraits
+     in a tile footer, so it carries more of both. The hue comes from `actor-colour.ts`. */
+  --actor-ring-sat: 60%;
+  --actor-ring-light: 45%;
+
   /* The value-derived half of the same system, defaulted here rather than on `.chip`.
      Two reasons. A chip whose hue is not set inline still has to render — an undefined custom
      property inside `calc()` invalidates the whole declaration, so it would lose its border and
@@ -147,4 +154,9 @@
   --fit-tag-text-light: 75%;
   --fit-tag-dot-sat: 65%;
   --fit-tag-dot-light: 52%;
+
+  /* Brighter than the light theme's, like every other hue-derived token here: the same 45%
+     lightness that reads as a firm ring on white disappears against #080b12. */
+  --actor-ring-sat: 65%;
+  --actor-ring-light: 62%;
 }

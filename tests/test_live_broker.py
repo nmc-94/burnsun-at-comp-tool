@@ -70,7 +70,8 @@ async def test_a_publish_from_another_thread_reaches_a_subscriber():
     """
     team_id, comp_id = uuid.uuid4(), uuid.uuid4()
 
-    async with live.subscribe(team_id) as queue:
+    async with live.subscribe(team_id) as sub:
+        queue = sub.queue
         thread = threading.Thread(
             target=live.publish,
             args=(team_id, live.KIND_CHANGED),
@@ -98,8 +99,10 @@ async def test_a_publish_reaches_every_subscriber_on_that_team_and_no_other():
     mine, theirs = uuid.uuid4(), uuid.uuid4()
     comp_id = uuid.uuid4()
 
-    async with live.subscribe(mine) as first, live.subscribe(mine) as second:
-        async with live.subscribe(theirs) as elsewhere:
+    async with live.subscribe(mine) as one, live.subscribe(mine) as two:
+        first, second = one.queue, two.queue
+        async with live.subscribe(theirs) as third:
+            elsewhere = third.queue
             live.publish(mine, live.KIND_CHANGED, comp_id=comp_id)
 
             assert _read(await asyncio.wait_for(first.get(), 2))[0] == live.KIND_CHANGED
@@ -117,7 +120,8 @@ async def test_a_subscriber_that_stops_reading_is_told_to_resync_rather_than_blo
     """
     team_id = uuid.uuid4()
 
-    async with live.subscribe(team_id) as queue:
+    async with live.subscribe(team_id) as sub:
+        queue = sub.queue
         for _ in range(live.QUEUE_LIMIT + 20):
             live.publish(team_id, live.KIND_CHANGED, comp_id=uuid.uuid4())
 
@@ -138,9 +142,70 @@ async def test_a_subscriber_that_stops_reading_is_told_to_resync_rather_than_blo
 
 
 @asyncio_test
+async def test_a_board_publish_from_another_thread_reaches_a_subscriber():
+    """The same crossing, for the other publisher.
+
+    Its own test rather than a parametrization of the one above, because the thing being
+    checked is that ``publish_board`` goes through ``_fan_out`` too — a second publisher that
+    quietly grew its own loop would pass every test about comps and deliver nothing about
+    boards.
+    """
+    team_id, board_id = uuid.uuid4(), uuid.uuid4()
+
+    async with live.subscribe(team_id) as sub:
+        queue = sub.queue
+        thread = threading.Thread(
+            target=live.publish_board,
+            args=(team_id, live.KIND_BOARD_CHANGED),
+            kwargs={"board_id": board_id, "revision": 7, "actor": "Ayla"},
+        )
+        thread.start()
+        thread.join()
+
+        frame = await asyncio.wait_for(queue.get(), timeout=2)
+
+    event, data = _read(frame)
+    assert event == live.KIND_BOARD_CHANGED
+    assert str(board_id) in data
+    assert '"revision":7' in data
+    # No timestamp anywhere on a board frame: the revision is the ordering, which is what
+    # keeps ``_wire_time`` out of this path entirely.
+    assert "updatedAt" not in data
+
+
+@asyncio_test
+async def test_board_frames_and_comp_frames_share_one_overflow_budget():
+    """One queue per subscriber, so a busy board can push comp events out of it.
+
+    Worth pinning because the recovery has to cover both: everything discarded here is
+    subsumed by a resync only if the client's answer to a resync re-reads boards as well as
+    comps.
+    """
+    team_id = uuid.uuid4()
+
+    async with live.subscribe(team_id) as sub:
+        queue = sub.queue
+        for _ in range((live.QUEUE_LIMIT // 2) + 10):
+            live.publish(team_id, live.KIND_CHANGED, comp_id=uuid.uuid4())
+            live.publish_board(
+                team_id, live.KIND_BOARD_CHANGED, board_id=uuid.uuid4(), revision=1
+            )
+        await asyncio.sleep(0)
+
+        assert queue.qsize() <= live.QUEUE_LIMIT
+
+        drained = []
+        while not queue.empty():
+            drained.append(_read(queue.get_nowait())[0])
+
+    assert live.KIND_RESYNC in drained
+
+
+@asyncio_test
 async def test_publishing_to_a_team_nobody_is_watching_does_nothing_and_costs_nothing():
     """The common case: one person editing alone. No subscribers, no frames, no error."""
     live.publish(uuid.uuid4(), live.KIND_CHANGED, comp_id=uuid.uuid4())
+    live.publish_board(uuid.uuid4(), live.KIND_BOARD_CHANGED, board_id=uuid.uuid4(), revision=1)
     assert live._subscribers == {}
 
 
@@ -188,9 +253,12 @@ async def test_the_stream_hangs_up_on_its_own_before_railway_cuts_it(monkeypatch
     # The preamble comes first and carries the reconnect delay, so the browser knows how long
     # to wait before coming back.
     assert frames[0].endswith(f"retry: {live.RETRY_MS}\n\n")
-    # Everything after it, in a silent stream, is the heartbeat that keeps a proxy from
+    # Then the roster, on connect rather than on the first beat: a board opening into a room
+    # already full of people draws them without waiting for one of them to move.
+    assert _read(frames[1])[0] == live.KIND_PRESENCE
+    # Everything after that, in a silent stream, is the heartbeat that keeps a proxy from
     # deciding the connection is dead.
-    assert set(frames[1:]) <= {live._KEEPALIVE}
+    assert set(frames[2:]) <= {live._KEEPALIVE}
     # And the subscriber it registered went with it.
     assert live._subscribers == {}
 
@@ -218,6 +286,77 @@ def test_a_frame_is_one_event_and_one_line_of_data():
     # The blank line ends the frame, so there is exactly one and it is at the end.
     assert frame.count("\n\n") == 1
     assert frame == 'event: comp.changed\ndata: {"compId":"abc","actor":"Bob"}\n\n'
+
+
+@asyncio_test
+async def test_the_roster_is_one_entry_per_open_stream():
+    """Per stream rather than per person: two tabs are two places a highlight can be."""
+    team_id = uuid.uuid4()
+    kadir = Viewer(character_id=1, character_name="Kadir")
+
+    async with live.subscribe(team_id, kadir, "tab-1"), live.subscribe(team_id, kadir, "tab-2"):
+        async with live.subscribe(team_id, Viewer(character_id=2, character_name="Ayla"), "tab-3"):
+            entries = live.roster(team_id)
+
+    assert [entry["characterName"] for entry in entries] == ["Ayla", "Kadir", "Kadir"]
+    assert {entry["client"] for entry in entries} == {"tab-1", "tab-2", "tab-3"}
+
+
+@asyncio_test
+async def test_a_roster_entry_lives_exactly_as_long_as_its_stream():
+    """No table, no heartbeat write, and nothing to expire.
+
+    §4.7 asks for ephemeral, and the arithmetic makes it binding: a heartbeat table would be
+    the busiest write path in the application by a wide margin, to persist information whose
+    useful life is one second.
+    """
+    team_id = uuid.uuid4()
+
+    async with live.subscribe(team_id, Viewer(character_id=1, character_name="Kadir"), "tab-1"):
+        assert len(live.roster(team_id)) == 1
+
+    assert live.roster(team_id) == []
+
+
+@asyncio_test
+async def test_presence_replaces_rather_than_queues():
+    """The coalescing lane, which is what keeps presence off the overflow path.
+
+    Fan-out is per subscriber, so N actors × R beats × N subscribers is the term to design
+    against: ten people at 5 Hz is 500 frames a second, which overflows a 64-frame queue in
+    about 128 ms — and the punishment for overflow is a full team re-read per client. The
+    cheapest thing on this wire must not be able to trigger the most expensive recovery.
+    """
+    team_id = uuid.uuid4()
+    watcher = Viewer(character_id=1, character_name="Kadir")
+
+    async with live.subscribe(team_id, watcher, "tab-1") as sub:
+        # Drain the join notice, if the fixture left one.
+        while not sub.queue.empty():
+            sub.queue.get_nowait()
+
+        for n in range(200):
+            sub.board_id = f"board-{n}"
+            live._announce_roster(team_id)
+
+        # Two hundred beats, one notification. The queue can never fill from presence alone.
+        assert sub.queue.qsize() == 1
+        assert sub.queue.get_nowait() == live._ROSTER_SENTINEL
+        # And what goes out is the roster as it stands *now*, not as it was when queued.
+        assert '"board-199"' in sub.take_roster()
+
+
+@asyncio_test
+async def test_a_presence_beat_that_says_nothing_new_wakes_nobody():
+    team_id = uuid.uuid4()
+
+    async with live.subscribe(team_id, Viewer(character_id=1, character_name="Kadir")) as first:
+        async with live.subscribe(team_id, Viewer(character_id=2, character_name="Ayla")) as sub:
+            while not sub.queue.empty():
+                sub.queue.get_nowait()
+            first.board_id = "board-1"
+            live._announce_roster(team_id)
+            assert sub.queue.qsize() == 1
 
 
 def test_an_origin_longer_than_an_id_is_not_relayed_whole():

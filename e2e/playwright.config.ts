@@ -44,7 +44,7 @@ export default defineConfig({
   workers: process.env.CI ? 2 : undefined,
 
   timeout: 30_000,
-  // 5s is the default and it is not enough here: a comp save is a 600ms debounce plus a
+  // 5s is the default and it is not enough here: a comp save is a 250ms debounce plus a
   // round trip, and the layout's is 800ms. Ten gives headroom without hiding a hang.
   expect: { timeout: 10_000 },
 

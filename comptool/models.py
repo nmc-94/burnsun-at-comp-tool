@@ -39,6 +39,7 @@ from enum import IntEnum, StrEnum
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -293,6 +294,11 @@ class Comp(Base):
     # its rows. Null when this comp is not a fork at all. A plain scalar with the vocabulary
     # in Python, like ``SubjectKind``.
     fork_kind: Mapped[str | None] = mapped_column(String(16))
+    # Bumped by a slot write and by nothing else, so a caller can say which version of the hull
+    # list its edit was based on and be refused when that is no longer the current one. A rename
+    # and a hull change commute, so neither may invalidate the other — which is why this is not
+    # ``updated_at``, and why ``_apply_tags`` leaves it alone. See ``comps._apply_slots``.
+    slots_version: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -504,6 +510,128 @@ class WorkspaceLayout(Base):
     )
 
     team: Mapped[Team] = relationship()
+
+
+class SharedBoard(Base):
+    """A board that belongs to the team rather than to one character.
+
+    Every other board in this application is a JSONB object inside ``workspace_layout``,
+    one row per character per team, whose docstring says in as many words that a layout has
+    exactly one writer — you. This is the other thing: one arrangement that everybody with
+    team access opens at the same URL, whose order the server decides.
+
+    **Rows rather than a document**, unlike its personal twin, and the decisive argument is
+    the foreign key on the tile below: a comp id cannot outlive its comp. That is the
+    invariant ``comptool/workspace.py`` spends two functions enforcing by hand, and here it
+    is a property of the schema instead of a rule somebody has to remember. Secondarily,
+    independent ops touch independent rows — two people moving two different tiles are not
+    two writers racing to rewrite one blob, which is the commonest gesture this feature has.
+    """
+
+    __tablename__ = "shared_board"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("team.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    # ``grid`` or ``float`` — a plain scalar with the vocabulary in Python, like ``fork_kind``.
+    # A Python-side default and deliberately *no* server default: the drift gate runs with
+    # ``compare_server_default=True``, and a string one reflects back from Postgres as
+    # ``'grid'::character varying``, which never matches what the model says. ``snap`` below
+    # keeps a server default because a boolean reflects cleanly — ``comp_slot.is_flagship``
+    # is the standing proof of that.
+    mode: Mapped[str] = mapped_column(String(16), default="grid")
+    snap: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    # Bumped by every op that changes something, and the only thing the client compares.
+    #
+    # An integer rather than leaning on ``updated_at``, because both readers need an
+    # ordering a timestamp cannot give: an arriving document replaces what is on screen
+    # only when it is *newer*, and two ops inside one clock tick are indistinguishable by
+    # time. Same argument as ``comp.slots_version``, and it is also what keeps a wire
+    # timestamp out of board events entirely.
+    revision: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    # Captured once, like ``comp.created_by_character_id``, and never reassigned.
+    created_by_character_id: Mapped[int | None] = mapped_column(BigInteger)
+    created_by_name: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team: Mapped[Team] = relationship()
+    tiles: Mapped[list[SharedBoardTile]] = relationship(
+        back_populates="board",
+        cascade="all, delete-orphan",
+        # Ties broken all the way down, so the order served is never the database's whim:
+        # ``position`` is sparse and not unique, and two tiles created in one transaction
+        # can share a timestamp.
+        order_by=(
+            "SharedBoardTile.position, SharedBoardTile.created_at, SharedBoardTile.comp_id"
+        ),
+    )
+
+
+class SharedBoardTile(Base):
+    """One comp on a shared board.
+
+    ``comp_id`` cascades, and that is the whole reason this is a table: a tile cannot
+    outlive its comp, so neither a route nor a client has to remember to filter one out.
+
+    It is also this table's trap. The key is satisfied by *any* comp — including one in
+    another team — and raises ``IntegrityError`` for a uuid that was never a comp at all.
+    Those two cases must be indistinguishable to a caller and both silently dropped, or a
+    write becomes the existence probe ``access.py`` exists to deny. So the key protects
+    reads and **must never answer a write**: ``comptool/shared_boards.py`` resolves a comp
+    against the team in Python first, and writes its read as a join so the intersection
+    cannot be left out of one query.
+    """
+
+    __tablename__ = "shared_board_tile"
+    __table_args__ = (
+        # One tile per comp per board, so "two people add the same comp at the same moment"
+        # is settled by the index rather than by a scan under a lock — the same
+        # arbiter-rather-than-pre-check choice ``share._mint`` and ``save_workspace``'s
+        # upsert both already make. It also leads with ``board_id``, which is the lookup
+        # every read makes and the one the board's cascade walks, so there is no separate
+        # index on that column.
+        UniqueConstraint("board_id", "comp_id"),
+        # Half a position is not a position.
+        #
+        # Written by hand here *and* in the migration, on purpose: ``alembic check`` does
+        # not compare CHECK constraints, and the test suite raises its schema from
+        # ``Base.metadata``. A constraint declared in only one of the two would hold in
+        # every test and be absent in production, with nothing anywhere reporting the gap.
+        # The short name is deliberate — the ``ck`` naming convention renders the prefix.
+        CheckConstraint("(place_x IS NULL) = (place_y IS NULL)", name="place_is_whole"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    board_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("shared_board.id", ondelete="CASCADE")
+    )
+    # Indexed on its own, unlike ``board_id``: this is the column the comp's cascade walks
+    # when a comp is deleted, and it leads no other index.
+    comp_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("comp.id", ondelete="CASCADE"), index=True
+    )
+    # Sparse, and deliberately not unique — uniqueness is exactly what would force a move to
+    # renumber its neighbours. Never served: the response is an ordered list, so a gap is
+    # invisible outside ``shared_boards.py``. See ``POSITION_GAP`` there.
+    position: Mapped[int] = mapped_column(Integer)
+    # Where the tile sits when a board is floating. Reserved, and unset in this slice — a
+    # shared board draws as a grid and no op writes either — so that promoting one to
+    # floating later loses nothing and needs no migration.
+    place_x: Mapped[int | None] = mapped_column(Integer)
+    place_y: Mapped[int | None] = mapped_column(Integer)
+    added_by_character_id: Mapped[int | None] = mapped_column(BigInteger)
+    added_by_name: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = _created_at()
+
+    board: Mapped[SharedBoard] = relationship(back_populates="tiles")
+
+    # No ``Comp.shared_board_tiles`` back-reference. ``reach_comp`` eager-loads a comp for
+    # all six of its callers, and none of them wants a board's tiles dragged along with it.
 
 
 class AuthSession(Base):

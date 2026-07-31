@@ -14,11 +14,14 @@ here is who may open it; what comes out of it is `test_live_broker.py`'s busines
 
 from __future__ import annotations
 
+import asyncio
+import sys
 import uuid
 
 import pytest
 
 from comptool import live
+from comptool.permissions import Viewer
 from conftest import RULESET_SLUG
 
 
@@ -75,12 +78,31 @@ class Heard:
         return self.events[0]
 
 
+#: The names ``live`` publishes under, and that a route module imports directly.
+_PUBLISHERS = ("publish", "publish_board")
+
+
 def listening(monkeypatch) -> Heard:
+    """Stand in for every publisher, in every module that imported one.
+
+    Patched per importing module because ``from .live import publish`` binds the name
+    *there* — patching only ``live.publish`` would leave every caller on the original.
+
+    Which modules those are is **derived rather than written down**. The list used to be a
+    hardcoded ``("comps", "comments", "share")``, which fails in the silent direction: a new
+    publisher is simply absent from it, and a test asserting that a write announced one thing
+    keeps passing while the events it does not name fire unobserved. Identity is the filter,
+    so a module with a ``publish`` of its own — ``ingest.store`` publishes a *ruleset* — is
+    left alone.
+    """
     heard = Heard()
-    # Patched in each module that imported the name, because ``from .live import publish``
-    # binds it there — patching only ``live.publish`` would leave every caller on the original.
-    for module in ("comps", "comments", "share"):
-        monkeypatch.setattr(f"comptool.{module}.publish", heard)
+    originals = {name: getattr(live, name) for name in _PUBLISHERS}
+    for module in list(sys.modules.values()):
+        if not getattr(module, "__name__", "").startswith("comptool.") or module is live:
+            continue
+        for name, original in originals.items():
+            if getattr(module, name, None) is original:
+                monkeypatch.setattr(module, name, heard)
     return heard
 
 
@@ -346,3 +368,270 @@ def test_a_refused_write_announces_nothing(client, sign_in, monkeypatch):
     assert client.patch(f"/api/v1/comps/{comp['id']}", json={"name": "Mine now"}).status_code == 404
 
     assert heard.events == []
+
+
+# --- The presence beat ---------------------------------------------------------------------
+
+
+def test_a_presence_beat_updates_a_stream_that_is_already_open(client, sign_in):
+    """It moves a record that exists rather than creating one, which is why it needs no gate.
+
+    ``authorize`` is two queries. Ten people moving a highlight at 5 Hz would be a hundred
+    queries a second of pure permission checking, forever, whether or not anybody edits
+    anything. What makes skipping it safe is that this route creates nothing and can name
+    nothing: the subscriber it updates exists because its holder opened a stream, and that
+    stream was authorized when it opened and is re-authorized every minute after.
+    """
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    team_id = uuid.UUID(team["id"])
+    board_id, comp_id = uuid.uuid4(), uuid.uuid4()
+
+    async def beat_against_an_open_stream():
+        async with live.subscribe(
+            team_id, Viewer(character_id=OWNER, character_name="Kadir"), "tab-1"
+        ) as sub:
+            response = client.put(
+                f"/api/v1/teams/{team['id']}/presence",
+                json={"boardId": str(board_id), "compId": str(comp_id)},
+                headers={"X-Comptool-Client": "tab-1"},
+            )
+            return response, sub.board_id, sub.comp_id
+
+    response, seen_board, seen_comp = asyncio.run(beat_against_an_open_stream())
+
+    assert response.status_code == 204
+    assert seen_board == str(board_id)
+    assert seen_comp == str(comp_id)
+
+
+def test_a_beat_from_another_tab_moves_nobody_elses_highlight(client, sign_in):
+    """Matched on the session's character *and* the tab, so one tab cannot move another's."""
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    team_id = uuid.UUID(team["id"])
+
+    async def beat_naming_the_wrong_tab():
+        async with live.subscribe(
+            team_id, Viewer(character_id=OWNER, character_name="Kadir"), "tab-1"
+        ) as sub:
+            client.put(
+                f"/api/v1/teams/{team['id']}/presence",
+                json={"boardId": str(uuid.uuid4())},
+                headers={"X-Comptool-Client": "tab-2"},
+            )
+            return sub.board_id
+
+    assert asyncio.run(beat_naming_the_wrong_tab()) is None
+
+
+def test_a_beat_with_no_stream_open_says_nothing_about_the_team(client, sign_in):
+    """204 either way, so the reply is not a probe.
+
+    Whether a team is real, whether it is the caller's, and whether anybody is on it are all
+    things this route must not answer — and it does not, because it does not look.
+    """
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+
+    mine = client.put(f"/api/v1/teams/{team['id']}/presence", json={})
+    invented = client.put(f"/api/v1/teams/{uuid.uuid4()}/presence", json={})
+
+    assert mine.status_code == invented.status_code == 204
+
+
+def test_a_presence_beat_needs_a_session(client):
+    client.cookies.clear()
+    assert client.put(f"/api/v1/teams/{uuid.uuid4()}/presence", json={}).status_code == 401
+
+
+def test_a_roster_names_the_session_and_never_the_client_supplied_tab(client, sign_in):
+    """A displayed name is a claim about a person, so it comes from the session.
+
+    ``origin_client`` treats the sibling header as untrusted and that is enough for *its* job —
+    claiming somebody else's id only costs you your own updates. A roster is different.
+    """
+    sign_in(OWNER, "Kadir")
+    team_id = uuid.UUID(make_team(client)["id"])
+
+    async def what_the_roster_says():
+        async with live.subscribe(
+            team_id,
+            Viewer(character_id=OWNER, character_name="Kadir"),
+            "Ayla the impostor",
+        ):
+            return live.roster(team_id)
+
+    entries = asyncio.run(what_the_roster_says())
+
+    assert entries[0]["characterName"] == "Kadir"
+    assert entries[0]["characterId"] == OWNER
+    # The client-supplied value survives only as a tab label.
+    assert entries[0]["client"] == "Ayla the impostor"
+
+
+# --- And that a shared board announces itself too ------------------------------------------
+
+
+def make_board(client, team: dict, name: str = "Round one", *comp_ids: str) -> dict:
+    response = client.post(
+        f"/api/v1/teams/{team['id']}/boards", json={"name": name, "tiles": list(comp_ids)}
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_creating_a_shared_board_announces_it(client, sign_in, monkeypatch):
+    heard = listening(monkeypatch)
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+
+    board = make_board(client, team)
+
+    team_id, kind, fields = heard.only()
+    assert str(team_id) == team["id"]
+    assert kind == live.KIND_BOARD_CREATED
+    assert str(fields["board_id"]) == board["id"]
+    assert fields["revision"] == board["revision"]
+    assert fields["actor"] == "Kadir"
+
+
+def test_adding_a_tile_announces_a_change(client, sign_in, monkeypatch):
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    comp = make_comp(client, team)
+    board = make_board(client, team)
+
+    heard = listening(monkeypatch)
+    response = client.post(f"/api/v1/boards/{board['id']}/tiles", json={"compId": comp["id"]})
+    assert response.status_code == 200
+
+    _, kind, fields = heard.only()
+    assert kind == live.KIND_BOARD_CHANGED
+    # The revision announced is the one the response carries, or a client would re-read to a
+    # number older than the answer it already has and then ignore the answer.
+    assert fields["revision"] == response.json()["revision"]
+
+
+def test_moving_a_tile_announces_a_change(client, sign_in, monkeypatch):
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    first = make_comp(client, team, "Alpha")
+    second = make_comp(client, team, "Beta")
+    board = make_board(client, team, "Round one", first["id"], second["id"])
+
+    heard = listening(monkeypatch)
+    response = client.patch(
+        f"/api/v1/boards/{board['id']}/tiles/{second['id']}", json={"beforeCompId": first["id"]}
+    )
+    assert response.status_code == 200
+
+    assert heard.only()[1] == live.KIND_BOARD_CHANGED
+
+
+def test_removing_a_tile_announces_a_change(client, sign_in, monkeypatch):
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    comp = make_comp(client, team)
+    board = make_board(client, team, "Round one", comp["id"])
+
+    heard = listening(monkeypatch)
+    assert client.delete(f"/api/v1/boards/{board['id']}/tiles/{comp['id']}").status_code == 204
+
+    assert heard.only()[1] == live.KIND_BOARD_CHANGED
+
+
+def test_renaming_a_shared_board_announces_a_change(client, sign_in, monkeypatch):
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    board = make_board(client, team)
+
+    heard = listening(monkeypatch)
+    renamed = client.patch(f"/api/v1/boards/{board['id']}", json={"name": "Round two"})
+    assert renamed.status_code == 200
+
+    assert heard.only()[1] == live.KIND_BOARD_CHANGED
+
+
+def test_deleting_a_shared_board_announces_it_gone(client, sign_in, monkeypatch):
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    board = make_board(client, team)
+
+    heard = listening(monkeypatch)
+    assert client.delete(f"/api/v1/boards/{board['id']}").status_code == 204
+
+    _, kind, fields = heard.only()
+    assert kind == live.KIND_BOARD_DELETED
+    assert str(fields["board_id"]) == board["id"]
+
+
+def test_a_board_op_that_changes_nothing_announces_nothing(client, sign_in, monkeypatch):
+    """The same promise the comp routes make, and easier to break here.
+
+    A drag that puts a tile back where it started is an ordinary gesture, and if it published,
+    every other screen on the team would re-read the board for a change that did not happen.
+    """
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    first = make_comp(client, team, "Alpha")
+    second = make_comp(client, team, "Beta")
+    board = make_board(client, team, "Round one", first["id"], second["id"])
+
+    heard = listening(monkeypatch)
+    client.patch(f"/api/v1/boards/{board['id']}", json={"name": board["name"]})
+    client.patch(
+        f"/api/v1/boards/{board['id']}/tiles/{first['id']}", json={"beforeCompId": second["id"]}
+    )
+    client.post(f"/api/v1/boards/{board['id']}/tiles", json={"compId": first["id"]})
+    client.post(f"/api/v1/boards/{board['id']}/tiles", json={"compId": str(uuid.uuid4())})
+    client.delete(f"/api/v1/boards/{board['id']}/tiles/{uuid.uuid4()}")
+
+    assert heard.events == []
+
+
+def test_a_board_event_names_no_comp_and_a_comp_event_names_no_board(
+    client, sign_in, monkeypatch
+):
+    """Two vocabularies on one wire, and a client keys a map on one of them.
+
+    A board event carrying a ``compId``, or a comp event carrying a ``boardId``, would be read
+    by the wrong handler — and the failure is silent, because a client keying a map on the field
+    that is absent keys it on ``undefined`` rather than raising.
+    """
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    comp = make_comp(client, team)
+
+    heard = listening(monkeypatch)
+    make_board(client, team, "Round one", comp["id"])
+    client.patch(f"/api/v1/comps/{comp['id']}", json={"name": "Renamed"})
+
+    board_event = next(fields for _, kind, fields in heard.events if kind.startswith("board."))
+    comp_event = next(fields for _, kind, fields in heard.events if kind.startswith("comp."))
+
+    assert "comp_id" not in board_event
+    assert "board_id" not in comp_event
+
+
+def test_a_board_event_carries_the_writing_tab_so_that_tab_can_ignore_it(
+    client, sign_in, monkeypatch
+):
+    """Same echo filter as a comp's, and load-bearing for a different reason.
+
+    A tab that acted on its own board event would re-read a document it is already holding the
+    authoritative answer for — the op's own response — and could adopt an older revision on the
+    way past.
+    """
+    sign_in(OWNER, "Kadir")
+    team = make_team(client)
+    board = make_board(client, team)
+
+    heard = listening(monkeypatch)
+    client.patch(
+        f"/api/v1/boards/{board['id']}",
+        json={"name": "Round two"},
+        headers={"X-Comptool-Client": "tab-7"},
+    )
+
+    assert heard.only()[2]["origin"] == "tab-7"

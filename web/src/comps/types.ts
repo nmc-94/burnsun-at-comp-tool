@@ -63,6 +63,15 @@ export interface CompDetail {
    * without this the link would go on showing last week's comp with nobody the wiser.
    */
   shareStale: boolean
+  /**
+   * Which version of the hull list this is. Moves on a slot write and on nothing else — not on a
+   * rename, not on a retag — so sending it back as `If-Match` refuses a save that would overwrite
+   * somebody else's without refusing edits that never collided.
+   *
+   * A field rather than an `ETag`, because the listing serves every comp on the team in one
+   * response and one response has nowhere to put N entity tags.
+   */
+  slotsVersion: number
   slots: CompSlotDetail[]
 }
 

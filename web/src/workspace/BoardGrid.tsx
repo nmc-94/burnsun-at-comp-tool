@@ -7,7 +7,7 @@
 // satisfied by the shape rather than by a discipline about `React.memo` that nothing checks.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import type { CSSProperties, RefObject } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
 
 import CompTileHost from '../comps/CompTileHost'
 import type { TileDrag } from '../comps/CompTileHost'
@@ -18,7 +18,7 @@ import type { CompDetail } from '../comps/types'
 import { inTextField, isPaste } from '../lib/keys'
 import { canvasFor, tileHeights, useBoardSize } from './board-metrics'
 import type { Canvas } from './board-metrics'
-import type { Carried, Float, Reorder } from './carry'
+import type { Carried, CarryWatch, Float, Reorder } from './carry'
 import { measure, play } from './flip'
 import type { Box } from './flip'
 import { beginFloat, gripOf } from './float-drag'
@@ -87,6 +87,27 @@ interface Props {
    * board given none of these still draws every tile, it simply cannot be rearranged.
    */
   readonly onReorder?: (compId: string, toIndex: number) => void
+  /**
+   * Somebody to tell that a gesture is in flight, on a board other people can also write.
+   *
+   * Absent on a personal board, which has no second writer and therefore nothing to be held
+   * still against. See `carry.ts` for what the drag engines are holding that a remote change
+   * would tear apart.
+   */
+  readonly carryWatch?: CarryWatch
+  /**
+   * Something to draw in a tile's footer saying who else is looking at it.
+   *
+   * A factory rather than a map, and a node rather than data, so this file learns nothing about
+   * presence: it is handed something to render and renders it. Absent on a personal board, which
+   * has no second reader — and its absence is the whole of what makes a personal board unaffected
+   * by any of this, which is what `BoardGrid.test.tsx`'s independence tests still passing
+   * unmodified is the proof of.
+   *
+   * What it returns must be a leaf that subscribes for itself. A board that re-rendered when
+   * somebody moved a highlight would re-render twenty tiles a second, which is §6.7 gone.
+   */
+  readonly renderWatchers?: (compId: string) => ReactNode
   readonly vocabulary?: TagVocabulary
   readonly onCompChanged?: (comp: CompDetail) => void
   /**
@@ -140,6 +161,8 @@ export default function BoardGrid({
   onDelete,
   deletableCompIds,
   onReorder,
+  carryWatch,
+  renderWatchers,
   vocabulary,
   onCompChanged,
   mode = 'grid',
@@ -171,6 +194,10 @@ export default function BoardGrid({
    *  halves of a FLIP that spans a mode change. */
   const boxes = useRef<Map<string, Box> | null>(null)
   const drawnMode = useRef<BoardMode>(mode)
+  /** The order as last drawn, so a rearrangement nobody here asked for can still be animated. */
+  const drawnOrder = useRef<string>(compIds.join(' '))
+  /** Set by this client's own drop, and read once by the pass that follows it. */
+  const justDropped = useRef(false)
   /**
    * Where the last press landed inside the tile it landed on.
    *
@@ -262,11 +289,24 @@ export default function BoardGrid({
       if (tile.dataset.compId) tiles.set(tile.dataset.compId, tile)
     }
     const scroll = { left: container.scrollLeft, top: container.scrollTop }
-    const changed = drawnMode.current !== mode
-    const was = changed ? boxes.current : null
-    const now = measure(tiles, scroll, changed)
+    // Widened from "the mode changed" to "the mode or the order changed", because on a shared
+    // board the order changes without anybody here touching it: somebody else drops a tile and
+    // this board rearranges on its own. Animating that is the difference between tiles that
+    // move and tiles that teleport.
+    //
+    // `justDropped` suppresses the commit that follows *this* client's own drop. `reorder.ts`
+    // has already animated those tiles and cleared its inline `order`s, so animating again
+    // would re-slide them from where they now are. Safe to interleave at all because
+    // `transform` is written by nothing but `flip.ts` — `reorder.ts` uses `order`,
+    // `float-drag.ts` writes to a separate outline element, React writes `left`/`top`.
+    const order = compIds.join(' ')
+    const rearranged = drawnMode.current !== mode || (drawnOrder.current !== order && !justDropped.current)
+    justDropped.current = false
+    const was = rearranged ? boxes.current : null
+    const now = measure(tiles, scroll, rearranged)
     if (was) play(tiles, was, now)
     drawnMode.current = mode
+    drawnOrder.current = order
     boxes.current = now
   })
 
@@ -308,6 +348,9 @@ export default function BoardGrid({
     return {
       lift(compId, settle) {
         if (!grid.current) return false
+        // Before the engine takes hold, so a document arriving between the press and the first
+        // `dragover` is parked rather than reordering the children under it.
+        carryWatch?.begin()
         carrying.current = floating
           ? beginFloat(grid.current, compId, {
               snap,
@@ -331,9 +374,13 @@ export default function BoardGrid({
         carrying.current?.cancel()
         carrying.current = null
         settling.current = null
+        // Last, and that ordering is the whole of it: `cancel()` above writes to the DOM, and
+        // releasing before it had finished would let a parked document re-render the children
+        // out from under a gesture that is still tidying up after itself.
+        carryWatch?.end()
       },
     }
-  }, [onReorder, onPlace, floating, snap, grid])
+  }, [onReorder, onPlace, floating, snap, grid, carryWatch])
 
   /**
    * The other place a carried tile can be let go of: the new-comp tile, where it forks.
@@ -400,6 +447,10 @@ export default function BoardGrid({
     held.settle()
     carrying.current = null
     settling.current = null
+    // The commit that follows this drop is already drawn: `reorder.ts` has animated the tiles
+    // and cleared its inline `order`s, so letting the FLIP pass run over it would re-slide them
+    // from where they have just arrived.
+    if (moved) justDropped.current = true
     if (moved && toIndex !== -1) onReorder(held.carried, toIndex)
     return true
   }, [onReorder, onPlace])
@@ -435,6 +486,7 @@ export default function BoardGrid({
       onCompChanged={onCompChanged}
       tileDrag={tileDrag}
       place={drawn?.filled.get(compId)}
+      watchers={renderWatchers?.(compId)}
     />
   ))
 

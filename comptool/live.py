@@ -18,14 +18,27 @@ an answer for what a client missed while it was away. Invalidations need neither
 reconnect re-reads, and a break stops being a correctness question. It is also why the
 client resyncs on every open rather than only on the first.
 
-**Fan-out is in-process, and that is a deployment claim with a shelf life.** One uvicorn
-worker serves this app (``comptool/__main__.py`` passes no ``workers``), so a dict of
-queues reaches everybody. ``ratelimit.py`` records the same caveat for the same reason and
-it applies here in a sharper form: a second Railway replica would not fail loudly, it would
-simply stop delivering half the events, and a board that updates *sometimes* is harder to
-diagnose than one that never does. :func:`publish` and :func:`subscribe` are the seam that
-change goes behind — Postgres ``LISTEN``/``NOTIFY`` fits underneath with no caller edits,
-and psycopg is already a dependency. REQUIREMENTS §4.7 names it as the intended shape.
+**Fan-out is in-process, so one worker is a correctness requirement rather than a scaling
+preference.** A dict of queues reaches everybody in this process and nobody outside it.
+``ratelimit.py`` records the same caveat for the same reason and it applies here in a
+sharper form: a second replica would not fail loudly, it would simply stop delivering half
+the events, and a board that updates *sometimes* is harder to diagnose than one that never
+does. With presence it is worse in kind — a roster showing two of the three people actually
+present is read as a fact about who is online, and nobody debugs a fact.
+
+An earlier version of this paragraph said one worker runs because ``comptool/__main__.py``
+passes no ``workers``, which is the reason backwards. ``uvicorn.Config.__init__`` does
+``self.workers = workers or 1`` and *then* ``if workers is None and "WEB_CONCURRENCY" in
+os.environ``, so passing none is precisely what lets that variable win — one environment
+variable, standard advice for every FastAPI deployment and set by default on some platforms,
+forking the app with no log line. Hence ``__main__.py`` now passes ``workers=1`` explicitly
+and ``settings.py`` refuses to boot when ``WEB_CONCURRENCY`` asks for more; ``/api/health``
+reports a per-process ``instance`` so a second process is *detectable* rather than merely
+forbidden.
+
+:func:`publish` and :func:`subscribe` are the seam that change goes behind — Postgres
+``LISTEN``/``NOTIFY`` fits underneath with no caller edits, and psycopg is already a
+dependency. REQUIREMENTS §4.7 names it as the intended shape.
 """
 
 from __future__ import annotations
@@ -40,9 +53,11 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 from .access import authorize, team_not_found
 from .auth import sessions
@@ -92,6 +107,30 @@ KIND_CHANGED = "comp.changed"
 KIND_DELETED = "comp.deleted"
 KIND_RESYNC = "resync"
 
+#: A shared board gained, lost or rearranged something.
+#:
+#: One ``changed`` kind covers a rename, a mode switch, and a tile added, removed or moved,
+#: because every one of them is recovered by re-reading the same route. A finer split would
+#: be a delta hint the client cannot act on differently, and the first time one was wrong the
+#: board would diverge with nothing to correct it.
+KIND_BOARD_CREATED = "board.created"
+KIND_BOARD_CHANGED = "board.changed"
+KIND_BOARD_DELETED = "board.deleted"
+
+#: Who is on this team's boards right now, and which tile each is touching.
+#:
+#: The whole roster every time rather than a join/leave delta, for the same reason every other
+#: frame here is an invalidation: this connection is guaranteed to break and reform, and a delta
+#: model would need a replay buffer and an answer for what a client missed.
+KIND_PRESENCE = "presence"
+
+#: A place-holder that means "read your roster slot", never delivered as itself.
+#:
+#: The lane is the point. A presence beat replaces a subscriber's pending roster instead of
+#: queueing beside it, so ten people moving a highlight cannot fill a 64-frame queue and turn
+#: the cheapest thing on this wire into a full team re-read.
+_ROSTER_SENTINEL = "\x00roster"
+
 _KEEPALIVE = ": keepalive\n\n"
 _RESYNC_FRAME = f"event: {KIND_RESYNC}\ndata: {{}}\n\n"
 
@@ -124,10 +163,51 @@ class _Subscriber:
 
     ``eq=False`` so instances hash by identity: two boards on one team are two subscribers
     and neither may stand in for the other.
+
+    It also *is* the presence record. A roster entry's life is a stream's life — there is no
+    table, no heartbeat write and nothing to expire, because the thing that would be expiring
+    is a connection the operating system already tracks. §4.7 asks for that, and the arithmetic
+    makes it binding rather than aspirational: a heartbeat table would become the busiest write
+    path in the application by a wide margin, with row churn and vacuum pressure, to persist
+    information whose useful life is one second.
     """
 
     queue: asyncio.Queue[str]
     loop: asyncio.AbstractEventLoop
+    #: Who this is, **taken from the session and never from the client.** A displayed name is a
+    #: claim about a person; ``client`` below may label a tab and nothing more.
+    character_id: int = 0
+    character_name: str = ""
+    #: Which tab, so two tabs of one person are two entries. Client-supplied, bounded, untrusted.
+    client: str | None = None
+    #: Where this person is looking, as they last said. Replaced, never accumulated.
+    board_id: str | None = None
+    comp_id: str | None = None
+    #: The roster as it stands, waiting to go out — the coalescing lane.
+    #:
+    #: Presence is the one thing on this wire where dropping is *correct*, because the next beat
+    #: supersedes it. Fan-out is per subscriber, so N actors × R beats × N subscribers is the
+    #: term to design against: three people at 5 Hz is 45 frames a second and ten people is 500,
+    #: which overflows a 64-frame queue in about 128 ms — and the punishment for overflow is a
+    #: full team re-read per client. The cheapest, most disposable thing on the wire would
+    #: otherwise trigger the most expensive recovery in the system.
+    roster: str | None = None
+    #: Whether a notification for that slot is already in the queue. One at a time, ever, which
+    #: is what makes this a lane that replaces rather than a stream that appends.
+    roster_queued: bool = False
+
+    def offer_roster(self, frame: str) -> None:
+        """Replace this subscriber's pending roster rather than queueing another."""
+        self.roster = frame
+        if self.roster_queued:
+            return
+        self.roster_queued = True
+        self.offer(_ROSTER_SENTINEL)
+
+    def take_roster(self) -> str:
+        """The newest roster, and the lane is empty again."""
+        self.roster_queued = False
+        return self.roster or _frame(KIND_PRESENCE, {"actors": []})
 
     def offer(self, frame: str) -> None:
         """Take a frame, or fall back to asking for a resync. Runs on ``loop``'s thread.
@@ -185,8 +265,52 @@ def publish(
         # re-reading work it is holding. Matched on the tab and not the character, so a
         # second tab of your own still updates.
         payload["origin"] = origin
-    frame = _frame(kind, payload)
 
+    _fan_out(listeners, _frame(kind, payload))
+
+
+def publish_board(
+    team_id: uuid.UUID,
+    kind: str,
+    *,
+    board_id: uuid.UUID,
+    revision: int,
+    actor: str | None = None,
+    origin: str | None = None,
+) -> None:
+    """Tell this team's open boards that a *shared board* moved.
+
+    Beside :func:`publish` rather than sharing its signature, so ``comp_id`` can stay
+    required there: forgetting it becomes a ``TypeError`` at the call site instead of an
+    event nobody can act on. For the same reason a board event carries **no** ``compId`` and
+    a comp event carries no ``boardId`` — a client keying a map on the wrong one would key it
+    on ``undefined`` and fail quietly, so the separation is asserted by a test.
+
+    The version is an **integer revision, not a timestamp**. The client compares it to decide
+    whether an arriving document is newer than the one on screen, and two ops inside one
+    clock tick have to be distinguishable — which is also why ``_wire_time`` is not involved
+    here at all.
+
+    Called from a worker thread, and never raises; see :func:`publish` for both.
+    """
+    listeners = _subscribers.get(team_id)
+    # Repeated rather than folded into ``_fan_out`` so the common case — nobody watching —
+    # costs one dict lookup and builds no payload, which a test in ``test_live_broker.py``
+    # asserts directly.
+    if not listeners:
+        return
+
+    payload: dict[str, object] = {"boardId": str(board_id), "revision": revision}
+    if actor:
+        payload["actor"] = actor
+    if origin:
+        payload["origin"] = origin
+
+    _fan_out(listeners, _frame(kind, payload))
+
+
+def _fan_out(listeners: set[_Subscriber], frame: str) -> None:
+    """Hand one frame to every open stream on a team. Runs on a worker thread."""
     for subscriber in list(listeners):
         try:
             subscriber.loop.call_soon_threadsafe(subscriber.offer, frame)
@@ -213,14 +337,28 @@ def origin_client(request: Request) -> str | None:
 
 
 @contextlib.asynccontextmanager
-async def subscribe(team_id: uuid.UUID) -> AsyncIterator[asyncio.Queue[str]]:
-    """Register for this team's events for the duration of the block."""
+async def subscribe(
+    team_id: uuid.UUID, viewer: Viewer | None = None, client: str | None = None
+) -> AsyncIterator[_Subscriber]:
+    """Register for this team's events for the duration of the block.
+
+    Yields the subscriber rather than its queue, because the stream now reads two things off
+    it: the queue, and the roster slot the coalescing lane fills. ``viewer`` and ``client``
+    default to nothing so the broker tests can still open a bare subscription, which is all
+    they are about.
+    """
     subscriber = _Subscriber(
-        queue=asyncio.Queue(maxsize=QUEUE_LIMIT), loop=asyncio.get_running_loop()
+        queue=asyncio.Queue(maxsize=QUEUE_LIMIT),
+        loop=asyncio.get_running_loop(),
+        character_id=viewer.character_id if viewer else 0,
+        character_name=viewer.character_name if viewer else "",
+        client=client,
     )
     _subscribers.setdefault(team_id, set()).add(subscriber)
+    if viewer is not None:
+        _announce_roster(team_id, except_for=subscriber)
     try:
-        yield subscriber.queue
+        yield subscriber
     finally:
         listeners = _subscribers.get(team_id)
         if listeners is not None:
@@ -229,6 +367,54 @@ async def subscribe(team_id: uuid.UUID) -> AsyncIterator[asyncio.Queue[str]]:
             # what is connected rather than of every team anyone has ever opened.
             if not listeners:
                 _subscribers.pop(team_id, None)
+            elif viewer is not None:
+                # Somebody left. Everybody still here finds out within a frame, which is what
+                # makes "closing a tab removes that entry" true without a timer.
+                _announce_roster(team_id)
+
+
+def roster(team_id: uuid.UUID) -> list[dict[str, object]]:
+    """Who is on this team's boards, one entry per open stream.
+
+    Per stream rather than per person, deliberately: two tabs of one character are two entries,
+    because they are two places a highlight can be. Sorted so the frame is stable — an
+    unordered roster would look like a change every time a set was iterated.
+    """
+    entries = [
+        {
+            "characterId": subscriber.character_id,
+            "characterName": subscriber.character_name,
+            "client": subscriber.client,
+            "boardId": subscriber.board_id,
+            "compId": subscriber.comp_id,
+        }
+        for subscriber in _subscribers.get(team_id, ())
+        # A subscriber with no identity is a broker test's, not a person's.
+        if subscriber.character_id
+    ]
+    entries.sort(key=lambda entry: (entry["characterName"] or "", entry["client"] or ""))
+    return entries
+
+
+def _announce_roster(team_id: uuid.UUID, except_for: _Subscriber | None = None) -> None:
+    """Hand every open stream on this team the roster as it now stands.
+
+    Down the coalescing lane, so a beat replaces a pending frame rather than queueing beside
+    it. Runs on the event loop thread — every caller is already there, which is why this does
+    no ``call_soon_threadsafe`` of its own.
+
+    ``except_for`` is the joiner, who is about to be handed the same roster as its connect
+    frame. Without it a stream would open with two identical rosters, one of them arriving as
+    news about itself.
+    """
+    listeners = _subscribers.get(team_id)
+    if not listeners:
+        return
+    frame = _frame(KIND_PRESENCE, {"actors": roster(team_id)})
+    for subscriber in list(listeners):
+        if subscriber is except_for:
+            continue
+        subscriber.offer_roster(frame)
 
 
 def subscriber_count(team_id: uuid.UUID) -> int:
@@ -268,13 +454,18 @@ def _preamble() -> str:
     return f"{padding}retry: {RETRY_MS}\n\n"
 
 
-async def _stream(team_id: uuid.UUID, viewer: Viewer) -> AsyncIterator[str]:
+async def _stream(
+    team_id: uuid.UUID, viewer: Viewer, client: str | None = None
+) -> AsyncIterator[str]:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + RECYCLE_SECONDS + random.uniform(0, RECYCLE_JITTER_SECONDS)
     checked_at = loop.time()
 
-    async with subscribe(team_id) as queue:
+    async with subscribe(team_id, viewer, client) as subscriber:
         yield _preamble()
+        # The roster on connect, so a board that opens into a room already full of people draws
+        # them without waiting for one of them to move.
+        yield _frame(KIND_PRESENCE, {"actors": roster(team_id)})
         while True:
             now = loop.time()
             if now >= deadline:
@@ -287,11 +478,74 @@ async def _stream(team_id: uuid.UUID, viewer: Viewer) -> AsyncIterator[str]:
                 checked_at = now
             try:
                 frame = await asyncio.wait_for(
-                    queue.get(), timeout=min(HEARTBEAT_SECONDS, deadline - now)
+                    subscriber.queue.get(), timeout=min(HEARTBEAT_SECONDS, deadline - now)
                 )
             except TimeoutError:
                 frame = _KEEPALIVE
+            # The sentinel is a wake-up, never a payload: what goes out is the roster as it
+            # stands *now*, which may have moved several times since this was queued.
+            if frame == _ROSTER_SENTINEL:
+                frame = subscriber.take_roster()
             yield frame
+
+
+class PresenceBeat(BaseModel):
+    """Where the caller is looking. Both null means "on the team, on no board in particular"."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    board_id: uuid.UUID | None = None
+    comp_id: uuid.UUID | None = None
+
+
+@router.put("/{team_id}/presence", status_code=204, include_in_schema=False)
+async def report_presence(
+    team_id: uuid.UUID, body: PresenceBeat, request: Request
+) -> Response:
+    """Say which board and tile this tab is on.
+
+    **This does not re-run ``authorize``, and that is a design constraint rather than an
+    optimization.** ``authorize`` is two queries. Ten people moving a highlight at 5 Hz is fifty
+    calls a second, so authorizing each would be a hundred queries a second of pure permission
+    checking, forever, whether or not anybody edits anything — an order of magnitude more
+    traffic than the actual product, whose busiest write is one save per 600 ms per editor.
+
+    What makes that safe is that there is nothing here to authorize. This route creates nothing,
+    reads nothing and can name nothing: it updates a record that **already exists** because its
+    holder opened a stream, and that stream was authorized when it opened and is re-authorized
+    every minute while it stays open. A caller with no open stream on this team updates nothing
+    and is told 204, exactly as one with an open stream is — the reply says nothing about
+    whether the team is real, whether it is theirs, or whether anybody is on it.
+
+    Matched on the session's character *and* the tab's own ``client``, so a tab cannot move
+    somebody else's highlight even inside a team it belongs to.
+
+    ``async def``, so a beat costs no threadpool thread — the whole point of the arithmetic
+    above. It touches nothing but the in-process table.
+    """
+    token = request.cookies.get(sessions.COOKIE_NAME)
+    viewer = await run_in_threadpool(_viewer_for, token)
+    if viewer is None:
+        raise HTTPException(status_code=401, detail="Not signed in")
+
+    client = (request.headers.get("x-comptool-client") or "")[:64] or None
+    moved = False
+    board_id = str(body.board_id) if body.board_id else None
+    comp_id = str(body.comp_id) if body.comp_id else None
+    for subscriber in _subscribers.get(team_id, ()):
+        if subscriber.character_id != viewer.character_id or subscriber.client != client:
+            continue
+        if subscriber.board_id == board_id and subscriber.comp_id == comp_id:
+            continue
+        subscriber.board_id = board_id
+        subscriber.comp_id = comp_id
+        moved = True
+
+    # A beat that says what the last one said tells nobody. Presence is a stream of repeats by
+    # nature — a tab reports on a timer — so this is the branch that keeps a still room silent.
+    if moved:
+        _announce_roster(team_id)
+    return Response(status_code=204)
 
 
 @router.get("/{team_id}/events", include_in_schema=False)
@@ -322,8 +576,15 @@ async def team_events(team_id: uuid.UUID, request: Request) -> StreamingResponse
     if not await run_in_threadpool(_authorized, team_id, viewer):
         raise team_not_found(team_id)
 
+    # ``?client=`` has been on this URL since the stream shipped and nothing read it. This is
+    # what it was for: a per-connection label, so two tabs of one person are two entries in the
+    # roster. It labels a *tab* and is never an identity — the name in a roster comes from the
+    # session, because a displayed name is a claim about a person. Bounded like the sibling
+    # header for the same reason: it is text a stranger wrote and it is echoed to other clients.
+    client = (request.query_params.get("client") or "")[:64] or None
+
     return StreamingResponse(
-        _stream(team_id, viewer),
+        _stream(team_id, viewer, client),
         media_type="text/event-stream",
         headers={
             # ``no-transform`` is the one that matters beyond the obvious: it asks an

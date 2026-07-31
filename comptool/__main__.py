@@ -18,6 +18,12 @@ def main() -> None:
         "comptool.main:app",
         host="0.0.0.0",
         port=settings.port,
+        # Explicit, and load-bearing. ``uvicorn.Config`` reads ``WEB_CONCURRENCY`` *only*
+        # when ``workers`` is ``None``, so passing nothing is not what makes one worker run
+        # — it is what lets that variable decide. The live stream fans out in-process, so a
+        # second worker stops delivering half the events with no log line; ``settings.py``
+        # refuses the variable outright and this is what makes the refusal unnecessary.
+        workers=1,
         log_config=build_logging_config(settings.log_level),
     )
 

@@ -6,6 +6,7 @@
 // out lives in tile-model.ts, where it can be tested without a DOM.
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 
 import type { LegalityResult, Ruleset } from '../engine'
 import { buildCcpTypeIconUrl } from '../lib/icons'
@@ -157,6 +158,19 @@ interface Props {
   shareOpen?: boolean
   shared?: boolean
   shareStale?: boolean
+  /**
+   * Who else is looking at this comp, if the board it is on is one other people can see.
+   *
+   * **A node, not a list**, which is the same bargain everything else in this file makes: the
+   * tile is the locked design and knows nothing about boards, ids or fetching, and "presence" is
+   * all three. What arrives is something to put in the footer. A board with no second reader
+   * passes nothing and the footer is exactly what it was.
+   *
+   * It is also what keeps a roster beat out of this component. The node is a leaf that subscribes
+   * for itself, so somebody moving across the board re-renders that leaf and not the tile it sits
+   * in — the tile re-renders when the *comp* changes, which is the only thing it is about.
+   */
+  watchers?: ReactNode
 }
 
 export default function CompTile({
@@ -190,6 +204,7 @@ export default function CompTile({
   shareOpen,
   shared,
   shareStale,
+  watchers,
 }: Props) {
   /** The row whose hull search is open, if any — a comp row number, like the cursor. */
   const [openRow, setOpenRow] = useState<number | null>(null)
@@ -1023,6 +1038,10 @@ export default function CompTile({
         <span className="fa" data-testid="comp-author">
           by {createdByName ?? 'unknown'}
         </span>
+
+        {/* Beside who made it, not among the controls on the right: both are facts about the comp
+            rather than things to press, and a face in the row of actions would read as one. */}
+        {watchers}
 
         <span className="spacer" />
 

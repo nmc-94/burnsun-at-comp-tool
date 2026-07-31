@@ -14,6 +14,7 @@
 import { listComps } from '../comps/api'
 import type { CompDetail } from '../comps/types'
 import { clientId } from './client-id'
+import { recordRoster, type Actor } from './presence'
 
 /** What the server sends. `resync` carries nothing and is handled before this shape matters. */
 interface CompEvent {
@@ -33,6 +34,14 @@ export interface CompSignal {
   readonly gone: boolean
 }
 
+/** What a shared board's event says. No `compId`: a board names a board and a revision. */
+interface BoardEvent {
+  readonly boardId: string
+  readonly revision: number
+  readonly actor?: string
+  readonly origin?: string
+}
+
 /** Board-level news, for the things a single comp's watcher cannot act on. */
 export type TeamSignal =
   | { readonly kind: 'created'; readonly compId: string }
@@ -40,6 +49,16 @@ export type TeamSignal =
   | { readonly kind: 'changed'; readonly compId: string }
   /** The whole listing, already fetched. Sent on every (re)connect. */
   | { readonly kind: 'resync'; readonly comps: readonly CompDetail[] }
+  /**
+   * A shared board gained, lost or rearranged something.
+   *
+   * Relayed rather than acted on here. This module knows what a *comp revision* is and
+   * deliberately knows nothing about boards — the store that does live in `workspace/`, and an
+   * import from here into that would invert the layering the whole `live/` folder rests on.
+   */
+  | { readonly kind: 'board.created'; readonly boardId: string; readonly revision: number }
+  | { readonly kind: 'board.changed'; readonly boardId: string; readonly revision: number }
+  | { readonly kind: 'board.deleted'; readonly boardId: string; readonly revision: number }
 
 const NOTHING: CompSignal = { revision: 0, actor: null, gone: false }
 
@@ -152,6 +171,26 @@ function handle(kind: 'changed' | 'created' | 'deleted', raw: string): void {
 }
 
 /**
+ * A shared board moved. Relay it; the board store decides whether it is news.
+ *
+ * The `origin` filter applies here for the same reason it does to a comp, and it is safe for a
+ * *different* one: a board op's response carries the whole resulting board, so the tab that made
+ * the change is already holding the authoritative answer. Acting on its own echo would be a
+ * second read that could only arrive with an equal or older revision.
+ */
+function handleBoard(kind: 'board.created' | 'board.changed' | 'board.deleted', raw: string): void {
+  let event: BoardEvent
+  try {
+    event = JSON.parse(raw) as BoardEvent
+  } catch {
+    return
+  }
+  if (!event.boardId) return
+  if (event.origin && event.origin === clientId()) return
+  announceTeam({ kind, boardId: event.boardId, revision: event.revision ?? 0 })
+}
+
+/**
  * Open the stream for a team, closing any other. Returns a function that closes this one.
  *
  * One connection per team rather than per tile: a board and its rail look at the same team, and
@@ -181,6 +220,21 @@ export function openTeamStream(teamId: string): () => void {
   opened.addEventListener('comp.changed', (m) => handle('changed', (m as MessageEvent<string>).data))
   opened.addEventListener('comp.created', (m) => handle('created', (m as MessageEvent<string>).data))
   opened.addEventListener('comp.deleted', (m) => handle('deleted', (m as MessageEvent<string>).data))
+  for (const kind of ['board.created', 'board.changed', 'board.deleted'] as const) {
+    opened.addEventListener(kind, (m) => handleBoard(kind, (m as MessageEvent<string>).data))
+  }
+  // The roster, straight into its own store rather than out through `subscribeTeam`. Unlike a
+  // board event there is nothing for a screen to decide: the frame *is* the state, so relaying
+  // it through the board would be a re-render of the workspace for something only the roster
+  // strip draws.
+  opened.addEventListener('presence', (m) => {
+    try {
+      const body = JSON.parse((m as MessageEvent<string>).data) as { actors?: Actor[] }
+      recordRoster(Array.isArray(body.actors) ? body.actors : [])
+    } catch {
+      // A frame we cannot read is one beat missed, and the next replaces it.
+    }
+  })
   // No `error` handler that closes anything. EventSource reconnects by itself, and every reason
   // this fires — a recycled stream, a dropped network, a laptop waking up — is one it recovers
   // from. Closing here would turn a hiccup into a board that is quietly dead until reloaded.

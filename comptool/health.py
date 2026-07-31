@@ -7,6 +7,7 @@ database reachable, and migrations applied", not merely "process is up".
 
 from __future__ import annotations
 
+import secrets
 import time
 
 from fastapi import APIRouter, Depends
@@ -19,6 +20,16 @@ from .models import AppMeta
 from .settings import Settings, get_settings
 
 router = APIRouter(prefix="/api", tags=["system"])
+
+#: Who answered. Minted once per process at import, and meaningless on its own.
+#:
+#: The live stream fans out in-process, so a second worker or a second replica silently
+#: halves delivery (``comptool/live.py``). A process cannot count its own replicas, so a
+#: self-check would be dishonest — what it *can* do is be distinguishable. Two curls against
+#: one hostname returning two values is positive proof of a second process, in one command
+#: and without shell access to the box. Random rather than the pid, which repeats across
+#: containers and would make two replicas look like one.
+INSTANCE_ID = secrets.token_hex(4)
 
 
 @router.get("/health")
@@ -36,6 +47,9 @@ def health(
     return {
         "status": "ok" if db_ok else "degraded",
         "db": {"ok": db_ok, "latency_ms": latency_ms},
+        # Which process answered. See INSTANCE_ID: this exists so "are two of me running?"
+        # is answerable from outside, since the fan-out behind the live stream assumes not.
+        "instance": INSTANCE_ID,
         # Which door this deployment opens: "sso", "password" or "none". Reported for the
         # same reason as the two back-door keys below — an operator, a smoke test or a
         # reviewer should be able to ask a running instance how people get in without

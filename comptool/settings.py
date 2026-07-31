@@ -90,6 +90,10 @@ class Settings(BaseSettings):
 
     # Server.
     port: int = Field(default=8000, validation_alias=AliasChoices("PORT", "COMPTOOL_PORT"))
+    #: How many uvicorn workers the platform is asking for. Declared here only so the
+    #: validator below can refuse it; nothing reads the value. Unprefixed because it is
+    #: uvicorn's variable rather than ours — see ``_check_single_worker``.
+    web_concurrency: int = Field(default=1, validation_alias=AliasChoices("WEB_CONCURRENCY"))
     log_level: str = "INFO"
     environment: str = "local"
     spa_dir: Path = Field(default_factory=_default_spa_dir)
@@ -273,6 +277,37 @@ class Settings(BaseSettings):
                 f"from this database's sign-in history instead of from EVE, so it is allowed "
                 f"only where the environment says it is a development one "
                 f"({', '.join(sorted(DEVELOPMENT_ENVIRONMENTS))})."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_single_worker(self) -> Settings:
+        """Refuse to boot forked, because the live stream fans out in-process.
+
+        ``live.py`` keeps a dict of open streams per team and hands each write to the ones it
+        can see. A second worker sees none of the first one's, so half the events stop
+        crossing — and with presence, the roster starts making a *false statement about which
+        people are in the room*, which is worse in kind. An absence gets debugged eventually;
+        a roster gets believed.
+
+        Crash-looping rather than warning, the same call the dev-auth validators above make,
+        because the failure this prevents is silent in production and invisible in a smoke
+        test. And this variable in particular is worth catching by name: it is the standard
+        advice for every FastAPI deployment and set by default on some platforms, so it
+        arrives without anybody deciding anything.
+
+        ``__main__.py`` also passes ``workers=1`` explicitly, which is the belt to this
+        braces — ``uvicorn.Config`` only consults ``WEB_CONCURRENCY`` when ``workers`` is
+        ``None``, so passing it is what stops the variable winning. This validator is what
+        stops a deployment *thinking* it got what it asked for.
+        """
+        if self.web_concurrency > 1:
+            raise ValueError(
+                f"WEB_CONCURRENCY is {self.web_concurrency}, and this application serves one "
+                f"worker by design. The live event stream fans out inside a single process, "
+                f"so a second worker silently stops delivering events to half the team and "
+                f"makes the presence roster wrong rather than merely late. Unset it, or scale "
+                f"by moving the fan-out behind a broker first (see comptool/live.py)."
             )
         return self
 

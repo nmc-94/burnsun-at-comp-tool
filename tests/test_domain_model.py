@@ -20,6 +20,8 @@ from comptool.models import (
     CompSlot,
     Ruleset,
     RulesetVersion,
+    SharedBoard,
+    SharedBoardTile,
     SubjectKind,
     Team,
     TeamGrant,
@@ -309,3 +311,117 @@ def test_one_name_can_belong_to_two_grants_when_the_ids_differ(session):
     session.commit()
 
     assert len(session.execute(select(TeamGrant)).scalars().all()) == 2
+
+
+def shared_board(session, team: Team, name: str = "Round one") -> SharedBoard:
+    board = SharedBoard(team=team, name=name, mode="grid")
+    session.add(board)
+    session.flush()
+    return board
+
+
+def make_comp(
+    session, team: Team, version: RulesetVersion, name: str = "Angel Shield Kite"
+) -> Comp:
+    # The version is passed in rather than made here: ``make_ruleset_version`` mints a whole
+    # ruleset, and ``ruleset.slug`` is unique, so a second call inside one test collides.
+    comp = Comp(team=team, ruleset_version=version, name=name)
+    session.add(comp)
+    session.flush()
+    return comp
+
+
+def test_a_comp_gets_one_tile_per_shared_board(session):
+    """What makes "two people add the same comp at once" an index decision, not a race.
+
+    The route pre-checks as well, but the pre-check is advisory: between its read and its write
+    somebody else's add can land, and this is what settles that without a lock.
+    """
+    team = make_team(session)
+    comp = make_comp(session, team, make_ruleset_version(session))
+    board = shared_board(session, team)
+    session.add(SharedBoardTile(board=board, comp_id=comp.id, position=0))
+    session.add(SharedBoardTile(board=board, comp_id=comp.id, position=1))
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_the_same_comp_may_sit_on_two_shared_boards(session):
+    # Uniqueness is on the pair, so a comp being open on the round-one board and the practice
+    # board at once is ordinary rather than a conflict.
+    team = make_team(session)
+    comp = make_comp(session, team, make_ruleset_version(session))
+    for name in ("Round one", "Practice"):
+        board = shared_board(session, team, name)
+        session.add(SharedBoardTile(board=board, comp_id=comp.id, position=0))
+    session.commit()
+
+    assert len(session.execute(select(SharedBoardTile)).scalars().all()) == 2
+
+
+def test_half_a_place_is_not_a_place(session):
+    """The CHECK that ``alembic check`` cannot see.
+
+    It compares tables, columns, indexes and constraints, but not CHECK constraints — so this
+    is declared by hand in the model *and* in the migration, and this test is the only thing
+    that would notice if one of the two were dropped.
+    """
+    team = make_team(session)
+    comp = make_comp(session, team, make_ruleset_version(session))
+    board = shared_board(session, team)
+    session.add(SharedBoardTile(board=board, comp_id=comp.id, position=0, place_x=10))
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_a_whole_place_or_none_at_all_is_accepted(session):
+    team = make_team(session)
+    version = make_ruleset_version(session)
+    first = make_comp(session, team, version, "Alpha")
+    second = make_comp(session, team, version, "Beta")
+    board = shared_board(session, team)
+    session.add(SharedBoardTile(board=board, comp_id=first.id, position=0))
+    session.add(
+        SharedBoardTile(board=board, comp_id=second.id, position=1, place_x=10, place_y=20)
+    )
+    session.commit()
+
+    assert len(session.execute(select(SharedBoardTile)).scalars().all()) == 2
+
+
+def test_deleting_a_comp_takes_its_tiles(session):
+    """The key that makes a shared board a table rather than a document.
+
+    A comp id cannot outlive its comp, so neither a route nor a client has to remember to
+    filter one out — which is what ``workspace.py`` spends two functions doing by hand.
+    """
+    team = make_team(session)
+    comp = make_comp(session, team, make_ruleset_version(session))
+    board = shared_board(session, team)
+    session.add(SharedBoardTile(board=board, comp_id=comp.id, position=0))
+    session.commit()
+
+    session.delete(comp)
+    session.commit()
+
+    assert session.execute(select(SharedBoardTile)).scalars().all() == []
+    # The board itself is an arrangement and survives losing everything on it.
+    assert len(session.execute(select(SharedBoard)).scalars().all()) == 1
+
+
+def test_deleting_a_team_takes_its_shared_boards_with_it(session):
+    team = make_team(session)
+    comp = make_comp(session, team, make_ruleset_version(session))
+    board = shared_board(session, team)
+    session.add(SharedBoardTile(board=board, comp_id=comp.id, position=0))
+    session.commit()
+
+    session.delete(team)
+    session.commit()
+
+    assert session.execute(select(SharedBoard)).scalars().all() == []
+    assert session.execute(select(SharedBoardTile)).scalars().all() == []

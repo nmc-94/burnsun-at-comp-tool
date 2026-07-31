@@ -25,6 +25,22 @@ def test_health_ok(client):
     assert body["auth"] == "none"
 
 
+def test_health_names_which_process_answered(client):
+    """So "are two of me running?" is answerable from outside, in one command.
+
+    The live stream fans out in-process, and a process cannot count its own replicas — a
+    self-check would be dishonest. What it can be is distinguishable: two curls against one
+    hostname returning two ``instance`` values is positive proof of a second process.
+    """
+    from comptool.health import INSTANCE_ID
+
+    body = client.get("/api/health").json()
+
+    assert body["instance"] == INSTANCE_ID
+    # Stable within a process, or two probes of one instance would look like two instances.
+    assert client.get("/api/health").json()["instance"] == body["instance"]
+
+
 def test_health_reports_whether_the_development_sign_in_is_on(client, configure):
     # An operator should be able to ask a running instance whether it has a back door open
     # without reading environment variables on a box they may not have.

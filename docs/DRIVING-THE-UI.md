@@ -204,6 +204,103 @@ Reordering has no keyboard route and is not owed one — see §6.8's note on the
 The arrangement is convenience state, and every comp on the board is present and editable
 whatever order it is in.
 
+## Two people at once
+
+A board keeps itself up to date over a `text/event-stream` held open for about ten minutes at a
+time, so a change one person makes reaches everybody else's board without a reload. Driving that
+needs a second identity, and `asSomeoneElse` is it: a second browser context with its own cookie
+jar, dev-signed-in as a freshly invented character, closed for you at teardown.
+
+```ts
+const friend = await asSomeoneElse('Ayla')
+await api.addGrant(team.id, friend.identity.characterName, 'editor')
+
+await page.goto('/teams/' + team.id + '/boards/' + board.id)
+const tile = tileFor(page, comp.id)
+await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon'])
+
+// Their own context, their own cookie jar. Through the API rather than a second board:
+// what is under test is one person's screen keeping up, not two screens agreeing.
+await friend.api.setSlots(comp.id, [ABADDON, SCIMITAR])
+
+await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon', 'Scimitar'], {
+  timeout: 15_000,
+})
+```
+
+Four rules, and the first one is the whole point.
+
+**Never call `page.reload()` in a spec about the stream.** A reload re-reads everything, so every
+assertion passes whether or not a single byte ever crossed. `live-updates.spec.ts` says so at the
+top of the file and has none.
+
+**Assert on one screen, not on two.** Give the other participants an `api` and no page. "Both
+screens agree" is two crossings ANDed together — twice as flaky, and it proves nothing the
+one-sided version does not.
+
+**Budget generously, and only once.** A change crosses a 600 ms debounce, a round trip, the
+fan-out and a re-read, so 15 seconds is the figure the existing spec uses — generous against all
+four and still well short of looking like patience with a hang. Chaining three crossings in one
+test can exceed the 30-second test timeout, so prefer three tests.
+
+**Use contexts, never tabs.** Each open board holds one long-lived connection, and Chrome allows
+six per origin over HTTP/1.1 — so three tabs in one context spend half the budget on streams
+before the tiles start fetching. Separate contexts get separate pools.
+
+What you will see when two people touch the same comp: a change lands silently on a tile with
+nothing unsaved, and on a tile with unsaved work it is **held back** behind a notice naming who
+made it — `comp-remote-change`, whose accessible name is *Reload {name}, discarding unsaved
+changes*. It clears itself the moment that tile's own save settles, so a spec that wants to see it
+has to keep the tile dirty; stall the write with `page.route` rather than racing the debounce.
+
+### The shared board
+
+Boards used to be private, and one still is unless somebody shares it. A **shared board** belongs
+to the team: everybody with access opens it at the same URL, its arrangement is the server's, and
+the four rules above are exactly what its specs are built on.
+
+The id is the **server's**, unlike a personal board's — a shared board is the first board in this
+application the server owns, so a spec cannot mint one and deep-link to it in the same breath:
+
+```ts
+const board = await api.createSharedBoard(team.id, [first.id, second.id], 'Round one')
+await page.goto('/teams/' + team.id + '/boards/' + board.id)
+
+await friend.api.addSharedTile(board.id, third.id)
+await expect(tileFor(page, third.id)).toBeVisible({ timeout: 15_000 })
+```
+
+Four things differ from a personal board, and the last two are what specs get wrong.
+
+**A tile you close, closes for everybody.** `onClose` on a shared board is an op, not an
+arrangement — the one gesture whose blast radius differs from its personal twin. Deleting the
+board itself is behind a context menu on its tab (`shared-board-tab-menu`) rather than a `×`,
+deliberately: *delete for everyone* must not sit where muscle memory expects *close mine*.
+
+**Wait on `data-board-state`, not on time.** There is **no debounce** — a shared board sends one
+op per gesture, immediately — so `expectBoardSettled` is written the same two phases as
+`expectCompSaved`, and for a sharper reason: with no debounce an op can genuinely finish before
+the first poll, which makes a one-phase wait on `idle` flaky rather than reliably wrong. The board
+also carries `data-board-revision`, which is what to assert on for "and it actually moved".
+
+**A board id the URL names and nobody has renders `board-not-found`**, rather than silently
+redrawing the first personal board. That is the pasted-link journey, and asserting on the named
+state is how a spec can tell "the link worked" from "the link quietly did nothing".
+
+**Grab a tile by its header, never its centre.** `GRIP = { x: 60, y: 12 }` — the centre is a hull
+row, which is draggable in its own right and carries *hulls* out of the comp instead of moving the
+tile. A `dragTo` without `sourcePosition` looks like it does nothing at all.
+
+For a change that has to arrive *mid-gesture*, hand-dispatch `dragstart` and `dragend` around the
+other person's write: a native `dragTo` is atomic and there is no moment inside one for anything
+to land. `shared-board-drag.spec.ts` is the worked example, and what it asserts is that nothing
+moves while the tile is in hand and then moves exactly once when it is let go.
+
+**Presence** is a strip above the board (`presence`, with a `presence-actor` per person carrying
+`data-character-id` and `data-comp-id`). It is not stored anywhere: an entry's life is a stream's
+life, so closing a context removes it, and the name on it always comes from that person's session
+rather than from anything their client said.
+
 ## Forking a comp
 
 **Forking a whole comp** is the same mechanism with no rows named. Two ways to ask: the fork

@@ -7,10 +7,10 @@
  * held back until then on purpose: grouping on something that merely exists — the ruleset
  * version, say — would have produced one group per team and called itself an accordion.
  *
- * Two parts of the mockup are still deliberately NOT here. The shared-tab styling
- * (.ftab.shared) belongs with the shared tab itself, which is §4.7. And .enf-toggle was dead
- * before it was written — rules are reported, never enforced. Dead CSS ported "for later" is
- * what the handoff complained about; none of it is here.
+ * The shared-tab styling (.ftab.shared) arrived in Phase J with the thing it draws, held back
+ * until then for the accordion's reason above. One part of the mockup is still deliberately
+ * NOT here: .enf-toggle was dead before it was written — rules are reported, never enforced.
+ * Dead CSS ported "for later" is what the handoff complained about; none of it is here.
  */
 
 /* The workspace pins itself to the window exactly, where every other screen is free to grow
@@ -150,6 +150,131 @@
 .ftab-close:hover {
   color: var(--text-1);
   background: var(--bg-soft);
+}
+
+/* The shared strip: the team's boards, beside your own rather than mixed into them.
+ *
+ * A rule and a gap, and nothing that draws a second kind of tab. The two really are the same
+ * control pointing at two kinds of object, and making one of them look like a different
+ * component would say otherwise. What distinguishes it is the divider and the marker below. */
+.ftabs-shared {
+  border-left: 1px solid var(--line-1);
+  margin-left: 8px;
+  padding-left: 8px;
+}
+
+/* No close button on a shared tab, so it needs neither the room nor the hover slot one takes.
+ * Deliberate: closing a personal board takes it off your own screen, and closing this one
+ * destroys a colleague's arrangement — putting the two at the same coordinates is how muscle
+ * memory does that by accident. The delete is behind the context menu instead. */
+.ftab.shared {
+  padding-right: 23px;
+}
+
+/* Says which kind of board this is without spending a word on it, and without touching the
+ * accessible name — which carries "shared board" for exactly the reason this does not have to. */
+.ftab.shared .ftab-open::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+  /* Dimmed until the board is the one in front, so the strip reads as one thing at rest. */
+  opacity: 0.55;
+}
+
+.ftab.shared.active .ftab-open::before {
+  opacity: 1;
+}
+
+/* Offered on the personal tabs, and only there: it is what turns one into a shared board. */
+.ftab-share {
+  position: absolute;
+  right: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-4);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 4px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ftab:hover .ftab-share,
+.ftab-share:focus-visible {
+  opacity: 1;
+}
+
+.ftab-share:hover {
+  color: var(--text-1);
+  background: var(--bg-soft);
+}
+
+/* The one destructive gesture whose blast radius is other people's screens, so it is behind a
+ * menu rather than a button — and the menu says what it does in full. */
+.ftab-menu {
+  position: absolute;
+  top: 100%;
+  left: 6px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+}
+
+.ftab-menu button {
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.ftab-menu button:hover {
+  color: var(--text-1);
+  background: var(--bg-soft);
+}
+
+/* Who is on this board. The strip answers "who is here" and each tile's footer answers "and on
+ * what" — two questions, and the second cannot be asked of a strip. It draws *you* as well:
+ * the one entry a person can check the colours against should not be the one they cannot see. */
+.presence {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  min-height: 26px;
+  font-size: 11px;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.presence-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* The mark itself is `.actor-mark` in base.css, shared with the tile footer so one person is
+   one face in both places. Nothing is left to declare here. */
+
+.presence-name {
+  color: var(--text-3);
 }
 
 .ftab-name {

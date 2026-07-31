@@ -12,7 +12,7 @@
 // owns them, which is the whole of §6.7.
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import type { MouseEvent as PointerPress } from 'react'
+import type { MouseEvent as PointerPress, ReactNode } from 'react'
 
 import CommentThread from './CommentThread'
 import SharePanel from './SharePanel'
@@ -133,6 +133,14 @@ interface Props {
    * tiles with `order`, which React never writes either.
    */
   readonly place?: Place
+  /**
+   * Who else is looking at this comp, already built by whoever knows which board this is.
+   *
+   * Passed straight through rather than assembled here, because that is the one fact this cell
+   * does not have: a comp is on as many boards as people have put it on, and presence is about
+   * one of them. The board hands down a node; this hands it to the footer.
+   */
+  readonly watchers?: ReactNode
 }
 
 export default function CompTileHost({
@@ -145,6 +153,7 @@ export default function CompTileHost({
   onCompChanged,
   tileDrag,
   place,
+  watchers,
 }: Props) {
   const {
     comp,
@@ -634,6 +643,7 @@ export default function CompTileHost({
             shareOpen={shareOpen}
             shared={comp.shareSlug !== null}
             shareStale={comp.shareStale}
+            watchers={watchers}
           />
 
           {/* The share panel is rendered out here rather than inside the tile: the control is

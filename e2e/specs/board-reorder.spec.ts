@@ -286,7 +286,7 @@ test('a comp edited a moment ago forks with the edit, debounce and all', async (
   team,
 }) => {
   // The same race a partial port runs, and the reason the tile's flush travels with the drag: a
-  // fork reads the comp's rows on the *server*, so one taken inside the 600 ms save debounce
+  // fork reads the comp's rows on the *server*, so one taken inside the save debounce
   // would derive from the comp as it was before the last click.
   const { alpha, beta } = await threeComps(api, team.id)
   const board = await api.openBoard(team.id, [alpha.id, beta.id])
