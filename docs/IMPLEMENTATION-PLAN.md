@@ -483,6 +483,71 @@ See `docs/PHASE-J-HANDOFF.md`.
 > already just a tile id in a private layout document. Which is exactly why the shared
 > board is still to come: this made a *personal* board live, not a *team* one.
 
+> **Done, with six decisions taken and three things deferred.** Slices 1 and 2 both
+> landed: migrations `0011` (the `slots_version` guard) and `0012` (`shared_board`,
+> `shared_board_tile`), `comptool/shared_boards.py`, presence on the existing stream,
+> and per-tile presence in the UI.
+>
+> **A move names a neighbour, never an index.** `beforeCompId`, null meaning the end of
+> the list. An index stops meaning the same place the moment somebody else inserts one,
+> and the index a client holds is into the list *it* last saw. Positions are sparse and
+> deliberately **not unique** — uniqueness is what would force a shuffle — with a
+> whole-board renumber in the same transaction when a gap runs out. Sixteen drops into
+> one slot reaches it, so that path runs and has its own test.
+>
+> **`revision` is a monotonic integer, not a timestamp.** The client's adopt-guard
+> (*replace only if `doc.revision > shown.revision`*) is the single most important line
+> in the slice: without it a slow op returning after somebody else's faster one rewinds
+> the board. A timestamp cannot separate two ops in one tick. `_touch(board)` moves it by
+> hand on every tile op, because a tile op writes no `shared_board` column and `onupdate`
+> would never fire — the third time that bug has been fixed in this codebase.
+>
+> **Every write is EDITOR and publishes; `DELETE .../tiles/{comp_id}` answers 204.** The
+> plan asked for both "every op returns the board" and "idempotent 204", which cannot
+> both hold; 204 won because its reason is specific — two people closing one tile must
+> not be an error. Delete is EDITOR rather than creator-or-owner, because a board is an
+> arrangement of pointers and requiring the creator leaves it un-closable once they leave
+> the team. A comp is resolved against the team in Python *before* the foreign key can
+> answer, so "another team's comp" and "a uuid that was never one" are indistinguishable.
+>
+> **A gesture is held still while other people write.** `carry.ts` gained a `CarryWatch`
+> and the client store a quiet latch that holds the *snapshot*, not the notification —
+> `useSyncExternalStore` reads its snapshot on every render, so a mid-drag re-render for
+> an unrelated reason would otherwise read the newest document with nothing having
+> announced. It covers this tab's own unacknowledged op, not merely the drag; drag-only
+> produces two visible jumps for one drop.
+>
+> **Presence has no table and never will.** A roster entry's life is a stream's life, so
+> closing a tab removes it because the connection ended. It rides a coalescing lane that
+> *replaces* a pending frame rather than queueing beside it, `PUT /teams/{id}/presence`
+> deliberately does not re-run `authorize` (it updates a record that exists only because
+> its holder opened an authorized stream), and the displayed name always comes from the
+> session — `?client=` labels a *tab* and a roster is a claim about a person.
+>
+> **Latency is spent where it is felt, and nowhere else.** No debounce on a shared board:
+> the gesture is the debounce. `PRESENCE_MIN_MS` is 250 ms and `SAVE_DEBOUNCE_MS` was cut
+> from 600 to 250 — that one only ever coalesced bursts of clicks, since `rename` and
+> `saveTags` already wrote straight through. The largest win is neither: `reportPresence`
+> applies this tab's own position synchronously, before the throttle and before the
+> request, so your own mark follows your own mouse with no round trip. Per-tile presence
+> rides a keyed index that reuses the previous array when the answer has not changed,
+> which is what keeps a beat from re-rendering twenty tiles (§6.7).
+>
+> **Deferred on purpose:** remembering a shared board as your resume target (it needs a
+> field on `WorkspaceSave`, which is exactly what would drag `workspace.py` into the diff
+> — and `test_workspace_api.py`'s field-parity test passing *unmodified* is how you know
+> the shared board never leaked into the personal document); a floating shared board
+> (`place_x`/`place_y` are in the schema, no op writes them, and `onPlaceMany` must be
+> withheld when it arrives or every viewer will place somebody else's arriving tile); and
+> the activity trail, plus a "last updated" line — `updatedAt`, `revision` and an `actor`
+> on every board event are all on the wire and unread.
+>
+> **One deployment claim hardened rather than removed.** Fan-out is in-process, so one
+> worker is a *correctness* requirement: `__main__.py` passes `workers=1` explicitly, the
+> app refuses to boot on `WEB_CONCURRENCY > 1`, and `/api/health` reports a per-process
+> `instance` id — two curls against one hostname returning two values is the only honest
+> detector a process can offer for a second replica.
+
 ### — Later (own design passes — kept "aware of," not built) —
 Automated point-data sync worker + change notifications · advanced comparison
 analytics + richer EFT/in-game export · **shared/scrim pick-ban** with two-party

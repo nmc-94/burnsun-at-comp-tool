@@ -543,22 +543,28 @@ open — the exact flow "will take some consideration"):
 Because of these, shared/scrim pick-ban is tracked as a **distinct feature with
 its own design pass**, not folded into the comp-builder MVP.
 
-### 4.7 Real-time collaboration — the shared tab (channel built; the board is Phase J)
+### 4.7 Real-time collaboration — the shared tab (built in Phase J; stage one)
 
 A shared space where **two or more team members edit and collaborate live** —
 seeing each other's changes as they happen — is an explicit aspiration. It is
 **scoped as a later phase**, not MVP, but the MVP data model and architecture
 should stay aware of it so it lands as an addition, not a rewrite.
 
-> **Half of this section shipped in `f11d852`, and one part of it was decided
-> differently.** What exists: the realtime channel (SSE, team-scoped,
-> `comptool/live.py`); the operation-broadcast model, **as invalidations rather than
-> deltas**, for the deployment reasons in that module's docstring — the connection is
-> guaranteed to break and reform, so a reconnect that re-reads replaces a replay buffer;
-> in-process fan-out with `publish`/`subscribe` as the seam a broker drops behind; and
-> live edits persisting to the same comp store. What does not exist yet: the shared board
-> itself, presence, and the activity trail — all of which are Phase J. **And the entry
-> point is the team, not a link**; the bullet below has been rewritten to say so.
+> **Stage one is built, and one part of this section was decided differently.** What
+> exists: the realtime channel (SSE, team-scoped, `comptool/live.py`); the
+> operation-broadcast model, **as invalidations rather than deltas**, for the deployment
+> reasons in that module's docstring — the connection is guaranteed to break and reform,
+> so a reconnect that re-reads replaces a replay buffer; in-process fan-out with
+> `publish`/`subscribe` as the seam a broker drops behind; live edits persisting to the
+> same comp store (all `f11d852`); and, from Phase J, **the shared board itself**
+> (`comptool/shared_boards.py`, migration `0012`) and **presence** — who is on the board
+> and which tile each of them is looking at, drawn in the strip below the tabs and in
+> each tile's footer.
+>
+> **What does not exist yet: the activity trail**, and the two later stages named at the
+> foot of this section — soft locks with seamless hand-off, then true simultaneous
+> editing. **And the entry point is the team, not a link**; the bullet below has been
+> rewritten to say so.
 
 - **Entry point = a shared board that belongs to the team.** Collaboration is bounded
   to a **shared tab** (§4.1): a board of comp tiles that a member promotes to shared,

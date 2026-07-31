@@ -253,10 +253,53 @@ made it — `comp-remote-change`, whose accessible name is *Reload {name}, disca
 changes*. It clears itself the moment that tile's own save settles, so a spec that wants to see it
 has to keep the tile dirty; stall the write with `page.route` rather than racing the debounce.
 
-> Boards are still **private** — everybody arranges their own, and what crosses between them is a
-> comp. A board the whole team works on, with a presence roster, is Phase J
-> (`docs/PHASE-J-HANDOFF.md`); when it lands, its gestures belong in this section and the four
-> rules above are what its specs will be built on.
+### The shared board
+
+Boards used to be private, and one still is unless somebody shares it. A **shared board** belongs
+to the team: everybody with access opens it at the same URL, its arrangement is the server's, and
+the four rules above are exactly what its specs are built on.
+
+The id is the **server's**, unlike a personal board's — a shared board is the first board in this
+application the server owns, so a spec cannot mint one and deep-link to it in the same breath:
+
+```ts
+const board = await api.createSharedBoard(team.id, [first.id, second.id], 'Round one')
+await page.goto('/teams/' + team.id + '/boards/' + board.id)
+
+await friend.api.addSharedTile(board.id, third.id)
+await expect(tileFor(page, third.id)).toBeVisible({ timeout: 15_000 })
+```
+
+Four things differ from a personal board, and the last two are what specs get wrong.
+
+**A tile you close, closes for everybody.** `onClose` on a shared board is an op, not an
+arrangement — the one gesture whose blast radius differs from its personal twin. Deleting the
+board itself is behind a context menu on its tab (`shared-board-tab-menu`) rather than a `×`,
+deliberately: *delete for everyone* must not sit where muscle memory expects *close mine*.
+
+**Wait on `data-board-state`, not on time.** There is **no debounce** — a shared board sends one
+op per gesture, immediately — so `expectBoardSettled` is written the same two phases as
+`expectCompSaved`, and for a sharper reason: with no debounce an op can genuinely finish before
+the first poll, which makes a one-phase wait on `idle` flaky rather than reliably wrong. The board
+also carries `data-board-revision`, which is what to assert on for "and it actually moved".
+
+**A board id the URL names and nobody has renders `board-not-found`**, rather than silently
+redrawing the first personal board. That is the pasted-link journey, and asserting on the named
+state is how a spec can tell "the link worked" from "the link quietly did nothing".
+
+**Grab a tile by its header, never its centre.** `GRIP = { x: 60, y: 12 }` — the centre is a hull
+row, which is draggable in its own right and carries *hulls* out of the comp instead of moving the
+tile. A `dragTo` without `sourcePosition` looks like it does nothing at all.
+
+For a change that has to arrive *mid-gesture*, hand-dispatch `dragstart` and `dragend` around the
+other person's write: a native `dragTo` is atomic and there is no moment inside one for anything
+to land. `shared-board-drag.spec.ts` is the worked example, and what it asserts is that nothing
+moves while the tile is in hand and then moves exactly once when it is let go.
+
+**Presence** is a strip above the board (`presence`, with a `presence-actor` per person carrying
+`data-character-id` and `data-comp-id`). It is not stored anywhere: an entry's life is a stream's
+life, so closing a context removes it, and the name on it always comes from that person's session
+rather than from anything their client said.
 
 ## Forking a comp
 
