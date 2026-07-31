@@ -297,9 +297,18 @@ to land. `shared-board-drag.spec.ts` is the worked example, and what it asserts 
 moves while the tile is in hand and then moves exactly once when it is let go.
 
 **Presence** is a strip above the board (`presence`, with a `presence-actor` per person carrying
-`data-character-id` and `data-comp-id`). It is not stored anywhere: an entry's life is a stream's
-life, so closing a context removes it, and the name on it always comes from that person's session
-rather than from anything their client said.
+`data-character-id` and `data-comp-id`) and a mark in each tile's footer (`tile-watchers`, with a
+`tile-watcher` per person). It is not stored anywhere: an entry's life is a stream's life, so
+closing a context removes it, and the name on it always comes from that person's session rather
+than from anything their client said.
+
+Two things about driving it. **You need a real second page**, not a `context.request` API client —
+somebody who has not opened an `EventSource` is correctly not on the board at all, which is the
+one place in this suite where the cheaper participant will not do. And **presence is sticky**: the
+tile somebody was last on stands until they are on another one, so `hover()`ing empty space does
+*not* clear their mark. Only a page that has never been on a tile shows none. Asserting that a
+mark stayed put therefore needs a settling window rather than a state to wait on — there is no
+event for "nothing happened".
 
 ## Forking a comp
 
@@ -421,6 +430,6 @@ app stays there, which is what makes the swap possible at all.
 Over plain http the server must set the cookie without the `Secure` flag, or the browser drops
 it and every page renders the sign-in card while the sign-in itself reports 200 — set
 `COMPTOOL_SESSION_COOKIE_SECURE=false`, and see the README's
-[sign-in section](../README.md#turn-on-sign-in-eve-sso). **A locator that has to reach for a CSS
+[sign-in section](../README.md#sign-in). **A locator that has to reach for a CSS
 class is a missing test id, not a selector to keep** — class names are presentation and change
 without notice.

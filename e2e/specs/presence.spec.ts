@@ -86,6 +86,15 @@ test('a tile shows who is looking at it', async ({ page, api, team, asSomeoneEls
   })
   await expect(tileFor(page, first.id).getByTestId('tile-watcher')).toHaveCount(0)
 
+  // Letting go of a tile is not going somewhere else. The new-comp tile is board space that is
+  // not a comp tile, so this is the pointer resting on nothing — and the mark must stay.
+  await theirs.getByTestId('board-new-comp').hover()
+  // A settling window rather than a state to wait on, because what is being asserted is that
+  // nothing happened, and there is no event for that. Generous against the 250ms beat plus a
+  // round trip and the fan-out.
+  await page.waitForTimeout(2_000)
+  await expect(mark).toHaveAttribute('data-character-id', String(friend.identity.characterId))
+
   // And it follows them. `hover()` moves the pointer, `pointerover` fires on the new tile, and
   // the beat that goes names where they came to rest rather than every tile crossed.
   await tileFor(theirs, first.id).hover()

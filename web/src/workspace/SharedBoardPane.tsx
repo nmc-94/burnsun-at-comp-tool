@@ -117,6 +117,17 @@ export default function SharedBoardPane({
    * a caret is where they are working. So a tile with focus inside it is where you are, whatever
    * the pointer is over, and a keyboard-only colleague shows up on tiles like anybody else.
    *
+   * **And where you are is sticky.** Letting go of a tile is not the same as going somewhere
+   * else: a board of unequal tiles is mostly gaps, so a pointer crossing from one tile to another
+   * passes over nothing on the way, and clicking a gap or reaching for the rail is not a
+   * statement about comps at all. Reporting the truthful "on no tile" for each of those made
+   * everybody's mark blink out and back several times a minute, which reads as the roster being
+   * broken rather than as anybody moving. So the last tile somebody was *actually* on stands
+   * until they are on another one.
+   *
+   * The one case that stays blank is somebody who has only just arrived, because there is no last
+   * tile to stand on and inventing one would be a claim rather than a stale fact.
+   *
    * The throttle lives inside `reportPresence`, so every caller gets the ceiling for free, and
    * this tab's own mark is applied there synchronously — the round trip is news for other people
    * and never for the person who made the move.
@@ -127,11 +138,22 @@ export default function SharedBoardPane({
     const surface = boardRef.current
     let hovered: string | null = null
     let focused: string | null = null
-    const settle = () => reportPresence(board.teamId, board.id, focused ?? hovered)
+    /** The last tile this tab was genuinely on. Null only until it has been on one. */
+    let resting: string | null = null
+
+    const settle = () => {
+      // The whole of the stickiness: a live signal moves the mark, and the absence of one leaves
+      // it where it was. Deliberately not "clear it after a while" — a timer would put the blink
+      // back on a delay, and there is nothing a blank mark tells anybody that a stale one does
+      // not tell them better.
+      const here = focused ?? hovered
+      if (here) resting = here
+      reportPresence(board.teamId, board.id, resting)
+    }
 
     const onOver = (event: PointerEvent) => {
-      // Null when the pointer is over the gaps between tiles, which a board of unequal tiles has
-      // a lot of. Being on the board and on no tile is a real answer, not a missing one.
+      // Null in the gaps between tiles, which a board of unequal tiles has a lot of — below the
+      // short ones and to the right of the last row. `settle` decides what that means.
       hovered = tileUnder(event.target)
       settle()
     }
