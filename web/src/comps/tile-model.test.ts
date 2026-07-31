@@ -19,9 +19,11 @@ import {
   firstFreeRow,
   introducedBy,
   offersFlagship,
+  pointsPill,
   previewRow,
   rowsBlamedBy,
   toEngineComp,
+  totalPill,
   scaffold,
   selectEvery,
   selectRow,
@@ -248,6 +250,54 @@ describe('deltaPill', () => {
     // Two Abaddons: 40 base, inflation 4, so 44 each and 88 in total.
     expect(result.summary.pointsUsed).toBe(88)
     expect(deltaPill(result.summary).text).toBe('−112')
+  })
+})
+
+describe('totalPill', () => {
+  it('reads the comp total, with the cap only in the words', () => {
+    // The bare number on screen, the way the rail's leaves spell it. The cap does not go in the
+    // text: it is the same on every tile of the board and there is least room for it here.
+    expect(totalPill({ pointsUsed: 188, pointCap: 200 } as never)).toEqual({
+      text: '188',
+      tone: 'under',
+      label: '188 points of the 200 point cap',
+    })
+  })
+
+  it('keeps the tone the delta would have had, so a comp over the cap is still red', () => {
+    // The tone is a fact about the comp rather than about which number is drawn on it — the one
+    // thing that must not change when somebody switches how they read a tile.
+    expect(totalPill({ pointsUsed: 224, pointCap: 200 } as never).tone).toBe('over')
+    expect(totalPill({ pointsUsed: 200, pointCap: 200 } as never).tone).toBe('exact')
+    expect(totalPill({ pointsUsed: 0, pointCap: 200 } as never).tone).toBe('under')
+  })
+
+  it('says the same number in words as it shows in digits', () => {
+    // The rule both spellings are held to; see deltaPill's version of this test.
+    const over = totalPill({ pointsUsed: 224, pointCap: 200 } as never)
+
+    expect(over.text).toBe('224')
+    expect(over.label).toContain('224 points')
+  })
+
+  it('agrees with what the engine says a real comp costs', () => {
+    const result = judge(slots(SHIP.abaddon, SHIP.abaddon))
+
+    // The same two Abaddons the delta reads as −112, from the far end of the same subtraction.
+    expect(totalPill(result.summary).text).toBe('88')
+  })
+})
+
+describe('pointsPill', () => {
+  // The preference, and the whole of what it switches: one summary, two spellings, one tone.
+  const summary = { pointsUsed: 188, pointCap: 200 } as never
+
+  it('reads the distance from the cap when absolute points are off', () => {
+    expect(pointsPill(summary, false)).toEqual(deltaPill(summary))
+  })
+
+  it('reads the total when they are on', () => {
+    expect(pointsPill(summary, true)).toEqual(totalPill(summary))
   })
 })
 

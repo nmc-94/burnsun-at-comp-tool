@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppHeader from './AppHeader'
 import type { Route } from './router/route'
 import type { Session } from './session'
+import { readSettings } from './settings'
 
 const SIGNED_IN: Session = {
   signIn: 'sso',
@@ -80,6 +81,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  // The menu writes preferences into this key, and vitest isolates per file rather than per
+  // test — so one toggled here would stay toggled for everything below it.
+  localStorage.clear()
 })
 
 describe('where you are', () => {
@@ -180,6 +184,24 @@ describe('the account menu', () => {
     fireEvent.click(screen.getByTestId('user-menu'))
 
     expect(screen.getByTestId('menu-teams').textContent).toContain('Your teams')
+  })
+
+  // The preferences the menu holds are read by tiles that are nowhere near it, so what this
+  // guards is the one link between the two: that pressing the item stores the value under the
+  // name those tiles read, rather than only lighting the tick beside it.
+  it('stores a preference where the thing that reads it will find it', () => {
+    renderHeader(WORKSPACE)
+    fireEvent.click(screen.getByTestId('user-menu'))
+
+    const toggle = screen.getByTestId('menu-absolute-points')
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(toggle)
+
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(readSettings().absolutePoints).toBe(true)
+    // And nothing else moved with it — one item, one field.
+    expect(readSettings().sortRowsByWeight).toBe(true)
   })
 
   it('closes on Escape and gives focus back to the control it came from', () => {

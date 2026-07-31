@@ -79,6 +79,12 @@ await expect(tile.getByTestId('comp-save-state')).toHaveAttribute('data-save-sta
 await expect(page.getByTestId('workspace-layout-state')).toHaveAttribute('data-layout-state', 'idle')
 ```
 
+`comp-points-delta` reads the *distance from the cap* by default, and the comp's own total for a
+browser where **Show absolute point totals** is on in the account menu (`menu-absolute-points`,
+stored in `comp-tool.settings` beside the row sort). The id and the element are the same either
+way; which number is in it is `data-points`, `delta` or `total`, so a spec can assert the reading
+it means rather than inferring it from the digits. A fresh context is always `delta`.
+
 Not every row carries every control. `comp-row-flagship-toggle` is drawn only where a flagship
 is possible — the format allows one and the hull is eligible for it, which in ATXXII is
 battleships minus a short list — plus any row that already holds the designation, so there is

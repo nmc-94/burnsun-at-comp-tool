@@ -202,6 +202,12 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
           <ToggleItem setting="sortRowsByWeight" testId="menu-sort-rows">
             Sort rows by points
           </ToggleItem>
+          {/* Next to the sort, because the two are the same kind of thing: how a tile draws a comp
+              it does not change. The wording says what the pill shows when this is on, not what
+              pressing it does — which is what `aria-pressed` needs to be true about. */}
+          <ToggleItem setting="absolutePoints" testId="menu-absolute-points">
+            Show absolute point totals
+          </ToggleItem>
           <ToggleItem setting="confirmCompDelete" testId="menu-confirm-deletes">
             Confirm comp deletes
           </ToggleItem>
