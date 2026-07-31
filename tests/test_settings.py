@@ -156,6 +156,38 @@ def test_the_development_sign_in_needs_no_eve_application():
     assert settings.esi_enabled is False
 
 
+def test_more_than_one_worker_is_refused():
+    """The live stream fans out in-process, so a second worker is a correctness bug.
+
+    Refused rather than warned about because the damage is silent: half the events stop
+    crossing, and the presence roster starts making a false statement about who is in the
+    room. And this variable arrives without anybody deciding anything — it is the standard
+    advice for every FastAPI deployment and set by default on some platforms.
+    """
+    # Named by its alias, which is the only name it has: the field carries no COMPTOOL_
+    # prefix because the variable is uvicorn's rather than ours, and reading it under one
+    # would mean the refusal never fires on the name that actually forks the app.
+    with pytest.raises(ValidationError, match="WEB_CONCURRENCY"):
+        Settings(WEB_CONCURRENCY=4)
+
+
+def test_more_than_one_worker_is_refused_from_the_environment(monkeypatch):
+    # The path it actually arrives by — a platform default, set by nobody in particular.
+    monkeypatch.setenv("WEB_CONCURRENCY", "2")
+    settings_module.get_settings.cache_clear()
+    try:
+        with pytest.raises(ValidationError, match="WEB_CONCURRENCY"):
+            settings_module.get_settings()
+    finally:
+        settings_module.get_settings.cache_clear()
+
+
+def test_one_worker_is_the_default_and_may_also_be_said_out_loud(monkeypatch):
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    assert Settings().web_concurrency == 1
+    assert Settings(WEB_CONCURRENCY=1).web_concurrency == 1
+
+
 def test_normalize_url_routes_to_psycopg():
     assert normalize_url("postgresql://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
     assert normalize_url("postgres://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
