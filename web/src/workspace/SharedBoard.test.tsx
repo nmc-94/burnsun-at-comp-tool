@@ -295,16 +295,40 @@ describe('saying which tile this tab is on', () => {
     expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', 'b')
   })
 
-  it('reports the board and no tile in the gaps between them', async () => {
-    // A board of unequal tiles has a lot of grid that is not a tile. Being on the board and on
-    // no tile is a real answer, not a missing one.
+  it('reports no tile until this tab has been on one', async () => {
+    // The one case that stays blank. There is no last tile to stand on, and inventing one would
+    // be a claim rather than a stale fact.
+    pane(doc(['a', 'b']))
+    await settled(['Alpha', 'Beta'])
+
+    fireEvent.pointerOver(grid())
+
+    expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', null)
+  })
+
+  it('stays on the last tile when the pointer is in the gaps between them', async () => {
+    // A board of unequal tiles is mostly gaps — below the short ones, right of the last row — so
+    // crossing from one tile to another passes over nothing on the way. Blanking the mark for
+    // each of those made everybody blink out and back several times a minute, which reads as the
+    // roster being broken rather than as anybody moving.
     pane(doc(['a', 'b']))
     await settled(['Alpha', 'Beta'])
     fireEvent.pointerOver(tile('Beta'))
 
     fireEvent.pointerOver(grid())
 
-    expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', null)
+    expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', 'b')
+  })
+
+  it('moves only when the pointer reaches another tile', async () => {
+    pane(doc(['a', 'b']))
+    await settled(['Alpha', 'Beta'])
+    fireEvent.pointerOver(tile('Beta'))
+    fireEvent.pointerOver(grid())
+
+    fireEvent.pointerOver(tile('Alpha'))
+
+    expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', 'a')
   })
 
   it('lets focus outrank the pointer', async () => {
@@ -330,16 +354,31 @@ describe('saying which tile this tab is on', () => {
     expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', 'b')
   })
 
-  it('gives the tile up when the pointer leaves the board altogether', async () => {
-    // `pointerover` cannot say this: leaving the board is the one move not followed by arriving
-    // somewhere else inside it.
+  it('keeps the tile when the pointer leaves the board altogether', async () => {
+    // Reaching for the library rail, the tab strip or another window is not a statement about
+    // comps. Leaving the *pane* still clears it — see below — and that is the difference: one is
+    // moving the mouse, the other is going somewhere else.
     pane(doc(['a', 'b']))
     await settled(['Alpha', 'Beta'])
     fireEvent.pointerOver(tile('Beta'))
 
     fireEvent.pointerLeave(grid())
 
-    expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', null)
+    expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', 'b')
+  })
+
+  it('holds the tile through a click on empty board space', async () => {
+    // The gesture that prompted all of this. A click in a gap is both halves of the signal going
+    // quiet at once — the pointer is over no tile, and focus has left the one it was in.
+    pane(doc(['a', 'b']))
+    await settled(['Alpha', 'Beta'])
+    fireEvent.pointerOver(tile('Beta'))
+    fireEvent.focusIn(tile('Beta'))
+
+    fireEvent.pointerOver(grid())
+    fireEvent.focusOut(tile('Beta'), { relatedTarget: grid() })
+
+    expect(reportPresence).toHaveBeenLastCalledWith('t1', 'sb1', 'b')
   })
 
   it('says it has left the board when the pane goes away', async () => {
