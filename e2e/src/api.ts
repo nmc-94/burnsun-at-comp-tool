@@ -65,6 +65,20 @@ export interface Board {
   readonly compIds: readonly string[]
 }
 
+/**
+ * A board that belongs to the team, as the server answers.
+ *
+ * Its own type rather than `Board`'s shape reused: this one carries a `revision`, which is what
+ * every op returns and what the client compares — and a personal board has nothing like it.
+ */
+export interface SharedBoard {
+  readonly id: string
+  readonly teamId: string
+  readonly name: string
+  readonly revision: number
+  readonly tiles: ReadonlyArray<{ readonly compId: string }>
+}
+
 /** A comp's share link, as the mint route answers. */
 export interface ShareDetail {
   readonly slug: string
@@ -205,6 +219,58 @@ export class Api {
       }),
     )
     return { id, name, compIds: placed.map((tile) => tile.compId) }
+  }
+
+  /**
+   * A board that belongs to the team, with its tiles already on it.
+   *
+   * Unlike `openBoard`, the id is the **server's** — a shared board is the first board in this
+   * application the server owns, so a spec cannot mint one and deep-link to it in the same
+   * breath. Everything after that is the same: the URL is the link, and opening it is what a
+   * teammate does with one pasted into a channel.
+   */
+  createSharedBoard(
+    teamId: string,
+    compIds: readonly string[],
+    name = 'Shared board',
+  ): Promise<SharedBoard> {
+    return this.json(
+      this.http.post(`/api/v1/teams/${teamId}/boards`, { data: { name, tiles: compIds } }),
+      201,
+    )
+  }
+
+  getSharedBoard(boardId: string): Promise<SharedBoard> {
+    return this.json(this.http.get(`/api/v1/boards/${boardId}`))
+  }
+
+  addSharedTile(
+    boardId: string,
+    compId: string,
+    beforeCompId: string | null = null,
+  ): Promise<SharedBoard> {
+    return this.json(
+      this.http.post(`/api/v1/boards/${boardId}/tiles`, { data: { compId, beforeCompId } }),
+    )
+  }
+
+  moveSharedTile(
+    boardId: string,
+    compId: string,
+    beforeCompId: string | null,
+  ): Promise<SharedBoard> {
+    return this.json(
+      this.http.patch(`/api/v1/boards/${boardId}/tiles/${compId}`, { data: { beforeCompId } }),
+    )
+  }
+
+  async removeSharedTile(boardId: string, compId: string): Promise<void> {
+    const response = await this.http.delete(`/api/v1/boards/${boardId}/tiles/${compId}`)
+    if (response.status() !== 204) {
+      throw new Error(
+        `DELETE /boards/${boardId}/tiles/${compId} → ${response.status()} ${await response.text()}`,
+      )
+    }
   }
 
   /**

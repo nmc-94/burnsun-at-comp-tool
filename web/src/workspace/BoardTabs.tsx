@@ -8,8 +8,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+import PointerMenu from '../ui/PointerMenu'
 import { useLinkProps } from '../router/useRoute'
 import type { Route } from '../router/route'
+import type { SharedBoardDoc } from './shared-doc'
 import type { WorkspaceBoard } from './types'
 
 interface Props {
@@ -21,6 +23,18 @@ interface Props {
   readonly onRename: (boardId: string, name: string) => void
   readonly onClose: (boardId: string) => void
   readonly onOpenSettings: () => void
+  /**
+   * The boards that belong to the team, drawn in a strip of their own.
+   *
+   * **Not interleaved with the personal ones.** A shared board has no per-person position, so a
+   * merged list would have to sort by the server's `createdAt` — and a colleague creating a
+   * board would move *your* first tab out from under a click you had already started.
+   */
+  readonly sharedBoards?: readonly SharedBoardDoc[]
+  /** Copy the named personal board to the team. Absent for a viewer, who may not create one. */
+  readonly onShare?: (boardId: string) => void
+  readonly onRenameShared?: (boardId: string, name: string) => void
+  readonly onCloseShared?: (boardId: string) => void
 }
 
 export default function BoardTabs({
@@ -32,6 +46,10 @@ export default function BoardTabs({
   onRename,
   onClose,
   onOpenSettings,
+  sharedBoards,
+  onShare,
+  onRenameShared,
+  onCloseShared,
 }: Props) {
   const [renaming, setRenaming] = useState<string | null>(null)
 
@@ -55,9 +73,29 @@ export default function BoardTabs({
                 if (name) onRename(board.id, name)
               }}
               onClose={() => onClose(board.id)}
+              onShare={onShare ? () => onShare(board.id) : undefined}
             />
           ))}
         </ul>
+        {sharedBoards && sharedBoards.length > 0 && (
+          <ul className="ftabs-list ftabs-shared" aria-label="Shared boards">
+            {sharedBoards.map((board) => (
+              <SharedBoardTab
+                key={board.id}
+                board={board}
+                teamId={teamId}
+                active={board.id === activeBoardId}
+                renaming={renaming === board.id}
+                onStartRename={() => setRenaming(board.id)}
+                onFinishRename={(name) => {
+                  setRenaming(null)
+                  if (name) onRenameShared?.(board.id, name)
+                }}
+                onClose={onCloseShared ? () => onCloseShared(board.id) : undefined}
+              />
+            ))}
+          </ul>
+        )}
         <button
           className="ftab-new"
           data-testid="board-new"
@@ -122,6 +160,7 @@ interface TabProps {
   readonly onStartRename: () => void
   readonly onFinishRename: (name: string | null) => void
   readonly onClose: () => void
+  readonly onShare?: () => void
 }
 
 function BoardTab({
@@ -133,6 +172,7 @@ function BoardTab({
   onStartRename,
   onFinishRename,
   onClose,
+  onShare,
 }: TabProps) {
   const route: Route = {
     kind: 'workspace',
@@ -203,6 +243,17 @@ function BoardTab({
       >
         ✎
       </button>
+      {onShare && (
+        <button
+          className="ftab-share"
+          data-testid="board-tab-share"
+          type="button"
+          aria-label={`Share board ${board.name} with the team`}
+          onClick={onShare}
+        >
+          Share
+        </button>
+      )}
       {closable && (
         <button
           className="ftab-close"
@@ -213,6 +264,136 @@ function BoardTab({
         >
           ×
         </button>
+      )}
+    </li>
+  )
+}
+
+interface SharedTabProps {
+  readonly board: SharedBoardDoc
+  readonly teamId: string
+  readonly active: boolean
+  readonly renaming: boolean
+  readonly onStartRename: () => void
+  readonly onFinishRename: (name: string | null) => void
+  readonly onClose?: () => void
+}
+
+/**
+ * A tab for a board the whole team is on.
+ *
+ * **No `×`.** Closing a personal board takes it off your screen; closing this one destroys a
+ * colleague's arrangement mid-sentence, and putting the two at the same coordinates is how
+ * muscle memory does that. The delete lives behind a menu on the same control instead, which
+ * is `RailComp`'s shape and gets the Menu key and Shift+F10 for nothing.
+ */
+function SharedBoardTab({
+  board,
+  teamId,
+  active,
+  renaming,
+  onStartRename,
+  onFinishRename,
+  onClose,
+}: SharedTabProps) {
+  const link = useLinkProps({
+    kind: 'workspace',
+    teamId,
+    boardId: board.id,
+    view: 'board',
+    selection: [],
+  })
+  const nameField = useRef<HTMLInputElement>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    if (!renaming) return
+    nameField.current?.focus()
+    nameField.current?.select()
+  }, [renaming])
+
+  if (renaming) {
+    return (
+      <li
+        className="ftab shared ftab-renaming"
+        data-testid="shared-board-tab"
+        data-board-id={board.id}
+      >
+        <input
+          className="ftab-name"
+          data-testid="shared-board-tab-name"
+          defaultValue={board.name}
+          maxLength={120}
+          aria-label="Shared board name"
+          ref={nameField}
+          onBlur={(event) => onFinishRename(event.target.value.trim() || null)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+            if (event.key === 'Escape') {
+              event.currentTarget.value = board.name
+              event.currentTarget.blur()
+            }
+          }}
+        />
+      </li>
+    )
+  }
+
+  return (
+    // The whole tab answers the secondary button, exactly as a rail leaf does. The rule this
+    // suspends is about handlers that make an element the only way to do something, and this is
+    // not one: `contextmenu` bubbles from the focused link inside, so the Menu key and Shift+F10
+    // reach it without a pointer.
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+    <li
+      className={`ftab shared${active ? ' active' : ''}`}
+      data-testid="shared-board-tab"
+      data-board-id={board.id}
+      onContextMenu={
+        onClose
+          ? (event) => {
+              event.preventDefault()
+              setMenu({ x: event.clientX, y: event.clientY })
+            }
+          : undefined
+      }
+    >
+      <a
+        className="ftab-open"
+        data-testid="shared-board-tab-open"
+        aria-current={active ? 'page' : undefined}
+        // Named as what it is, so it can never collide with the personal board of the same
+        // name — two controls answering to one accessible name is the §6.8 failure no linter
+        // catches, and this feature makes a same-named pair the *expected* case.
+        aria-label={`Open shared board ${board.name}`}
+        {...link}
+      >
+        {board.name}
+      </a>
+      <button
+        className="ftab-rename"
+        data-testid="shared-board-tab-rename"
+        type="button"
+        aria-label={`Rename shared board ${board.name}`}
+        onClick={onStartRename}
+      >
+        ✎
+      </button>
+      {menu && onClose && (
+        <PointerMenu
+          at={menu}
+          items={[
+            {
+              label: 'Delete for everyone',
+              onSelect: onClose,
+              danger: true,
+              testId: 'shared-board-delete',
+            },
+          ]}
+          label={`Shared board ${board.name}`}
+          onDismiss={() => setMenu(null)}
+          testId="shared-board-tab-menu"
+        />
       )}
     </li>
   )

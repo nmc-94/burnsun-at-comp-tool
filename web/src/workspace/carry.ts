@@ -41,3 +41,23 @@ export interface Float extends Carried {
   /** Where a drop would put the tile, in canvas coordinates. */
   place: () => Place
 }
+
+/**
+ * Somebody to tell that a gesture is in progress, for a board that other people are also writing.
+ *
+ * Mid-drag, `reorder.ts` holds an order, a set of resting boxes and a map of **element
+ * references** captured when the gesture began. If React reorders the board's children
+ * underneath it: the inline `order` values become garbage and the drawn order is nonsense; a
+ * remotely-added tile has no `order` at all, so it computes to 0 and jumps to the front; a
+ * remotely-removed carried tile leaves the engine holding a detached node; and the resting boxes
+ * describe a board that no longer exists, so every hit test afterwards answers from stale
+ * geometry — the same failure `reorder.ts`'s header spends nine lines preventing from the
+ * transform direction.
+ *
+ * An optional prop on the board rather than something the engines know about, because a personal
+ * board has no second writer and passes none. `CompTileHost` never learns this exists.
+ */
+export interface CarryWatch {
+  begin: () => void
+  end: () => void
+}

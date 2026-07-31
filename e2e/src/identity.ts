@@ -15,6 +15,12 @@ import type { Identity } from './dev-auth'
  * unguessable and re-rolled on collision, and pick-ban lives in sessionStorage. Re-check that
  * list if a route ever stops scoping by team.
  *
+ * **A shared board is the first genuinely shared object in this application, and it does not
+ * change the argument.** It belongs to a *team*, reached through the same gate as everything
+ * else, and every test mints its own team — so the only participants who can open one are the
+ * contexts that test opened itself. What would break this is a board reachable *without* a
+ * grant, which is exactly the capability link Phase J declined to build.
+ *
  * A disjoint band per worker with a random offset inside it: two workers can never collide,
  * and a worker restarted mid-run does not reissue an id an earlier test is still asserting on.
  * The 9x,xxx,xxx band is the one the README's hand-minted session already used, so a stray row

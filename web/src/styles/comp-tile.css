@@ -80,6 +80,23 @@
 .tfoot .spacer {
   flex: 1;
 }
+/* Who is looking at this comp, beside who made it. Both are facts about the comp; the row on the
+   right is things to press, and a face among them would read as one.
+
+   **13px, and that number is load-bearing.** The footer's height is the tallest thing in it, and
+   at rest that is a 10.5px line box of about 13. A 14px mark would make every tile a pixel taller
+   the moment somebody hovered it and a pixel shorter when they left — a board that breathes as
+   people move around it. The marks fit inside what the footer already reserves instead. */
+.tile-watchers {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  /* Tighter than the footer's own 10px: these are one group, not four separate items. */
+  gap: 3px;
+}
+.tile-watcher {
+  display: inline-flex;
+}
 .tfoot .faint {
   color: var(--text-4);
 }

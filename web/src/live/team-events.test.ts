@@ -251,6 +251,69 @@ describe('what the board is told', () => {
   })
 })
 
+describe('what wakes a board', () => {
+  it('relays a shared board changing, revision and all', () => {
+    // Relayed rather than acted on: this module knows what a *comp revision* is and knows
+    // nothing about boards. The store that does live in `workspace/`, and importing it here
+    // would invert the layering the whole `live/` folder rests on.
+    const told = vi.fn()
+    subscribeTeam(told)
+    openTeamStream(TEAM)
+
+    FakeEventSource.last?.emit('board.changed', { boardId: 'sb1', revision: 7 })
+
+    expect(told).toHaveBeenCalledWith({ kind: 'board.changed', boardId: 'sb1', revision: 7 })
+  })
+
+  it('relays a board arriving and a board going away', () => {
+    const told = vi.fn()
+    subscribeTeam(told)
+    openTeamStream(TEAM)
+
+    FakeEventSource.last?.emit('board.created', { boardId: 'sb2', revision: 1 })
+    FakeEventSource.last?.emit('board.deleted', { boardId: 'sb1', revision: 9 })
+
+    expect(told).toHaveBeenCalledWith({ kind: 'board.created', boardId: 'sb2', revision: 1 })
+    expect(told).toHaveBeenCalledWith({ kind: 'board.deleted', boardId: 'sb1', revision: 9 })
+  })
+
+  it('ignores this tab’s own board event', () => {
+    // Safe here for a *different* reason than it is for a comp: a board op's response carries
+    // the whole resulting board, so the tab that made the change is already holding the
+    // authoritative answer. Acting on its own echo could only re-read an older revision.
+    const told = vi.fn()
+    subscribeTeam(told)
+    openTeamStream(TEAM)
+
+    FakeEventSource.last?.emit('board.changed', {
+      boardId: 'sb1',
+      revision: 7,
+      origin: clientId(),
+    })
+
+    expect(told).not.toHaveBeenCalled()
+  })
+
+  it('says nothing about a comp when a board moves', () => {
+    // A client keying a map on `compId` would key it on `undefined` rather than raising, which
+    // is the silent direction — so the separation is asserted rather than assumed.
+    const told = vi.fn()
+    subscribeTeam(told)
+    openTeamStream(TEAM)
+
+    FakeEventSource.last?.emit('board.changed', { boardId: 'sb1', revision: 2 })
+
+    expect(told.mock.calls[0]?.[0]).not.toHaveProperty('compId')
+  })
+
+  it('leaves a comp signal alone when a board moves', () => {
+    openTeamStream(TEAM)
+    FakeEventSource.last?.emit('board.changed', { boardId: 'sb1', revision: 2 })
+
+    expect(getSignal('sb1').revision).toBe(0)
+  })
+})
+
 describe('hasWatcher', () => {
   it('is true only while a tile is subscribed, so the board knows who is fetching', () => {
     expect(hasWatcher('a')).toBe(false)

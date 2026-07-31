@@ -14,7 +14,10 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 import { messageFor } from './api'
 import { GearIcon, PickBanIcon, SignOutIcon, TeamsIcon } from './HeaderIcons'
-import { buildCcpPortraitUrl } from './lib/icons'
+// The portrait-or-initials mark, shared with the presence strip and the tile footer so that a
+// colleague is recognisably the same person in all three. Passed `.avatar`, which is the plain
+// chrome this bar has always had — the hashed ring is for telling *other* people apart.
+import ActorMark from './live/ActorMark'
 import { hrefFor } from './router/route'
 import { useLinkProps } from './router/useRoute'
 import { UI_SIZES, readSettings, writeSetting } from './settings'
@@ -153,13 +156,13 @@ export default function AccountMenu({ session, teamId, onChanged }: Props) {
         aria-label={`Account — ${characterName}`}
         onClick={() => setOpen((was) => !was)}
       >
-        <Portrait characterId={characterId} characterName={characterName} />
+        <ActorMark characterId={characterId} characterName={characterName} size={26} className="avatar" />
       </button>
 
       {open && (
         <div className="header-menu" id={menuId} data-testid="user-menu-panel">
           <div className="header-menu-who">
-            <Portrait characterId={characterId} characterName={characterName} />
+            <ActorMark characterId={characterId} characterName={characterName} size={26} className="avatar" />
             <span className="header-menu-copy">
               <span className="character-name" data-testid="user-character-name">
                 {characterName}
@@ -344,43 +347,6 @@ function PencilIcon() {
       />
     </svg>
   )
-}
-
-/**
- * The portrait, or the character's initials.
- *
- * A fallback rather than an empty circle: `buildCcpPortraitUrl` returns null for a character
- * id the image service cannot address, and the CCP service itself can be unreachable — a hole
- * where the account control should be is indistinguishable from the control being missing.
- */
-function Portrait({
-  characterId,
-  characterName,
-}: {
-  readonly characterId: number
-  readonly characterName: string
-}) {
-  const [failed, setFailed] = useState(false)
-  const url = buildCcpPortraitUrl(characterId, 64)
-
-  return (
-    <span className="avatar">
-      {url && !failed ? (
-        <img src={url} alt="" width={26} height={26} onError={() => setFailed(true)} />
-      ) : (
-        initialsOf(characterName)
-      )}
-    </span>
-  )
-}
-
-/** "Sable Kaneko" → "SK". One letter if the name is a single word. */
-function initialsOf(name: string): string {
-  const words = name.split(/\s+/).filter((word) => word.length > 0)
-  return words
-    .slice(0, 2)
-    .map((word) => word[0]!.toUpperCase())
-    .join('')
 }
 
 /**
