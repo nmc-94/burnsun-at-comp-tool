@@ -30,10 +30,10 @@ import TagBar from './TagBar'
 import { EMPTY_VOCABULARY } from './tag-model'
 import type { TagVocabulary } from './tag-model'
 import {
-  deltaPill,
   EMPTY_SELECTION,
   firstFreeRow,
   offersFlagship,
+  pointsPill,
   rowsBlamedBy,
   scaffold,
   selectEvery,
@@ -320,6 +320,9 @@ export default function CompTile({
   // fact about how it draws itself, and threading it down from the board would put a prop about
   // one person's browser through every component between the two.
   const sorted = useSetting('sortRowsByWeight')
+  // The pill's other spelling, read the same way and for the same reason: which number somebody
+  // wants at the top of a tile is a fact about them, not about the comp or the board it is on.
+  const absolutePoints = useSetting('absolutePoints')
   const stored = useMemo(() => slots.map((slot) => slot.position), [slots])
   const rows = useMemo(
     () => scaffold(result, ruleset.fieldSize, { rows: stored, sorted }),
@@ -361,7 +364,7 @@ export default function CompTile({
     setClaim(null)
   }, [claim, slots])
   const blamed = useMemo(() => rowsBlamedBy(result.violations), [result.violations])
-  const pill = deltaPill(result.summary)
+  const pill = pointsPill(result.summary, absolutePoints)
   const highlightedRows = new Set(highlighted)
   const picked = new Set(selectedRows.rows)
 
@@ -663,7 +666,17 @@ export default function CompTile({
           onHighlight={setHighlighted}
         />
 
-        <span className={`dpill ${pill.tone}`} data-testid="comp-points-delta" aria-label={pill.label}>
+        {/* Still `comp-points-delta`, whichever number is in it: the id is the §6.8 name for the
+            pill rather than for the delta, three specs and two documents wait on it, and an
+            element that renamed itself when a preference changed would be one no driver could
+            find. Which spelling is showing is `data-points` instead — readable at rest, so a
+            spec that means to assert the total can say so rather than inferring it from digits. */}
+        <span
+          className={`dpill ${pill.tone}`}
+          data-testid="comp-points-delta"
+          data-points={absolutePoints ? 'total' : 'delta'}
+          aria-label={pill.label}
+        >
           {pill.text}
         </span>
       </div>

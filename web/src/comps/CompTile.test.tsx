@@ -444,6 +444,42 @@ describe('the delta pill', () => {
     expect(pill.textContent).toBe('+130')
     expect(pill.className).toContain('over')
   })
+
+  it('reads the comp total instead when that is how this browser is set', () => {
+    // The preference is read here, in the tile, for the reason the sort is: which number a
+    // person wants at the top of a tile is a fact about them, not about the comp or the board.
+    writeSetting('absolutePoints', true)
+
+    mount(slots(SHIP.abaddon))
+
+    const pill = screen.getByTestId('comp-points-delta')
+    expect(pill.textContent).toBe('40')
+    // Same element under the same id — the pill is what the id names, not the delta.
+    expect(pill.getAttribute('data-points')).toBe('total')
+    expect(pill.getAttribute('aria-label')).toBe('40 points of the 200 point cap')
+  })
+
+  it('keeps the tone when it reads the total, so a comp over the cap is still red', () => {
+    writeSetting('absolutePoints', true)
+
+    mount(slots(...Array(5).fill(SHIP.vindicator)))
+
+    const pill = screen.getByTestId('comp-points-delta')
+    expect(pill.textContent).toBe('330')
+    expect(pill.className).toContain('over')
+  })
+
+  it('follows the preference being changed while it is on screen', () => {
+    // What the account menu does. Twenty tiles are subscribed and none of them is re-mounted,
+    // so a tile that read the value once would go on drawing the number nobody asked for.
+    mount(slots(SHIP.abaddon))
+    expect(screen.getByTestId('comp-points-delta').textContent).toBe('−160')
+
+    act(() => void writeSetting('absolutePoints', true))
+
+    expect(screen.getByTestId('comp-points-delta').textContent).toBe('40')
+    expect(screen.getByTestId('comp-points-delta').getAttribute('data-points')).toBe('total')
+  })
 })
 
 describe('the hull search', () => {

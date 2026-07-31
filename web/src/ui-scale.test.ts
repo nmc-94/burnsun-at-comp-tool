@@ -110,6 +110,7 @@ describe('the two remembered sizes', () => {
 
     expect(readSettings().sortRowsByWeight).toBe(true)
     expect(readSettings().confirmCompDelete).toBe(true)
+    expect(readSettings().absolutePoints).toBe(false)
     expect(readSettings().lastTeamId).toBeNull()
   })
 })

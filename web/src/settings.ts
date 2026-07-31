@@ -85,6 +85,25 @@ export interface Settings {
    */
   readonly sortRowsByWeight: boolean
   /**
+   * Whether the pill at the top of a tile reads the comp's point total rather than its distance
+   * from the cap.
+   *
+   * Off by default, and the default is the considered one: comps cluster within a point or two of
+   * the cap, so the distance is the digit that moves while a comp is being built and the total is
+   * three digits that all look alike — which is why the pill was a signed delta from the mockup
+   * onwards, and why the rail's leaves show the total instead of duplicating it.
+   *
+   * It is a preference because the delta answers "how much room is left" and says nothing about
+   * "what does this comp cost", and the second question is the one asked away from the builder —
+   * comparing two comps across a board, reading a total out to a fleet, checking a figure against
+   * a spreadsheet somebody else keeps. Neither reading is the tool's to impose.
+   *
+   * The tone is the same either way. Under, exact and over are facts about the comp rather than
+   * about which number is drawn, so a comp over the cap stays red whichever way it is read — see
+   * `pointsPill` in `comps/tile-model.ts`, where both spellings come from one tone.
+   */
+  readonly absolutePoints: boolean
+  /**
    * The team this browser last had open, or null before one ever has been.
    *
    * A breadcrumb rather than a preference, and here anyway: it is comfort, it is per browser,
@@ -107,6 +126,7 @@ const DEFAULTS: Settings = {
   uiSizeDesktop: 'normal',
   uiSizeMobile: 'normal',
   sortRowsByWeight: true,
+  absolutePoints: false,
   lastTeamId: null,
 }
 
@@ -129,6 +149,7 @@ export function readSettings(): Settings {
       uiSizeDesktop: sizeOr(stored.uiSizeDesktop, inherited(stored)),
       uiSizeMobile: sizeOr(stored.uiSizeMobile, inherited(stored)),
       sortRowsByWeight: boolOr(stored.sortRowsByWeight, DEFAULTS.sortRowsByWeight),
+      absolutePoints: boolOr(stored.absolutePoints, DEFAULTS.absolutePoints),
       lastTeamId: idOr(stored.lastTeamId, DEFAULTS.lastTeamId),
     }
   } catch {

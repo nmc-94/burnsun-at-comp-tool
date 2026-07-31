@@ -76,18 +76,20 @@ export type Row =
       readonly lands: number
     }
 
-/** The delta pill's three states. Under budget is legal, but not free. */
-export type DeltaTone = 'exact' | 'under' | 'over'
+/** The points pill's three states. Under budget is legal, but not free. */
+export type PointsTone = 'exact' | 'under' | 'over'
 
-export interface DeltaPill {
+export interface PointsPill {
   readonly text: string
-  readonly tone: DeltaTone
+  readonly tone: PointsTone
   /**
    * The same fact in words, for the accessible name.
    *
    * The pill reads `−12`, which is a signed distance from the cap and means nothing said
    * aloud on its own — and announcing the *total* instead, as this once did, contradicts
-   * what the pill visibly says.
+   * what the pill visibly says. Which is the rule both spellings below are held to: the
+   * label says the number that is on screen, and adds the cap as the context a number alone
+   * does not carry.
    */
   readonly label: string
 }
@@ -202,8 +204,19 @@ function shipOf(row: Row): SlotEvaluation {
   return row.slot
 }
 
-/** The signed distance from the point cap, as the tile shows it. */
-export function deltaPill(summary: LegalitySummary): DeltaPill {
+/**
+ * What the pill at the top of a tile says: the distance from the cap, or the total itself.
+ *
+ * The choice is one person's preference (`absolutePoints`) rather than anything about the comp,
+ * so it is a parameter and not a second field on the summary — and it lives here, where both
+ * spellings can be checked without a DOM, rather than as a ternary in the tile.
+ */
+export function pointsPill(summary: LegalitySummary, absolute: boolean): PointsPill {
+  return absolute ? totalPill(summary) : deltaPill(summary)
+}
+
+/** The signed distance from the point cap, as the tile shows it by default. */
+export function deltaPill(summary: LegalitySummary): PointsPill {
   const delta = summary.pointsUsed - summary.pointCap
   const cap = summary.pointCap
   if (delta === 0) {
@@ -214,6 +227,29 @@ export function deltaPill(summary: LegalitySummary): DeltaPill {
     return { text: `−${under}`, tone: 'under', label: `${under} points under the ${cap} point cap` }
   }
   return { text: `+${delta}`, tone: 'over', label: `${delta} points over the ${cap} point cap` }
+}
+
+/**
+ * What the comp costs, for a tile asked for the number rather than the distance.
+ *
+ * The bare total, the way the rail's leaves and the mockup's tree spell it — no `/200` after it.
+ * The cap is the same for every tile on the board and for every comp in the format, so repeating
+ * it twenty times would be the one figure on a tile that never varies, in the one place there is
+ * least room for it. It is said in the label instead, where a number read aloud with nothing
+ * around it genuinely needs it.
+ *
+ * The tone is the delta's, unchanged: whether a comp is under, at or over the cap is a fact about
+ * the comp, so it keeps its colour whichever number is drawn on it.
+ */
+export function totalPill(summary: LegalitySummary): PointsPill {
+  const used = summary.pointsUsed
+  const cap = summary.pointCap
+  return { text: `${used}`, tone: toneOf(used - cap), label: `${used} points of the ${cap} point cap` }
+}
+
+function toneOf(delta: number): PointsTone {
+  if (delta === 0) return 'exact'
+  return delta < 0 ? 'under' : 'over'
 }
 
 /**
