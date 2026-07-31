@@ -20,8 +20,9 @@ import type { Place } from './types'
 export const MIN_TILE_W = 320
 
 /** A tile whose height nobody has measured. The ghost tile's number, for the same reason it
- *  has it: it is about what a comp tile comes out as. */
-export const FALLBACK_H = 350
+ *  has it: it is about what a comp tile comes out as. Was 350, and moved with the footer when
+ *  that grew from a derived 28.2px to a written 34 — measured, not adjusted. */
+export const FALLBACK_H = 356
 
 /** `.wsgrid`'s gap and padding, so a packed canvas and the grid agree to the pixel. */
 export const GAP = 14

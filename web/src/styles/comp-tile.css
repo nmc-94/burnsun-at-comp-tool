@@ -63,9 +63,21 @@
 .tbody {
   padding: 0 11px 10px;
 }
+/* 34px, and it is written down rather than derived — which is the point of the `min-height`.
+   Left to itself this row is as tall as its tallest child, and then a mark bigger than the text
+   beside it makes every tile grow the moment somebody's cursor lands on it and shrink again when
+   they leave: a board that breathes as people move around it, and on a canvas board one that
+   repacks. That is why the marks below used to be pinned to the line box.
+
+   The arithmetic, so the number can be checked: the rule paints at 1px and the padding is 8 each
+   side, which leaves 17 for the contents. The mark spends all 17; the text beside it is a 10.5px
+   line box at the document's 1.45, which is 15.22. Neither exceeds the floor, so 34 is what every
+   footer measures — it was 28.2px before, derived, with the same contents. Anything taller than 17
+   joining this row moves this number first. */
 .tfoot {
   border-top: 0.5px solid var(--line-1);
-  padding: 6px 11px;
+  padding: 8px 11px;
+  min-height: 34px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -83,10 +95,11 @@
 /* Who is looking at this comp, beside who made it. Both are facts about the comp; the row on the
    right is things to press, and a face among them would read as one.
 
-   **13px, and that number is load-bearing.** The footer's height is the tallest thing in it, and
-   at rest that is a 10.5px line box of about 13. A 14px mark would make every tile a pixel taller
-   the moment somebody hovered it and a pixel shorter when they left — a board that breathes as
-   people move around it. The marks fit inside what the footer already reserves instead. */
+   The marks are 17px — a face rather than a dot, and the whole of what the footer above reserves.
+   That reserve is what makes the size a choice at all: a tile with three people on it is exactly
+   as tall as one with nobody. They were pinned to 13 while the row was only as tall as its
+   contents, which made the size of a portrait hostage to whatever line box a 10.5px string of grey
+   happened to produce. `presence.spec.ts` measures a watched tile against a bare one. */
 .tile-watchers {
   display: inline-flex;
   align-items: center;
@@ -101,8 +114,8 @@
   color: var(--text-4);
 }
 .tfoot .fa svg {
-  width: 11px;
-  height: 11px;
+  width: 14px;
+  height: 14px;
 }
 /* The two footer glyphs are controls, not decoration — the comment count opens the thread and
    the fork count forks the comp — so they get a pointer and a hover, and nothing else: they sit

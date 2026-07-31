@@ -58,12 +58,14 @@ export default function TileWatchers({ boardId, compId }: Props) {
           data-self={person.isSelf ? 'true' : undefined}
           title={person.isSelf ? `You — ${person.characterName}` : person.characterName}
         >
-          {/* 13px, which is what the footer's line box already reserves. See `.tile-watchers` —
-              a taller mark would change every tile's height as people moved around the board. */}
+          {/* 17px, which is exactly what `.tfoot` reserves for its contents — the whole of the
+              room the footer has, spent on the one thing in it that carries a face. Raise it past
+              17 and the reserve stops binding, so every tile changes height as people move around
+              the board; `presence.spec.ts` measures two tiles against each other to catch that. */}
           <ActorMark
             characterId={person.characterId}
             characterName={person.characterName}
-            size={13}
+            size={17}
           />
         </span>
       ))}

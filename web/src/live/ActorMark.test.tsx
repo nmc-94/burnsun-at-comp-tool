@@ -24,6 +24,21 @@ describe('an actor mark', () => {
     expect(img?.getAttribute('src')).toContain('/portrait')
   })
 
+  // A face in a 17px circle is mostly edges, and asking the service for a source *smaller* than
+  // the device pixels it will be drawn into is what makes one read as soft and its ring as ragged.
+  // The sizes actually drawn — 17 in a tile footer, 18 in the strip, 26 in the account menu — all
+  // land on the same 64, which is also one fetch for the whole board rather than two.
+  it('asks for a source no smaller than twice the size it draws', () => {
+    for (const size of [17, 18, 26]) {
+      render(<ActorMark characterId={anId()} characterName="Sable Kaneko" size={size} />)
+      const src = document.querySelector('img')?.getAttribute('src') ?? ''
+      const served = Number(new URL(src, 'https://x').searchParams.get('size'))
+
+      expect(served).toBeGreaterThanOrEqual(size * 2)
+      cleanup()
+    }
+  })
+
   it('carries the hue hashed from the name', () => {
     render(<ActorMark characterId={anId()} characterName="Sable Kaneko" size={18} />)
 
@@ -84,5 +99,22 @@ describe('an actor mark', () => {
 
     expect(document.querySelector('.avatar')).toBeTruthy()
     expect(document.querySelector('.actor-mark')).toBeNull()
+    // And no hue ring over it: that chrome is a plain grey border of its own, because there is
+    // only ever one of you in the header and a colour there would identify you to yourself.
+    expect(document.querySelector('.actor-ring')).toBeNull()
+  })
+
+  // The ring is stroked in SVG rather than drawn as a `border`, which is what lets the portrait
+  // fill the whole mark instead of the 2px-smaller box a border leaves behind. The geometry is
+  // the part worth pinning: the stroke is centred on the path, so a radius half a pixel inside the
+  // box puts its outer edge exactly on the mark's edge — where the border used to sit.
+  it('rings the mark with a circle that ends exactly at its edge', () => {
+    render(<ActorMark characterId={anId()} characterName="Sable Kaneko" size={17} />)
+
+    const svg = document.querySelector('.actor-ring')
+    const circle = svg?.querySelector('circle')
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 17 17')
+    expect(circle?.getAttribute('r')).toBe('8')
+    expect(circle?.getAttribute('cx')).toBe('8.5')
   })
 })

@@ -290,29 +290,28 @@ h3 {
 /* A person's face wherever presence draws one — the strip below the tabs and a tile's footer.
    Sized by the caller through --actor-size, so one rule serves both without a modifier class.
 
-   The ring is the whole point. Two 13px portraits in a footer are two grey circles; the hue is
+   The ring is the whole point. Two 17px portraits in a footer are two grey circles; the hue is
    what says which colleague is which, and it is the fit tags' own hash so the same person is the
    same colour in both places they appear. `.avatar` above deliberately does *not* use it: there
    is only ever one of you in the header, and a colour there would be identifying you to yourself.
 
-   **Hairline, and it was 2px first.** At 13px a two-pixel ring is a sixth of the mark's diameter:
-   it stops reading as an outline around a face and starts reading as a coloured disc with a face
-   in the middle, which is louder than anything else in a footer of 10.5px grey. One pixel is
-   enough — the eye only has to tell two hues apart, not measure them.
+   **Hairline, and it was 2px first.** At footer size a two-pixel ring is better than a seventh of
+   the mark's diameter: it stops reading as an outline around a face and starts reading as a
+   coloured disc with a face in the middle, which is louder than anything else in a footer of
+   10.5px grey. One pixel is enough — the eye only has to tell two hues apart, not measure them.
 
-   `box-sizing` explicitly, so the ring is drawn inside the size the caller asked for: without it
-   the footer's marks would come out 15px and take the tile's height with them. */
+   `box-sizing` explicitly, so the mark occupies exactly the size the caller asked for: 17px in a
+   tile footer is what `.tfoot` reserves, and a mark past that edge takes every tile's height with
+   it. */
 .actor-mark {
   box-sizing: border-box;
+  position: relative;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
   width: var(--actor-size, 18px);
   height: var(--actor-size, 18px);
-  overflow: hidden;
   border-radius: 50%;
-  border: 1px solid
-    hsl(var(--actor-hue) var(--actor-ring-sat) var(--actor-ring-light));
   background: var(--bg-soft);
   color: var(--text-2);
   /* Initials only show when the image service has nothing for this character, which is every
@@ -321,11 +320,35 @@ h3 {
   font-weight: 700;
   line-height: 1;
 }
+/* The face fills the mark, and clips itself.
+ *
+ * It used to be a `border` on the parent plus `overflow: hidden`, which cost two pixels of face at
+ * every size — the portrait was drawn into 15 of a 17px mark. At these sizes that is the difference
+ * between eyes that resolve and eyes that do not, and the service is serving 64px either way. The
+ * clip is on the image rather than the parent so the ring below is *not* inside it: a clip path is
+ * rasterized more coarsely than a stroke, and shaving the ring's outer edge with one would undo
+ * the whole reason it is drawn in SVG. */
 .actor-mark img {
   display: block;
   width: 100%;
   height: 100%;
+  border-radius: 50%;
   object-fit: cover;
+}
+/* The ring, as a stroked circle rather than a rounded border.
+ *
+ * Chromium rasterizes a small `border-radius` border coarsely — at 1 device pixel per CSS pixel it
+ * comes out as a staircase, which is what a 15px ring looked like and what people saw. The same
+ * circle stroked in SVG is anti-aliased properly at every ratio, and the difference is plain at 1×
+ * and invisible above 2×. Geometry rather than a `vector-effect`: `ActorMark` knows its own size,
+ * so the viewBox is 1:1 with CSS pixels and `r = size/2 - 0.5` puts the stroke's outer edge exactly
+ * on the mark's edge — the same place the border sat. */
+.actor-ring {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  stroke: hsl(var(--actor-hue) var(--actor-ring-sat) var(--actor-ring-light));
+  stroke-width: 1;
 }
 
 .header-menu {
