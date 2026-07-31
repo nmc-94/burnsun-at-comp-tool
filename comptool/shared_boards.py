@@ -59,7 +59,7 @@ from .live import (
     origin_client,
     publish_board,
 )
-from .models import AccessLevel, Comp, SharedBoard, SharedBoardTile
+from .models import AccessLevel, Comp, SharedBoard, SharedBoardTile, Team
 from .permissions import Viewer
 
 # The one thing borrowed from ``workspace.py``, deliberately by import rather than by copy:
@@ -75,6 +75,12 @@ router = APIRouter(prefix="/api/v1/boards", tags=["shared boards"])
 #: ``workspace.MAX_BOARDS``: a bound on a payload, not a statement about how anyone should work.
 MAX_BOARDS_PER_TEAM = 20
 MAX_TILES_PER_BOARD = 50
+
+#: The board a team is born with, made by :func:`seed_default_board`.
+#:
+#: Distinct from the client's ``Board 1``, which is what ``layout.emptyLayout`` names the personal
+#: board it invents, so the two never arrive in the strip under one name.
+DEFAULT_BOARD_NAME = "Team board"
 
 #: The space left between neighbours when a board is numbered.
 #:
@@ -400,6 +406,42 @@ def create_shared_board(
     session.refresh(board)
     _announce(board, KIND_BOARD_CREATED, viewer, origin)
     return _present(board, _tiles(session, board))
+
+
+def seed_default_board(session: Session, team: Team, viewer: Viewer) -> None:
+    """The board a team starts with, added to the caller's transaction rather than committed.
+
+    Called by ``teams.create_team`` between its ``session.add(team)`` and its single ``commit``,
+    which is the whole of the design: the team and the board it is promised go in as one batch,
+    so there is no window in which a team exists without one and no second commit to fail after
+    the first has succeeded.
+
+    Deliberately **not** a call to :func:`create_shared_board`, for three reasons that all point
+    the same way. That route re-reads the team through ``authorize`` to answer a question this
+    caller already holds the answer to — the row was built two lines up with this viewer as its
+    owner. It commits on its own. And it announces ``board.created`` on the live stream, to a
+    team that has existed for microseconds and has no subscribers; ``test_live_events_api`` spies
+    from before the team is made and asserts a board creation publishes exactly one event, so an
+    announcement here would be caught there rather than noticed here.
+
+    Only at creation. Nothing re-seeds a team that has none, and nothing should: a board that
+    reappeared after somebody deleted it *for everyone* would be worse than not having one.
+    """
+    session.add(
+        SharedBoard(
+            # The relationship rather than ``team_id``: the primary key is a Python-side default,
+            # so ``team.id`` is None until flush, and assigning the parent lets the unit of work
+            # order the two inserts and fill the key itself.
+            team=team,
+            name=DEFAULT_BOARD_NAME,
+            # Spelled out rather than left to the column's default, for ``create_team``'s reason
+            # about ``base_level``: the attribute is None until the row is flushed, and this
+            # column has no server default to fall back on.
+            mode="grid",
+            created_by_character_id=viewer.character_id,
+            created_by_name=viewer.character_name,
+        )
+    )
 
 
 # --- The board itself -----------------------------------------------------------------------

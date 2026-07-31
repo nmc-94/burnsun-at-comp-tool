@@ -1,4 +1,8 @@
-// The top bar's icons, in one place beside the two components that draw them.
+// The chrome's icons, in one place beside the components that draw them.
+//
+// Mostly the top bar, and `TeamsIcon` also marks a shared board's tab in the strip below it —
+// the same glyph for the same idea, which is the reason they live together rather than beside
+// whichever component happened to want one first.
 //
 // A 16 box and `currentColor` throughout, so one rule sizes them (`svg { width: 13px }` on
 // the pill, 11px inside the theme toggle) and each takes the colour of whatever it sits in.

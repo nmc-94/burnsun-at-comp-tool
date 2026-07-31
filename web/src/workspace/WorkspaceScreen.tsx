@@ -89,7 +89,7 @@ import {
   seedBoards,
   subscribeBoards,
 } from './shared-boards'
-import { tilesToPromote } from './shared-doc'
+import { MAX_SHARED_BOARDS, nextSharedBoardName, tilesToPromote } from './shared-doc'
 import SharedBoardPane from './SharedBoardPane'
 import { reveal } from './canvas-extent'
 import { FALLBACK_H, packed, readingOrder, trackCount, trackWidth } from './place'
@@ -931,6 +931,25 @@ export default function WorkspaceScreen({
     [layout, teamId, sharedBoards],
   )
 
+  /**
+   * Start an empty board for the team, from the shared strip's own `+`.
+   *
+   * The second way into a shared board, and the first that does not require already having a
+   * personal one to promote. Otherwise identical to `shareBoard` — same route, same store, same
+   * navigation — with no tiles.
+   */
+  const addSharedBoard = useCallback(async () => {
+    try {
+      const made = await createSharedBoard(teamId, nextSharedBoardName(sharedBoards), [])
+      if (!made) return
+      seedBoards(teamId, [...sharedBoards, made])
+      navigate(boardRoute(teamId, made.id))
+      setError(null)
+    } catch (problem: unknown) {
+      setError(messageFor(problem))
+    }
+  }, [teamId, sharedBoards])
+
   if (error && !comps) {
     return (
       <p className="err" data-testid="workspace-error" role="alert">
@@ -988,6 +1007,8 @@ export default function WorkspaceScreen({
             }
           }}
           sharedBoards={sharedBoards}
+          canAddSharedBoard={sharedBoards.length < MAX_SHARED_BOARDS}
+          onAddShared={() => void addSharedBoard()}
           onShare={(id) => void shareBoard(id)}
           onRenameShared={(id, name) => void renameSharedBoard(id, name)}
           onCloseShared={(id) => {

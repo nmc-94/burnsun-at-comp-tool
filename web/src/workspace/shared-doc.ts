@@ -146,6 +146,27 @@ export function tilesToPromote(board: WorkspaceBoard): string[] {
 }
 
 /**
+ * The most shared boards one team may have, matching `shared_boards.MAX_BOARDS_PER_TEAM`.
+ *
+ * Held here so the `+` can be disabled rather than answering a 422 — the same courtesy
+ * `layout.MAX_BOARDS` does for the personal strip. The server is still the one that decides;
+ * this only keeps a button from offering something it knows will be refused.
+ */
+export const MAX_SHARED_BOARDS = 20
+
+/**
+ * What to call the board the shared `+` is about to make.
+ *
+ * Counts what the team has rather than reading the last name and adding one, so a board renamed
+ * to something else does not strand the numbering — and so the *first* one is `Team board`, the
+ * same name every team is born with. A collision after a delete-and-remake is possible and
+ * harmless: two shared boards may share a name, and each has its own URL.
+ */
+export function nextSharedBoardName(boards: readonly SharedBoardDoc[]): string {
+  return boards.length === 0 ? 'Team board' : `Team board ${boards.length + 1}`
+}
+
+/**
  * The comp a move should name as its neighbour, given where the tile ended up.
  *
  * A move names the tile it lands *before*, never an index: an index stops meaning the same

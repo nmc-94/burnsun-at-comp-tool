@@ -149,6 +149,57 @@ test('a board id that is neither yours nor the team’s says so', async ({ page,
   await expect(tileFor(page, comp.id)).toHaveCount(0)
 })
 
+test('a new team already has a board the whole team is on', async ({ page, team }) => {
+  // The whole chain, and the only test that walks all of it: the seed in `create_team`, the
+  // listing, the client's shared store, and the strip. No `createSharedBoard` anywhere — the
+  // `team` fixture is an ordinary POST, which is exactly the point.
+  await page.goto(`/teams/${team.id}`)
+
+  const tab = page.getByTestId('shared-board-tab').filter({ hasText: 'Team board' })
+  await expect(tab).toBeVisible()
+  // The glyph, drawn rather than merely present in the markup — jsdom loads no stylesheet, so
+  // BoardTabs.test.tsx cannot tell a visible mark from one sized to nothing.
+  await expect(tab.locator('svg')).toBeVisible()
+})
+
+test('a board tab opens on a click on its name', async ({ page, api, team }) => {
+  // The regression that sent Rename and Share to the context menu. `Share` was drawn 40px from
+  // the tab's right edge — past the 40px a tab reserves — so it lay across the board's name and
+  // took the click meant for the link. `opacity: 0` is what made it a bug rather than a blemish:
+  // an invisible element still hit-tests, so the tab was unopenable before anybody hovered it.
+  //
+  // A real click at the name's own coordinates is the only thing that catches this. Every
+  // locator in this suite would have gone on passing, because the link was always *there*.
+  const slug = await api.publishedRulesetSlug()
+  const comp = await api.createComp(team.id, 'Angel Shield Kite', slug)
+  const personal = await api.openBoard(team.id, [comp.id], 'Kite drafts')
+
+  // Away from the personal board first, so the click below has somewhere to travel.
+  await page.goto(`/teams/${team.id}`)
+  await page.getByTestId('shared-board-tab-open').click()
+  await expect(page.getByTestId('shared-board-tab-open')).toHaveAttribute('aria-current', 'page')
+
+  await page.getByTestId('board-tab-open').click()
+
+  await expect(page).toHaveURL(new RegExp(`/boards/${personal.id}$`))
+  await expect(page.getByTestId('board-tab-open')).toHaveAttribute('aria-current', 'page')
+})
+
+test('the shared strip has its own + , which makes an empty team board', async ({ page, team }) => {
+  await page.goto(`/teams/${team.id}`)
+  await expect(page.getByTestId('shared-board-tab')).toHaveCount(1)
+
+  await page.getByTestId('shared-board-new').click()
+
+  // Numbered from what the team has, so it follows the board every team is born with.
+  const made = page.getByTestId('shared-board-tab').filter({ hasText: 'Team board 2' })
+  await expect(made).toBeVisible()
+  await expect(made.getByTestId('shared-board-tab-open')).toHaveAttribute('aria-current', 'page')
+  // Empty, and the personal strip untouched by a press on the other strip's button.
+  await expect(page.getByTestId('board-tile')).toHaveCount(0)
+  await expect(page.getByTestId('board-tab')).toHaveCount(1)
+})
+
 test('a shared board is reached by its URL, which is the thing people paste', async ({
   api,
   team,
@@ -172,7 +223,11 @@ test('a shared board is reached by its URL, which is the thing people paste', as
   await theirs.goto(`/teams/${team.id}/boards/${board.id}`)
 
   await expect(tileFor(theirs, comp.id)).toBeVisible()
-  await expect(theirs.getByTestId('shared-board-tab')).toHaveText(/Round one/)
+  // Filtered, not indexed: the team was born with a default board, so the strip holds two tabs
+  // and a bare locator would fail strict mode before it ever compared any text.
+  await expect(
+    theirs.getByTestId('shared-board-tab').filter({ hasText: 'Round one' }),
+  ).toBeVisible()
 })
 
 test('promoting a personal board copies it and leaves the original alone', async ({
@@ -188,10 +243,16 @@ test('promoting a personal board copies it and leaves the original alone', async
   await page.goto(`/teams/${team.id}/boards/${personal.id}`)
   await expect(tileFor(page, first.id)).toBeVisible()
 
-  await page.getByTestId('board-tab-share').first().click()
+  // Right-click the tab, not a button floating over it. The button used to sit across the
+  // board's own name and take the click meant for the link.
+  await page.getByTestId('board-tab').filter({ hasText: 'Kite drafts' }).click({ button: 'right' })
+  await page.getByTestId('board-tab-share').click()
 
-  // Landed on the new shared board, with the same tiles in the same order.
-  await expect(page.getByTestId('shared-board-tab')).toBeVisible()
+  // Landed on the new shared board, with the same tiles in the same order. Named, because "a
+  // shared tab exists" was already true before the click — the team's default board is one.
+  await expect(
+    page.getByTestId('shared-board-tab').filter({ hasText: 'Kite drafts' }),
+  ).toBeVisible()
   await expect(page.getByTestId('board-grid')).toHaveAttribute(
     'data-tile-order',
     `${first.id},${second.id}`,

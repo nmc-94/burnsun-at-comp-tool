@@ -5,10 +5,24 @@
 // copy. The pattern would also demand roving tabindex and arrow-key handling to simulate
 // what a list of links gets for nothing, and it forbids the nested close button the design
 // calls for. State goes in `aria-current`, never in the name (§6.8).
+//
+// **Everything but the × is behind the context menu**, which is a correction rather than a
+// preference. The controls used to float over the tab on hover, absolutely positioned from its
+// right edge — and a tab reserves 40px there while `Share` began *at* 40px and ran 34px further,
+// straight across the board's own name. The name was not merely obscured: the button took the
+// click, so on a hover-capable pointer the tab could not be opened at all. Renaming had the same
+// fault on the shared strip, where 23px is reserved and the pencil overhung it by 16.
+//
+// A menu has no such geometry. It also gets the Menu key and Shift+F10 for nothing, which the
+// hover buttons never had, and it is the shape `SharedBoardTab` and `RailComp` already use — so
+// this is one gesture across the application rather than a third one here. The × stays: it sits
+// inside the reserved space, it never overlapped anything, and closing a board is the one thing
+// on a tab worth a single click.
 
 import { useEffect, useRef, useState } from 'react'
 
 import PointerMenu from '../ui/PointerMenu'
+import { TeamsIcon } from '../HeaderIcons'
 import { useLinkProps } from '../router/useRoute'
 import type { Route } from '../router/route'
 import type { SharedBoardDoc } from './shared-doc'
@@ -35,6 +49,16 @@ interface Props {
   readonly onShare?: (boardId: string) => void
   readonly onRenameShared?: (boardId: string, name: string) => void
   readonly onCloseShared?: (boardId: string) => void
+  /**
+   * Start an empty board for the team, from the shared strip's own `+`.
+   *
+   * A second `+` rather than a choice hung off the first. The two strips hold different objects
+   * with different consequences — one costs you a tab, the other appears on everybody's screen —
+   * and a single control that had to ask which you meant would put a question in front of the
+   * commonest gesture in the strip. Each strip ends with the button that adds to *it*.
+   */
+  readonly onAddShared?: () => void
+  readonly canAddSharedBoard?: boolean
 }
 
 export default function BoardTabs({
@@ -50,8 +74,15 @@ export default function BoardTabs({
   onShare,
   onRenameShared,
   onCloseShared,
+  onAddShared,
+  canAddSharedBoard = true,
 }: Props) {
   const [renaming, setRenaming] = useState<string | null>(null)
+  // Drawn for an editor even when the team has none, because there is otherwise no way back:
+  // the only other route to a shared board is promoting a personal one, so a team that deleted
+  // its last one would have to know that trick to get another.
+  const shared = sharedBoards ?? []
+  const showShared = shared.length > 0 || Boolean(onAddShared)
 
   return (
     <div className="ftabs-shell">
@@ -77,25 +108,9 @@ export default function BoardTabs({
             />
           ))}
         </ul>
-        {sharedBoards && sharedBoards.length > 0 && (
-          <ul className="ftabs-list ftabs-shared" aria-label="Shared boards">
-            {sharedBoards.map((board) => (
-              <SharedBoardTab
-                key={board.id}
-                board={board}
-                teamId={teamId}
-                active={board.id === activeBoardId}
-                renaming={renaming === board.id}
-                onStartRename={() => setRenaming(board.id)}
-                onFinishRename={(name) => {
-                  setRenaming(null)
-                  if (name) onRenameShared?.(board.id, name)
-                }}
-                onClose={onCloseShared ? () => onCloseShared(board.id) : undefined}
-              />
-            ))}
-          </ul>
-        )}
+        {/* Outside the list, not the last item in it: "Boards" names a list of boards, and a
+            control that makes one is not a member of it. Same rule that keeps Settings and
+            Pick / ban out of the nav, applied one level down. */}
         <button
           className="ftab-new"
           data-testid="board-new"
@@ -106,6 +121,42 @@ export default function BoardTabs({
         >
           +
         </button>
+        {showShared && (
+          <>
+            <ul className="ftabs-list ftabs-shared" aria-label="Shared boards">
+              {shared.map((board) => (
+                <SharedBoardTab
+                  key={board.id}
+                  board={board}
+                  teamId={teamId}
+                  active={board.id === activeBoardId}
+                  renaming={renaming === board.id}
+                  onStartRename={() => setRenaming(board.id)}
+                  onFinishRename={(name) => {
+                    setRenaming(null)
+                    if (name) onRenameShared?.(board.id, name)
+                  }}
+                  onClose={onCloseShared ? () => onCloseShared(board.id) : undefined}
+                />
+              ))}
+            </ul>
+            {onAddShared && (
+              <button
+                className="ftab-new"
+                data-testid="shared-board-new"
+                type="button"
+                // Named for what it makes, because the two `+` buttons sit a few pixels apart
+                // and "New board" twice would be two controls under one name — §6.8's failure,
+                // and here it would also hide which of them puts a board on everybody's screen.
+                aria-label="New shared board"
+                disabled={!canAddSharedBoard}
+                onClick={onAddShared}
+              >
+                +
+              </button>
+            )}
+          </>
+        )}
       </nav>
       {/* Outside the nav on purpose: a rehearsal is not a board, and putting it in the
           landmark would make "Boards" name a list with a non-board in it. Settings is here
@@ -183,6 +234,7 @@ function BoardTab({
   }
   const link = useLinkProps(route)
   const nameField = useRef<HTMLInputElement>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     if (!renaming) return
@@ -218,10 +270,26 @@ function BoardTab({
   }
 
   return (
+    // The whole tab answers the secondary button, as the shared one does. `contextmenu` bubbles
+    // from the focused link inside, so the Menu key and Shift+F10 reach it without a pointer —
+    // which is what makes this an improvement on the hover buttons rather than a trade.
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <li
       className={`ftab${active ? ' active' : ''}`}
       data-testid="board-tab"
       data-board-id={board.id}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setMenu({ x: event.clientX, y: event.clientY })
+      }}
+      // The convention for a renameable tab, and the reason the pencil could be spent: without
+      // it renaming would be reachable only by right-click, which is not a gesture everybody
+      // tries. `preventDefault` because the second click otherwise selects the board's name
+      // under the field that is about to replace it.
+      onDoubleClick={(event) => {
+        event.preventDefault()
+        onStartRename()
+      }}
     >
       <a
         className="ftab-open"
@@ -234,26 +302,6 @@ function BoardTab({
       >
         {board.name}
       </a>
-      <button
-        className="ftab-rename"
-        data-testid="board-tab-rename"
-        type="button"
-        aria-label={`Rename board ${board.name}`}
-        onClick={onStartRename}
-      >
-        ✎
-      </button>
-      {onShare && (
-        <button
-          className="ftab-share"
-          data-testid="board-tab-share"
-          type="button"
-          aria-label={`Share board ${board.name} with the team`}
-          onClick={onShare}
-        >
-          Share
-        </button>
-      )}
       {closable && (
         <button
           className="ftab-close"
@@ -264,6 +312,31 @@ function BoardTab({
         >
           ×
         </button>
+      )}
+      {menu && (
+        <PointerMenu
+          at={menu}
+          items={[
+            { label: 'Rename', onSelect: onStartRename, testId: 'board-tab-rename' },
+            ...(onShare
+              ? [
+                  {
+                    // Spelled out, because this is the one item on the menu whose effect leaves
+                    // your own screen. "Share" alone does not say who with.
+                    label: 'Share with the team',
+                    onSelect: onShare,
+                    testId: 'board-tab-share',
+                  },
+                ]
+              : []),
+            ...(closable
+              ? [{ label: 'Close', onSelect: onClose, testId: 'board-tab-close-item' }]
+              : []),
+          ]}
+          label={`Board ${board.name}`}
+          onDismiss={() => setMenu(null)}
+          testId="board-tab-menu"
+        />
       )}
     </li>
   )
@@ -349,14 +422,16 @@ function SharedBoardTab({
       className={`ftab shared${active ? ' active' : ''}`}
       data-testid="shared-board-tab"
       data-board-id={board.id}
-      onContextMenu={
-        onClose
-          ? (event) => {
-              event.preventDefault()
-              setMenu({ x: event.clientX, y: event.clientY })
-            }
-          : undefined
-      }
+      // Unconditional now, where it used to need `onClose`: the menu carries Rename as well, and
+      // that is offered to everyone the rename control was offered to before.
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setMenu({ x: event.clientX, y: event.clientY })
+      }}
+      onDoubleClick={(event) => {
+        event.preventDefault()
+        onStartRename()
+      }}
     >
       <a
         className="ftab-open"
@@ -368,27 +443,28 @@ function SharedBoardTab({
         aria-label={`Open shared board ${board.name}`}
         {...link}
       >
+        {/* Which kind of board this is, without spending a word on it. The same two-person mark
+            the top bar uses for teams, and hidden from the accessible name on purpose: the label
+            above already says "shared board", and a glyph that announced itself would say it a
+            second time to the only people who cannot see it. */}
+        <TeamsIcon className="ftab-shared-mark" />
         {board.name}
       </a>
-      <button
-        className="ftab-rename"
-        data-testid="shared-board-tab-rename"
-        type="button"
-        aria-label={`Rename shared board ${board.name}`}
-        onClick={onStartRename}
-      >
-        ✎
-      </button>
-      {menu && onClose && (
+      {menu && (
         <PointerMenu
           at={menu}
           items={[
-            {
-              label: 'Delete for everyone',
-              onSelect: onClose,
-              danger: true,
-              testId: 'shared-board-delete',
-            },
+            { label: 'Rename', onSelect: onStartRename, testId: 'shared-board-tab-rename' },
+            ...(onClose
+              ? [
+                  {
+                    label: 'Delete for everyone',
+                    onSelect: onClose,
+                    danger: true,
+                    testId: 'shared-board-delete',
+                  },
+                ]
+              : []),
           ]}
           label={`Shared board ${board.name}`}
           onDismiss={() => setMenu(null)}

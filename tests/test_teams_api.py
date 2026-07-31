@@ -7,9 +7,17 @@ API can still leak which team ids exist.
 
 from __future__ import annotations
 
+import pytest
+from sqlalchemy import select
+
+from comptool.auth import local as local_auth
+from comptool.models import SharedBoard
+
 OWNER = 90_000_001
 STRANGER = 90_000_002
 GUEST = 90_000_003
+
+CREATION_KEY = "a-creation-key-long-enough-here"
 
 
 def make_team(client, name: str = "Aurora Vanguard") -> dict:
@@ -269,3 +277,90 @@ def test_a_malformed_team_id_is_a_format_error_not_an_answer(client, sign_in):
     sign_in(OWNER)
 
     assert client.get("/api/v1/teams/not-a-uuid").status_code == 422
+
+
+# --- The board a team is born with ------------------------------------------------------------
+#
+# ``create_team`` has exactly two paths — SSO and local accounts — and they converge on one
+# ``session.add``. Both are covered here, plus the refusal, because a team that is not made must
+# not leave a board behind either.
+
+
+@pytest.fixture()
+def local_accounts(configure):
+    """The other way into ``create_team``, where it asks for two things SSO does not."""
+    local_auth.reset_rate_limit()
+    yield configure(
+        esi_enabled=False, local_auth_enabled=True, team_creation_key=CREATION_KEY
+    )
+    # Module state outlives a test, and every test here shares one client host.
+    local_auth.reset_rate_limit()
+
+
+def claim_as(client, name: str = "Sable Kaneko"):
+    return client.post("/api/v1/auth/name", json={"displayName": name})
+
+
+def boards_of(client, team: dict) -> list[dict]:
+    response = client.get(f"/api/v1/teams/{team['id']}/boards")
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_a_new_team_comes_with_one_board_the_whole_team_is_on(client, sign_in):
+    """Adoption, and nothing subtler than that.
+
+    Before this, a shared board existed only where somebody already knew the feature was there
+    and promoted a personal one — so the thing meant to be found by using the app could only be
+    found by having been told about it.
+    """
+    sign_in(OWNER, "Kadir")
+
+    team = make_team(client)
+
+    boards = boards_of(client, team)
+    assert [board["name"] for board in boards] == ["Team board"]
+    assert boards[0]["tiles"] == []
+    # Credited to whoever made the team, which is the honest answer to "who made this".
+    assert boards[0]["createdByName"] == "Kadir"
+    # Built outside ``create_shared_board``, so the columns that route would have settled are
+    # worth naming: ``mode`` has a Python-side default and no server one, and a row constructed
+    # anywhere else is exactly where that distinction goes wrong.
+    assert boards[0]["mode"] == "grid"
+    assert boards[0]["snap"] is True
+    assert boards[0]["revision"] == 0
+
+
+def test_a_team_made_under_local_accounts_gets_the_same_board(client, local_accounts):
+    claim_as(client, "Sable Kaneko")
+
+    made = client.post(
+        "/api/v1/teams",
+        json={
+            "name": "Sun Reavers",
+            "creationKey": CREATION_KEY,
+            "password": "sun-reavers-2026",
+            "passwordLevel": "viewer",
+        },
+    )
+
+    assert made.status_code == 201
+    assert [board["name"] for board in boards_of(client, made.json())] == ["Team board"]
+
+
+def test_a_refused_team_leaves_no_board_behind(client, local_accounts, session):
+    """One transaction, so a creation that does not happen leaves nothing half-made."""
+    claim_as(client, "Sable Kaneko")
+
+    refused = client.post(
+        "/api/v1/teams",
+        json={
+            "name": "Sun Reavers",
+            "creationKey": "not-the-key-for-this-instance",
+            "password": "sun-reavers-2026",
+            "passwordLevel": "viewer",
+        },
+    )
+
+    assert refused.status_code == 403
+    assert session.scalars(select(SharedBoard)).all() == []

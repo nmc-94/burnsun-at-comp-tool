@@ -81,7 +81,10 @@
   color: var(--text-3);
   min-height: 37px;
   border-bottom: 2px solid transparent;
-  padding: 0 40px 0 10px;
+  /* 23px on the right: the × sits 6px in and is 16px wide, so this is its room and nothing
+     more. It was 40px when two more buttons shared that rail, and the extra 17px was still not
+     enough for the third — which is how `Share` ended up over the name. */
+  padding: 0 23px 0 10px;
   font-size: 11px;
   font-weight: 500;
   display: inline-flex;
@@ -110,12 +113,19 @@
   text-decoration: none;
 }
 
-/* Revealed on hover and on keyboard focus. The focus half is not optional: without it the
- * only way to rename or close a board would be a mouse. */
-.ftab-rename,
+/* The one control still drawn on a tab, and the only one whose room `.ftab` reserves.
+ *
+ * Rename and Share used to sit beside it on the same absolute rail, and that is exactly what
+ * went wrong: a tab reserves its padding once, and a third button had nowhere left to stand but
+ * over the board's own name — where it took the click as well as the space. They are items on
+ * the context menu now. This one keeps its coordinates because it always fitted them.
+ *
+ * Revealed on hover and on keyboard focus. The focus half is not optional: without it the only
+ * way to close a board would be a mouse. */
 .ftab-close {
   position: absolute;
   top: 50%;
+  right: 6px;
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
@@ -125,28 +135,16 @@
   border-radius: var(--radius-sm);
   background: transparent;
   border: 0;
-  font-size: 10px;
+  font-size: 13px;
   opacity: 0;
   cursor: pointer;
 }
 
-.ftab-rename {
-  right: 23px;
-}
-
-.ftab-close {
-  right: 6px;
-  font-size: 13px;
-}
-
-.ftab:hover .ftab-rename,
 .ftab:hover .ftab-close,
-.ftab-rename:focus-visible,
 .ftab-close:focus-visible {
   opacity: 1;
 }
 
-.ftab-rename:hover,
 .ftab-close:hover {
   color: var(--text-1);
   background: var(--bg-soft);
@@ -163,90 +161,46 @@
   padding-left: 8px;
 }
 
-/* No close button on a shared tab, so it needs neither the room nor the hover slot one takes.
- * Deliberate: closing a personal board takes it off your own screen, and closing this one
- * destroys a colleague's arrangement — putting the two at the same coordinates is how muscle
- * memory does that by accident. The delete is behind the context menu instead. */
+/* Nothing is drawn over a shared tab at all, so it reserves nothing and is symmetric.
+ *
+ * No close button, deliberately: closing a personal board takes it off your own screen, and
+ * closing this one destroys a colleague's arrangement — putting the two at the same coordinates
+ * is how muscle memory does that by accident. The delete is on the context menu, which is now
+ * where the rename is too. */
 .ftab.shared {
-  padding-right: 23px;
+  padding-right: 10px;
 }
 
 /* Says which kind of board this is without spending a word on it, and without touching the
- * accessible name — which carries "shared board" for exactly the reason this does not have to. */
-.ftab.shared .ftab-open::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  vertical-align: middle;
+ * accessible name — which carries "shared board" for exactly the reason this does not have to.
+ *
+ * A flex row on the shared tab only. A personal one has nothing to align against its name, and
+ * changing how every `.ftab-open` boxes itself to serve the tabs that have a mark is how half a
+ * strip ends up a pixel taller than the other half. */
+.ftab.shared .ftab-open {
+  display: inline-flex;
+  align-items: center;
+  /* The strip's own rhythm; `.ftab` already separates its children by this much. */
+  gap: 6px;
+}
+
+.ftab-shared-mark {
+  /* What the header draws this same glyph at. The 16 box and `currentColor` do the rest, so it
+   * takes the tab's colour and turns accent with it when the board is the one in front. */
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
   /* Dimmed until the board is the one in front, so the strip reads as one thing at rest. */
   opacity: 0.55;
 }
 
-.ftab.shared.active .ftab-open::before {
+.ftab.shared.active .ftab-shared-mark {
   opacity: 1;
 }
 
-/* Offered on the personal tabs, and only there: it is what turns one into a shared board. */
-.ftab-share {
-  position: absolute;
-  right: 40px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-4);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  font: inherit;
-  font-size: 10px;
-  padding: 1px 4px;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.ftab:hover .ftab-share,
-.ftab-share:focus-visible {
-  opacity: 1;
-}
-
-.ftab-share:hover {
-  color: var(--text-1);
-  background: var(--bg-soft);
-}
-
-/* The one destructive gesture whose blast radius is other people's screens, so it is behind a
- * menu rather than a button — and the menu says what it does in full. */
-.ftab-menu {
-  position: absolute;
-  top: 100%;
-  left: 6px;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-sm);
-}
-
-.ftab-menu button {
-  font: inherit;
-  font-size: 11px;
-  text-align: left;
-  white-space: nowrap;
-  color: var(--text-2);
-  background: transparent;
-  border: 0;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.ftab-menu button:hover {
-  color: var(--text-1);
-  background: var(--bg-soft);
-}
+/* `.ftab-share` and `.ftab-menu` were here. The first is a menu item now; the second was a
+   hand-rolled dropdown this strip stopped using when the shared tab moved to `PointerMenu`,
+   and it had been dead for a while — both menus are styled by `.header-menu` in base.css. */
 
 /* Who is on this board. The strip answers "who is here" and each tile's footer answers "and on
  * what" — two questions, and the second cannot be asked of a strip. It draws *you* as well:
