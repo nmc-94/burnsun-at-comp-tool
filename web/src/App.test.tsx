@@ -179,13 +179,18 @@ describe('a visitor with no session', () => {
 
     render(<App />)
 
-    await waitFor(() => expect(screen.getByTestId('sign-in-screen')).toBeTruthy())
+    // Waited on the *button*, not on the screen around it. `SignInScreen` draws before the
+    // session probe lands — one slot, four answers, and the first of them is "Checking your
+    // session…" — so a wait for `sign-in-screen` can be satisfied while the page is still
+    // loading, and the count below then finds nothing. It passed here for months and failed
+    // on CI the first time the runner was loaded enough to lose the race; the wait is what
+    // the assertion always meant.
+    await waitFor(() => expect(screen.getAllByTestId('sign-in-button')).toHaveLength(1))
     expect(screen.queryByTestId('workspace')).toBeNull()
     expect(screen.queryByTestId('share-view')).toBeNull()
     // Not "inside the shell with the screens hidden": the signed-out page has no header, and
-    // the sign-in control it does have is the only one on it.
+    // the sign-in control it does have — the one counted above — is the only one on it.
     expect(screen.queryByTestId('app-shell')).toBeNull()
-    expect(screen.getAllByTestId('sign-in-button')).toHaveLength(1)
   })
 })
 
