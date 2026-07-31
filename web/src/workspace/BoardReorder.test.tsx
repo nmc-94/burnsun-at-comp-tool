@@ -400,7 +400,7 @@ describe('carrying a tile onto the new-comp tile', () => {
 
   it('waits for the source comp to be saved before asking for the fork', async () => {
     // The same race a partial port runs: a fork reads the comp's rows on the *server*, so one
-    // taken inside the 600 ms debounce would derive from the comp as it was a keystroke ago.
+    // taken inside the save debounce would derive from the comp as it was a keystroke ago.
     stubFetch()
     const onFork = vi.fn()
     grid(['a', 'b'], vi.fn(), onFork)

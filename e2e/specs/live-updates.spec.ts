@@ -182,7 +182,7 @@ test('a change made while you have unsaved work is flagged rather than applied',
   await expect(tile.getByTestId('comp-row-name')).toHaveText(['Abaddon'])
 
   // Held in the debounce: the save is stalled, so this edit stays unsaved while the friend's
-  // lands. Routed rather than raced against a 600ms timer, which would be flaky by design.
+  // lands. Routed rather than raced against the save debounce, which would be flaky by design.
   await page.route(`**/api/v1/comps/${comp.id}/slots`, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 8_000))
     await route.continue()

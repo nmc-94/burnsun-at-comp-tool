@@ -128,7 +128,7 @@ function pressUndo(options: { shift?: boolean } = {}) {
   })
 }
 
-// Real timers, like the other board tests: the only clock here is the 600 ms save debounce,
+// Real timers, like the other board tests: the only clock here is the save debounce,
 // and `waitFor` waits that out without one.
 afterEach(() => {
   cleanup()

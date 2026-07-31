@@ -97,7 +97,7 @@ test('the same rows port with Ctrl+C and Ctrl+V, no pointer involved', async ({
 
 test('a hull added a moment ago ports too, debounce and all', async ({ page, api, team }) => {
   // The race, deliberately provoked. The row being dragged does not exist on the server when
-  // the drag starts — it was added inside the 600 ms save debounce — so a port that did not
+  // the drag starts — it was added inside the save debounce — so a port that did not
   // wait for that write would ask for a position the server has never heard of, and get back
   // a fork with nothing in it.
   const slug = await api.publishedRulesetSlug()

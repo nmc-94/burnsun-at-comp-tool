@@ -213,8 +213,10 @@ describe('saving', () => {
     const view = await loaded()
 
     act(() => view.result.current.change([{ position: 0, typeId: SHIP.vindicator, isFlagship: false }]))
+    // Comfortably inside `SAVE_DEBOUNCE_MS`, which is 250 — this was 400 while it was 600, and
+    // the debounce was shortened to cut the delay between two people looking at one comp.
     await act(async () => {
-      vi.advanceTimersByTime(400)
+      vi.advanceTimersByTime(150)
     })
 
     expect(writes(calls).length).toBe(0)

@@ -13,7 +13,7 @@
 // The same drag landing on the ghost tile is a port instead, and its load-bearing claim is a
 // fourth: **the source's outstanding edits are on the server first**. A fork asks the server
 // to read rows by number out of its own copy, and it drops numbers it does not recognise, so
-// a port taken inside the 600 ms debounce would come back quietly short.
+// a port taken inside the save debounce would come back quietly short.
 //
 // All of it is exercised as a real drag, which is possible only because the payload lives in
 // that store rather than in `dataTransfer` — jsdom has no `DataTransfer`, so a design that
@@ -219,7 +219,7 @@ function dropEffectOver(target: Element, modifiers: Modifiers = {}) {
 /** The dashed tile at the end of the board — a button, and the one place a port can land. */
 const ghost = () => screen.getByTestId('board-new-comp')
 
-// Real timers, unlike the hook's own tests: the only clock these want is the 600 ms save
+// Real timers, unlike the hook's own tests: the only clock these want is the save
 // debounce, and `waitFor` waits that out without one.
 afterEach(() => {
   cleanup()
@@ -663,7 +663,7 @@ describe('dragging hulls onto the new-comp tile', () => {
   it('waits for the source comp to be saved before asking for the fork', async () => {
     // The race the whole payload exists for. A fork reads rows by number on the *server*, and
     // the server drops numbers it does not recognise rather than refusing them — so a port
-    // taken inside the 600 ms debounce would come back short, silently.
+    // taken inside the save debounce would come back short, silently.
     const calls = stubFetch()
     const writesWhenAsked: number[] = []
     const onPort = vi.fn(() => writesWhenAsked.push(writes(calls).length))

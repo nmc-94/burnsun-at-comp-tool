@@ -406,7 +406,7 @@ describe('the foot', () => {
   it('keeps the save state and the ruleset version out of sight and in the document', () => {
     // Both were visible until the footer was cleared out. They stay because they are what a
     // driver reads — `expectCompSaved` waits on `data-save-state` rather than sleeping through
-    // the 600ms debounce — so deleting the nodes would cost the e2e suite its clock.
+    // the save debounce — so deleting the nodes would cost the e2e suite its clock.
     mount(slots(SHIP.abaddon))
 
     const saved = screen.getByTestId('comp-save-state')

@@ -32,9 +32,25 @@ import type { PlacedSlot } from './tile-model'
 import type { CompDetail, CompTagsWrite } from './types'
 import { noteEdited } from './undo-keys'
 
-/** How long to let edits settle before writing them. Long enough to cover a burst of
- *  clicks, short enough that closing the tab straight after an edit is still unusual. */
-const SAVE_DEBOUNCE_MS = 600
+/**
+ * How long to let edits settle before writing them.
+ *
+ * **Narrower than the name suggests, which is why it is this short.** `rename` and `saveTags`
+ * write straight through; the only path that waits is `change`, and every caller of that is a
+ * discrete gesture — a hull picked out of search, a hull dropped in, a row removed, an undo. There
+ * is no continuous typing behind this number. What it coalesces is a *burst of clicks*, and a
+ * quarter of a second still covers the ones that are actually bursts: a multi-hull drop is already
+ * one `change`, and a double-click is well inside it.
+ *
+ * What it costs is a held Ctrl+Z, which now writes several times on the way down instead of once
+ * at the bottom. Those writes are small, queued per tile behind `queue.current`, and each is a
+ * full replacement rather than a delta, so the sequence is self-correcting.
+ *
+ * What it buys is that everybody else on the team sees a hull land a third of a second sooner —
+ * this is the largest single delay between two people looking at the same comp, and it is spent
+ * before anything reaches the network at all.
+ */
+const SAVE_DEBOUNCE_MS = 250
 
 /** How far back Ctrl+Z reaches in one tile. Deep enough to cover a session's fumbling over a
  *  ten-hull comp, shallow enough that twenty tiles holding one each is nothing. */
