@@ -9,6 +9,8 @@
 
 import { describe, expect, it } from 'vitest'
 
+import indexHtml from '../../index.html?raw'
+
 import { captureFilter, pngName, resolveCaptureBackground } from './tile-capture'
 
 function flagged(tag: string) {
@@ -43,6 +45,22 @@ describe('resolveCaptureBackground', () => {
     expect(resolveCaptureBackground(solid)).toBe('rgb(1, 2, 3)')
     // Transparent is not a background — flattening onto it is what punches a hole in the PNG.
     expect(resolveCaptureBackground(document.createElement('div'))).toBe('#ffffff')
+  })
+})
+
+describe('the fonts a picture is drawn in', () => {
+  // The rasterizer embeds a web font by reading its @font-face rules out of document.styleSheets,
+  // and a cross-origin sheet loaded without `crossorigin` will not let it. Nothing fails: the
+  // picture just comes out in a system fallback, wider than Inter, so hull names clip and the
+  // author line wraps, and the flagship pill's caps sit high in a mono with other metrics. The
+  // e2e copy spec cannot see any of it, because the suite aborts Google Fonts.
+  it('loads every cross-origin stylesheet in a way the page can read', () => {
+    const doc = new DOMParser().parseFromString(indexHtml, 'text/html')
+    const sheets = [...doc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].filter(
+      (link) => /^https?:\/\//.test(link.getAttribute('href') ?? ''),
+    )
+    expect(sheets.length).toBeGreaterThan(0)
+    for (const link of sheets) expect(link.getAttribute('crossorigin'), link.href).toBe('anonymous')
   })
 })
 
